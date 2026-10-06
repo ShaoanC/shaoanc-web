@@ -1843,3 +1843,49 @@ input[type='checkbox'] { width: 19px; height: 19px; min-height: 19px; }
   .skeleton-shimmer::after { animation: none !important; }
   .loading-progress-fill { transition-duration: 60ms !important; }
 }
+
+/* Markdown shares the reading typography; wide content scrolls within its panel. */
+.markdown-content--full { min-width: 0; max-width: 100%; white-space: normal; overflow-wrap: break-word; }
+.markdown-content--full p { margin: 0 0 .9em; }
+.markdown-content--full :is(h1, h2, h3, h4, h5, h6) { font-family: inherit; font-weight: 600; color: inherit; line-height: 1.5; margin: 1.2em 0 .5em; letter-spacing: 0; text-transform: none; }
+.markdown-content--full h1 { font-size: 1.5em; }
+.markdown-content--full h2 { font-size: 1.3em; }
+.markdown-content--full h3 { font-size: 1.15em; }
+.markdown-content--full :is(h4, h5, h6) { font-size: 1em; }
+.markdown-content--full :is(ul, ol) { margin: .7em 0; padding-left: 1.5em; }
+.markdown-content--full li { margin: .2em 0; }
+.markdown-content--full li > p { margin-bottom: .3em; }
+.markdown-content--full blockquote { margin: .9em 0; padding: .25em 1em; border-left: 3px solid var(--primary); background: var(--primary-soft); color: var(--text-secondary); }
+.markdown-content--full blockquote > :last-child { margin-bottom: 0; }
+.markdown-content--full a { color: var(--primary); text-decoration: underline; text-underline-offset: 3px; }
+.markdown-content--full img { display: block; max-width: 100%; height: auto; }
+.markdown-content--full hr { border: 0; border-top: 1px solid var(--border-medium); margin: 1.2em 0; }
+.markdown-content--full code, .markdown-content--compact code { font-family: ui-monospace, Consolas, monospace; font-size: .9em; font-weight: 400; padding: .1em .3em; background: var(--surface-1); border-radius: 3px; }
+.markdown-content--full pre { min-width: 0; max-width: 100%; overflow-x: auto; margin: .9em 0; padding: 14px 16px; background: var(--surface-1); border: 1px solid var(--border-subtle); border-radius: 3px; white-space: pre; overflow-wrap: normal; word-break: normal; line-height: 1.65; }
+.markdown-content--full pre code { padding: 0; background: transparent; white-space: pre; }
+.markdown-table-scroll { max-width: 100%; overflow-x: auto; margin: .9em 0; }
+.markdown-content--full table { width: 100%; border-collapse: collapse; font-size: .95em; }
+.markdown-content--full :is(th, td) { min-width: 6em; padding: .5em .75em; border: 1px solid var(--border-medium); text-align: left; }
+.markdown-content--full th { background: var(--primary-soft); font-weight: 600; }
+.markdown-content--full .task-list-item { list-style: none; }
+.markdown-content--full .task-list-item > input { margin-right: .5em; accent-color: var(--primary); }
+.markdown-content--full .katex { font-size: 1.05em; }
+.markdown-content--full :not(.katex-display) > .katex { display: inline-block; max-width: 100%; overflow-x: auto; overflow-y: hidden; padding: .2em 0; vertical-align: middle; }
+.markdown-content--full .katex-display { max-width: 100%; overflow-x: auto; overflow-y: hidden; padding: .3em .1em; margin: .9em 0; }
+.markdown-content--full .katex-error { white-space: pre-wrap; overflow-wrap: anywhere; }
+.markdown-content--full > :first-child { margin-top: 0; }
+.markdown-content--full > :last-child { margin-bottom: 0; }
+.markdown-content--compact { font: inherit; white-space: normal; }
+.markdown-content--compact .katex { font-size: 1em; }
+
+.markdown-field-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.markdown-field-heading > label { font-size: 16px; font-weight: 600; color: var(--text-primary); }
+.markdown-field-heading > label > em { color: var(--error); font-style: normal; margin-left: 2px; }
+.markdown-field-modes { display: inline-flex; flex-shrink: 0; gap: 2px; padding: 2px; border: 1px solid var(--border-medium); border-radius: 3px; }
+.markdown-field-modes > button { border: 0; border-radius: 2px; padding: 4px 10px; background: transparent; color: var(--text-tertiary); font-size: 13px; line-height: 1.5; }
+.markdown-field-modes > button[aria-pressed="true"] { background: var(--primary-soft); color: var(--primary-dark); font-weight: 600; }
+.markdown-field-modes > button:hover { color: var(--primary); }
+.markdown-field-preview { min-width: 0; min-height: 132px; padding: 12px 14px; border: 1px solid var(--border-medium); border-radius: 3px; background: var(--surface-2); font-size: 16px; line-height: 1.8; }
+.markdown-field-hint { overflow-wrap: anywhere; }
+.editor-aside .markdown-field-heading > label { font-size: 14px; }
+.editor-aside .markdown-field-preview { padding: 10px 12px; }
