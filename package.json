@@ -1,17 +1,33 @@
 {
   "name": "www.shaoanc.cn",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Shaoan 的个人网站与智能错题整理系统",
+  "main": "server/app.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server/app.js",
+    "dev": "vite --config client/mistakes/vite.config.mts",
+    "typecheck": "tsc --project client/mistakes/tsconfig.json --noEmit",
+    "build": "npm run typecheck && vite build --config client/mistakes/vite.config.mts",
+    "test": "node scripts/mistakes-smoke.cjs",
+    "admin:create": "node server/mistakes/create-admin.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "better-sqlite3": "^13.0.3",
     "dotenv": "^18.0.5",
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "lucide-react": "^1.52.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.3"
   }
 }
