@@ -20,7 +20,7 @@ const navItems = [
   { path: '/settings', label: '设置', icon: Settings },
 ];
 
-function AuthPage({ onLogin }: { onLogin: (user: User) => void }) {
+function AuthPage({ onLogin, onNotify }: { onLogin: (user: User) => void; onNotify: (msg: string) => void }) {
   const [registering, setRegistering] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -34,6 +34,7 @@ function AuthPage({ onLogin }: { onLogin: (user: User) => void }) {
     setError('');
     try {
       const result = await api<{ user: User }>(registering ? '/auth/register' : '/auth/login', json({ username: username.trim(), password, ...(registering ? { inviteCode: inviteCode.trim() } : {}) }));
+      onNotify(registering ? `欢迎，${result.user.username}！账号已创建。` : `欢迎回来，${result.user.username}！`);
       onLogin(result.user);
     } catch (err) {
       setError((err as Error).message);
@@ -95,7 +96,7 @@ export default function App() {
   const toaster = <ToastContainer position="top-right" autoClose={4500} transition={Slide} theme="dark" newestOnTop closeOnClick={false} />;
 
   if (initializing) return <div className="initial-loading"><span className="brand-mark"><BookOpen size={28} /></span><Spinner text="正在打开学习空间…" /></div>;
-  if (!user) return <><AuthPage onLogin={(nextUser) => { setUser(nextUser); window.location.hash = '/mistakes'; }} />{toaster}</>;
+  if (!user) return <><AuthPage onLogin={(nextUser) => { setUser(nextUser); window.location.hash = '/mistakes'; }} onNotify={(msg) => toast.success(msg)} />{toaster}</>;
 
   const routePath = path.split('?')[0];
   const detailMatch = routePath.match(/^\/mistakes\/(\d+)(\/edit)?$/);
