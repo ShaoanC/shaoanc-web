@@ -1371,6 +1371,20 @@ input[type='checkbox'] { width: 19px; height: 19px; min-height: 19px; }
 .editor-main .panel { display: flex; flex-direction: column; gap: 22px; }
 .editor-main .panel-title { margin-bottom: 0; }
 .editor-aside, .detail-aside { gap: 22px; top: 88px; }
+.editor-aside { gap: 16px; }
+.editor-aside .panel { padding: 18px; }
+.editor-aside .panel-title { gap: 8px; margin-bottom: 16px; }
+.editor-aside .panel-title-icon { width: 24px; height: 26px; }
+.editor-aside .panel-title h2 { font-size: 18px; }
+.editor-aside .panel-title p { font-size: 13px; line-height: 1.6; margin-top: 4px; }
+.editor-aside .field { gap: 6px; }
+.editor-aside .field > span { font-size: 14px; }
+.editor-aside .optional-label { font-size: 12px; }
+.editor-aside select { min-height: 42px; padding: 8px 28px 8px 10px; font-size: 15px; line-height: 1.4; }
+.editor-aside .knowledge-options { gap: 6px; max-height: 224px; overflow-y: auto; }
+.editor-aside .knowledge-option { min-height: 30px; padding: 4px 6px; font-size: 13px; line-height: 1.5; }
+.editor-aside .custom-check { width: 13px; height: 13px; }
+.editor-aside .note-panel textarea { min-height: 132px; padding: 10px 12px; font-size: 16px; line-height: 1.65; }
 .question-editor { min-height: 270px; }
 .knowledge-option { border-radius: 3px; font-size: 15px; padding: 7px 9px; background: var(--surface-2); }
 .knowledge-option.selected { background: var(--primary-soft); }
