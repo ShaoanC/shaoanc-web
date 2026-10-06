@@ -22,3 +22,7 @@ logs/
 .DS_Store
 
 FETCH_HEAD
+
+skills-lock.json
+
+.agents/
