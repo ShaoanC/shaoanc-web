@@ -189,6 +189,71 @@ export function SlidingTabs({ tabs, value, onChange, ariaLabel, className = '' }
   </div>;
 }
 
+export type NavigationItem = { id: string; href: string; label: ReactNode };
+
+export function SlidingNavigation({ items, value, ariaLabel = '主导航' }: {
+  items: readonly NavigationItem[];
+  value: string;
+  ariaLabel?: string;
+}) {
+  const container = useRef<HTMLElement>(null);
+  const initialized = useRef(false);
+  const [ready, setReady] = useState(false);
+  const [indicator, setIndicator] = useState({ x: 0, y: 0, width: 0, height: 0, visible: false });
+  const itemIds = items.map((item) => item.id).join('\u0000');
+
+  useLayoutEffect(() => {
+    const root = container.current;
+    if (!root) return;
+    let disposed = false;
+    let frame = 0;
+    function measure() {
+      if (disposed || !root) return;
+      const selected = Array.from(root.querySelectorAll<HTMLAnchorElement>('.nav-item')).find((item) => item.dataset.navId === value);
+      if (!selected) {
+        setIndicator((previous) => previous.visible ? { ...previous, visible: false } : previous);
+        return;
+      }
+      const styles = getComputedStyle(root);
+      const axis = styles.getPropertyValue('--nav-indicator-axis').trim();
+      const horizontal = axis ? axis === 'horizontal' : styles.display === 'grid' || styles.flexDirection === 'row';
+      const inset = parseFloat(styles.getPropertyValue('--nav-indicator-inset')) || (horizontal ? 10 : 12);
+      const thickness = parseFloat(styles.getPropertyValue('--nav-indicator-thickness')) || 3;
+      const rect = selected.getBoundingClientRect();
+      const rootRect = root.getBoundingClientRect();
+      const left = rect.left - rootRect.left + root.scrollLeft - root.clientLeft;
+      const top = rect.top - rootRect.top + root.scrollTop - root.clientTop;
+      const next = horizontal
+        ? { x: left + inset, y: top + rect.height - thickness, width: Math.max(0, rect.width - inset * 2), height: thickness, visible: true }
+        : { x: left, y: top + inset, width: thickness, height: Math.max(0, rect.height - inset * 2), visible: true };
+      setIndicator((previous) => previous.visible === next.visible && Math.abs(previous.x - next.x) < 0.1 && Math.abs(previous.y - next.y) < 0.1 && Math.abs(previous.width - next.width) < 0.1 && Math.abs(previous.height - next.height) < 0.1 ? previous : next);
+      if (!initialized.current && !frame) {
+        frame = window.requestAnimationFrame(() => {
+          initialized.current = true;
+          setReady(true);
+        });
+      }
+    }
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(root);
+    root.querySelectorAll<HTMLAnchorElement>('.nav-item').forEach((item) => observer.observe(item));
+    window.addEventListener('resize', measure);
+    void document.fonts.ready.then(measure);
+    return () => {
+      disposed = true;
+      observer.disconnect();
+      window.removeEventListener('resize', measure);
+      window.cancelAnimationFrame(frame);
+    };
+  }, [value, itemIds]);
+
+  return <nav ref={container} className="navigation" aria-label={ariaLabel}>
+    {items.map((item) => <a key={item.id} href={item.href} data-nav-id={item.id} className={`nav-item${value === item.id ? ' active' : ''}`} aria-current={value === item.id ? 'page' : undefined}>{item.label}</a>)}
+    <span className="nav-indicator" aria-hidden="true" style={{ transform: `translate(${indicator.x}px, ${indicator.y}px)`, width: indicator.width, height: indicator.height, opacity: ready && indicator.visible ? 1 : 0, ...(ready ? {} : { transition: 'none' }) }} />
+  </nav>;
+}
+
 export type SkeletonKind = 'library' | 'summary' | 'rows' | 'stats' | 'detail' | 'editor' | 'settings' | 'review' | 'shell';
 
 function SkeletonLine({ size = 'long' }: { size?: 'short' | 'medium' | 'long' | 'title' }) {
