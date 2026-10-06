@@ -965,6 +965,7 @@ input[type='checkbox'] {
   background: var(--surface-3) !important;
   border: 1px solid var(--border-medium) !important;
   border-radius: var(--radius-lg) !important;
+  overflow: hidden;
   color: var(--text-primary) !important;
   font-size: 13px !important;
   box-shadow: 0 8px 32px rgba(0,0,0,.4) !important;
