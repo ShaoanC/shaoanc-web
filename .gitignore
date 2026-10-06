@@ -17,3 +17,5 @@ logs/
 .gitignore.save
 
 .DS_Store
+
+FETCH_HEAD
