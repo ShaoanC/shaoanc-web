@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Slide, ToastContainer, toast } from 'react-toastify';
 import { ArrowRight, BookOpen, CheckCircle2, ChevronDown, ClipboardList, GraduationCap, LayoutGrid, LoaderCircle, LogOut, Plus, RotateCcw, Settings, ShieldCheck, Sparkles, TrendingUp } from 'lucide-react';
 import { api, json } from './api';
 import { AppContext, sortDirectory } from './context';
@@ -58,7 +59,6 @@ export default function App() {
   const [knowledgePoints, setKnowledgePoints] = useState<KnowledgePoint[]>([]);
   const [directoryError, setDirectoryError] = useState('');
   const [path, setPath] = useState(window.location.hash.slice(1) || '/mistakes');
-  const [toast, setToast] = useState<{ message: string; kind: string } | null>(null);
 
   useEffect(() => {
     api<{ user: User | null }>('/auth/me').then((result) => setUser(result.user)).catch(() => setUser(null)).finally(() => setInitializing(false));
@@ -67,13 +67,7 @@ export default function App() {
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
 
-  const notify = useCallback((message: string, kind: 'success' | 'error' = 'success') => setToast({ message, kind }), []);
-
-  useEffect(() => {
-    if (!toast) return;
-    const timer = window.setTimeout(() => setToast(null), 4500);
-    return () => window.clearTimeout(timer);
-  }, [toast]);
+  const notify = useCallback((message: string, kind: 'success' | 'error' = 'success') => { toast[kind](message); }, []);
 
   const refreshDirectory = useCallback(async () => {
     try {
@@ -98,8 +92,10 @@ export default function App() {
     } catch (err) { notify((err as Error).message, 'error'); }
   }, [notify]);
 
+  const toaster = <ToastContainer position="top-right" autoClose={4500} transition={Slide} theme="dark" newestOnTop closeOnClick={false} />;
+
   if (initializing) return <div className="initial-loading"><span className="brand-mark"><BookOpen size={28} /></span><Spinner text="正在打开学习空间…" /></div>;
-  if (!user) return <AuthPage onLogin={(nextUser) => { setUser(nextUser); window.location.hash = '/mistakes'; }} />;
+  if (!user) return <><AuthPage onLogin={(nextUser) => { setUser(nextUser); window.location.hash = '/mistakes'; }} />{toaster}</>;
 
   const routePath = path.split('?')[0];
   const detailMatch = routePath.match(/^\/mistakes\/(\d+)(\/edit)?$/);
@@ -116,6 +112,6 @@ export default function App() {
   return <AppContext.Provider value={{ user, subjects, knowledgePoints, refreshDirectory, notify, logout }}><div className="app-shell">
     <aside className="sidebar"><a className="brand" href="#/mistakes"><span className="brand-mark"><BookOpen size={23} /></span><span className="brand-text">拾题<span>智能错题整理系统</span></span></a><div className="sidebar-label">学习空间</div><nav className="navigation" aria-label="主导航">{navItems.map(({ path: itemPath, label, icon: Icon }) => <a key={itemPath} href={`#${itemPath}`} className={`nav-item ${activePath === itemPath ? 'active' : ''}`} aria-current={activePath === itemPath ? 'page' : undefined}><Icon size={19} strokeWidth={1.8} /><span>{label}</span>{activePath === itemPath && <span className="nav-active-dot" />}</a>)}</nav><div className="sidebar-bottom"><div className="sidebar-reminder"><span className="reminder-icon"><Sparkles size={19} /></span><strong>积累，是进步的开始</strong><p>把每道错题变成<br />下一次的正确答案。</p></div><div className="account"><a className="account-profile" href="#/settings"><span className="avatar">{user.username.slice(0, 1).toUpperCase()}</span><span className="account-name"><strong>{user.username}</strong><small>{user.role === 'admin' ? '管理员' : '我的账号'}</small></span><ChevronDown size={15} /></a><button className="icon-button" title="退出登录" aria-label="退出登录" onClick={logout}><LogOut size={17} /></button></div></div></aside>
     <div className="main-shell"><header className="topbar"><span className="topbar-label"><BookOpen size={15} /> 个人学习空间</span><div className="topbar-right"><span className="workspace-state"><span /> 手动整理，持续积累</span><span className="topbar-avatar">{user.username.slice(0, 1).toUpperCase()}</span></div></header><main className="main-content">{directoryError && <div className="inline-alert" role="alert">基础目录加载失败：{directoryError}<button onClick={refreshDirectory}>重试</button></div>}{page}<footer className="page-footer">每一次回顾，都离掌握更近一步。<span>拾题 · 让学习有迹可循</span></footer></main></div>
-    {toast && <div className={`toast toast-${toast.kind}`} role="status"><CheckCircle2 size={18} />{toast.message}</div>}
+    {toaster}
   </div></AppContext.Provider>;
 }
