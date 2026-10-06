@@ -1,16 +1,46 @@
 const API_BASE = '/api/mistakes';
 
+let activeRequests = 0;
+let activityCycle = 0;
+let activitySnapshot = { pending: 0, cycle: 0 };
+const activityListeners = new Set<() => void>();
+
+export function subscribeToApiActivity(listener: () => void): () => void {
+  activityListeners.add(listener);
+  return () => { activityListeners.delete(listener); };
+}
+
+export function getActiveApiRequestCount(): number {
+  return activeRequests;
+}
+
+export function getApiActivitySnapshot(): { pending: number; cycle: number } {
+  return activitySnapshot;
+}
+
+function updateApiActivity(change: number): void {
+  if (change > 0 && activeRequests === 0) activityCycle += 1;
+  activeRequests += change;
+  activitySnapshot = { pending: activeRequests, cycle: activityCycle };
+  activityListeners.forEach((listener) => listener());
+}
+
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json', ...options.headers },
-  });
-  const result = await response.json().catch(() => null);
-  if (!response.ok || !result?.success) {
-    throw new Error(result?.message || '请求失败，请稍后重试。');
+  updateApiActivity(1);
+  try {
+    const response = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', ...options.headers },
+    });
+    const result = await response.json().catch(() => null);
+    if (!response.ok || !result?.success) {
+      throw new Error(result?.message || '请求失败，请稍后重试。');
+    }
+    return result.data as T;
+  } finally {
+    updateApiActivity(-1);
   }
-  return result.data as T;
 }
 
 export const json = (body: unknown, method = 'POST'): RequestInit => ({

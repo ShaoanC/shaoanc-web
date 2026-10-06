@@ -7,6 +7,6 @@ import './styles.css';
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <App />
-    <ToastContainer position="top-right" autoClose={4500} transition={Slide} theme="dark" newestOnTop closeOnClick={false} />
+    <ToastContainer position="top-right" autoClose={4500} transition={Slide} theme="light" limit={3} newestOnTop closeOnClick={false} />
   </React.StrictMode>,
 );

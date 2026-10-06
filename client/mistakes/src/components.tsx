@@ -20,8 +20,8 @@ export function EmptyState({ title, description, action, filtered = false }: { t
   return <div className="empty-state"><div className="empty-illustration"><span className="empty-orbit" /><Icon size={40} strokeWidth={1.4} /><span className="empty-spark"><Check size={13} /></span></div><h3>{title}</h3><p>{description}</p>{action}</div>;
 }
 
-export function PageHeader({ eyebrow, title, description, action }: { eyebrow: string; title: string; description: string; action?: ReactNode }) {
-  return <div className="page-header"><div><div className="eyebrow">{eyebrow}</div><h1>{title}</h1><p>{description}</p></div>{action && <div className="page-header-action">{action}</div>}</div>;
+export function PageHeader({ title, description, action }: { eyebrow: string; title: string; description: string; action?: ReactNode }) {
+  return <div className="page-header"><div><h1>{title}</h1><p>{description}</p></div>{action && <div className="page-header-action">{action}</div>}</div>;
 }
 
 export function Modal({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {

@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { ArrowLeft, Check, FileText, Layers, LoaderCircle, Save, StickyNote } from 'lucide-react';
 import { api, json, navigate } from '../api';
 import { knowledgeLabel, useApp } from '../context';
-import { ErrorState, PageHeader, Spinner } from '../components';
+import { ErrorState, PageHeader } from '../components';
+import { LoadingContent } from '../motion';
 import type { Lifecycle, Mistake } from '../types';
 
 export function EditorPage({ id }: { id?: number }) {
@@ -44,25 +45,26 @@ export function EditorPage({ id }: { id?: number }) {
     setSaving(lifecycle);
     try {
       const item = await api<Mistake>(id ? `/mistakes/${id}` : '/mistakes', json({ subjectId: subjectId || null, primaryKnowledgePointId: primaryId ? Number(primaryId) : null, auxiliaryKnowledgePointIds: auxiliaryIds.filter((pointId) => pointId !== Number(primaryId)), question: question.trim(), answer: answer.trim(), analysis: analysis.trim(), note: note.trim(), lifecycle }, id ? 'PATCH' : 'POST'));
-      notify(lifecycle === 'draft' ? '草稿已保存，可以稍后继续完善。' : id ? '错题已更新。' : '错题已归档，学习积累 +1。');
+      notify(lifecycle === 'draft' ? '草稿已保存，可以稍后继续完善。' : id ? '错题已更新。' : '错题已归档，可以开始复习。');
       navigate(`/mistakes/${item.id}`);
     } catch (err) {
       setError((err as Error).message);
+      notify((err as Error).message, 'error');
     } finally { setSaving(null); }
   }
 
-  if (loading) return <Spinner />;
-  if (loadError) return <ErrorState message={loadError} />;
-
   return <>
     <a className="back-link" href={id ? `#/mistakes/${id}` : '#/mistakes'}><ArrowLeft size={16} /> {id ? '返回错题详情' : '返回我的错题'}</a>
-    <PageHeader eyebrow="记录一次问题，留下一份收获" title={id ? '编辑错题' : '录入错题'} description="写下题目与思考，把零散的知识慢慢串起来。" action={<span className="small-pill"><FileText size={14} /> 手动录入</span>} />
+    <PageHeader eyebrow="留下题目，也留下思路" title={id ? '编辑错题' : '录入错题'} description="记录完整题干，补充答案和错因，再标注对应的知识点。" action={<span className="small-pill"><FileText size={14} /> 手动录入</span>} />
+    <LoadingContent loading={loading} kind="editor">
+    {loadError ? <ErrorState message={loadError} /> :
     <form onSubmit={(event) => { event.preventDefault(); void save('archived'); }}>
       <div className="editor-layout"><div className="editor-main"><section className="panel"><div className="panel-title"><span className="panel-title-icon violet"><FileText size={18} /></span><div><h2>题目与解答</h2><p>保留完整题干，方便下次独立思考。</p></div></div><label className="field"><span>题干 <em>*</em></span><textarea className="question-editor" value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="输入题目内容，包括题目条件、问题和选项…" maxLength={20000} /><small>归档前需要填写题干；内容还未整理好，可以先保存草稿。</small></label><label className="field"><span>正确答案 <span className="optional-label">选填</span></span><textarea rows={3} value={answer} onChange={(event) => setAnswer(event.target.value)} placeholder="写下正确答案或最终结果…" maxLength={20000} /></label><label className="field"><span>解题分析 <span className="optional-label">选填</span></span><textarea rows={5} value={analysis} onChange={(event) => setAnalysis(event.target.value)} placeholder="记录关键步骤、解题思路和需要注意的地方…" maxLength={20000} /></label></section></div>
         <aside className="editor-aside"><section className="panel"><div className="panel-title"><span className="panel-title-icon blue"><Layers size={18} /></span><div><h2>学科与知识点</h2><p>给这道题找到合适的位置。</p></div></div><label className="field"><span>学科 <em>*</em></span><select value={subjectId} onChange={(event) => { setSubjectId(event.target.value); setPrimaryId(''); setAuxiliaryIds([]); }}><option value="" disabled>选择学科</option>{subjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.name}</option>)}</select></label><label className="field"><span>主知识点 <span className="optional-label">选填</span></span><select value={primaryId} onChange={(event) => { setPrimaryId(event.target.value); setAuxiliaryIds((current) => current.filter((pointId) => pointId !== Number(event.target.value))); }}><option value="">暂不标注</option>{points.map((point) => <option key={point.id} value={point.id}>{knowledgeLabel(knowledgePoints, point.id)}</option>)}</select></label><div className="field"><span>辅助知识点 <span className="optional-label">可多选</span></span><div className="knowledge-options">{points.filter((point) => point.id !== Number(primaryId)).map((point) => <label className={`knowledge-option ${auxiliaryIds.includes(point.id) ? 'selected' : ''}`} key={point.id}><input type="checkbox" checked={auxiliaryIds.includes(point.id)} onChange={(event) => setAuxiliaryIds((current) => event.target.checked ? [...current, point.id] : current.filter((pointId) => pointId !== point.id))} /><span className="custom-check">{auxiliaryIds.includes(point.id) && <Check size={11} />}</span>{knowledgeLabel(knowledgePoints, point.id)}</label>)}{!points.length && <p className="muted">该学科暂未配置知识点，可先录入题目。</p>}</div></div></section>
           <section className="panel note-panel"><div className="panel-title"><span className="panel-title-icon amber"><StickyNote size={18} /></span><div><h2>我的笔记</h2><p>记下原因，也记下收获。</p></div></div><textarea aria-label="我的笔记" rows={6} value={note} onChange={(event) => setNote(event.target.value)} placeholder="为什么会做错？下次遇到类似题目，要提醒自己什么？" maxLength={20000} /></section>
-          <div className="editor-tip"><strong>不必一次写得完美</strong><p>先记下问题，答案和分析可以以后再补充。</p></div></aside></div>
+          <div className="editor-tip"><strong>先留住题目</strong><p>先记下问题，答案和分析可以以后再补充。</p></div></aside></div>
       <div className="editor-actions">{error ? <div className="form-error" role="alert">{error}</div> : <span className="muted">保存草稿可继续完善，归档后即可加入复习。</span>}<div><a className="button ghost" href={id ? `#/mistakes/${id}` : '#/mistakes'}>取消</a><button className="button secondary" type="button" disabled={Boolean(saving)} onClick={() => void save('draft')}>{saving === 'draft' ? <LoaderCircle className="spin" size={17} /> : <Save size={17} />} 保存草稿</button><button className="button primary" type="submit" disabled={Boolean(saving)}>{saving === 'archived' ? <LoaderCircle className="spin" size={17} /> : <Check size={17} />} 保存并归档</button></div></div>
-    </form>
+    </form>}
+    </LoadingContent>
   </>;
 }
