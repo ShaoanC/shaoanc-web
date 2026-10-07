@@ -45,7 +45,7 @@ function verifyPassword(password, storedHash) {
 }
 
 function publicUser(user) {
-    return { id: user.id, username: user.username, role: user.role, active: Boolean(user.active) };
+    return { id: user.id, username: user.username, role: user.role, active: Boolean(user.active), avatar: user.avatar || null };
 }
 
 function tokenHash(token) {

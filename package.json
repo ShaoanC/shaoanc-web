@@ -1,7 +1,7 @@
 {
   "name": "www.shaoanc.cn",
   "version": "1.0.0",
-  "description": "Shaoan 的个人网站与智能错题整理系统",
+  "description": "ShaoanC 的个人网站与智能错题整理系统",
   "main": "server/app.js",
   "scripts": {
     "start": "node server/app.js",

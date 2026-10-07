@@ -87,6 +87,16 @@ async function main() {
     const invites = await admin('GET', '/admin/invites');
     assert.equal(invites.find((invite) => invite.id === inviteAlice.id).usedCount, 1);
 
+    const avatar = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=';
+    await anonymous('PATCH', '/auth/avatar', { avatar }, 401);
+    assert.equal((await alice('PATCH', '/auth/avatar', { avatar })).user.avatar, avatar);
+    assert.equal((await alice('GET', '/auth/me')).user.avatar, avatar);
+    assert.equal((await bob('GET', '/auth/me')).user.avatar, null);
+    await alice('PATCH', '/auth/avatar', { avatar: 'data:image/png;base64,YmFk' }, 400);
+    await alice('PATCH', '/auth/avatar', { avatar: 'x'.repeat(350001) }, 400);
+    assert.equal((await alice('GET', '/auth/me')).user.avatar, avatar);
+    assert.equal((await alice('PATCH', '/auth/avatar', { avatar: null })).user.avatar, null);
+
     const knowledgePoints = await alice('GET', '/knowledge-points');
     const mathPoints = knowledgePoints.filter((point) => point.subjectId === 'math' && point.parentId !== null);
     const physicsPoint = knowledgePoints.find((point) => point.subjectId === 'physics');

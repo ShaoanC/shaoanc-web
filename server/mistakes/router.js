@@ -165,6 +165,24 @@ router.post('/auth/logout', (req, res) => {
 
 router.use(requireUser);
 
+router.patch('/auth/avatar', (req, res) => {
+    const { avatar } = req.body || {};
+    if (avatar !== null) {
+        if (typeof avatar !== 'string' || avatar.length > 350000) {
+            fail(400, '头像文件过大，请重新选择图片');
+        }
+        const match = avatar.match(/^data:image\/(png|jpeg);base64,([A-Za-z0-9+/]+={0,2})$/);
+        if (!match) fail(400, '请上传 PNG 或 JPEG 图片');
+        const bytes = Buffer.from(match[2], 'base64');
+        const valid = match[1] === 'png'
+            ? bytes.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))
+            : bytes.length > 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+        if (!valid) fail(400, '图片格式无效');
+    }
+    db.prepare('UPDATE users SET avatar = ? WHERE id = ?').run(avatar, req.user.id);
+    success(res, { user: publicUser({ ...req.user, avatar }) });
+});
+
 router.patch('/auth/password', (req, res) => {
     const { currentPassword, newPassword } = req.body || {};
     if (!verifyPassword(currentPassword, req.user.password_hash)) {

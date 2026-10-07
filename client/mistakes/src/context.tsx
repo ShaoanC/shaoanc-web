@@ -3,6 +3,7 @@ import type { KnowledgePoint, Subject, User } from './types';
 
 export interface AppState {
   user: User;
+  updateUser: (user: User) => void;
   subjects: Subject[];
   knowledgePoints: KnowledgePoint[];
   refreshDirectory: () => Promise<void>;

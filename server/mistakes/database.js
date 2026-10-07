@@ -72,6 +72,11 @@ db.exec(`
     CREATE INDEX IF NOT EXISTS reviews_mistake ON reviews(mistake_id, id);
 `);
 
+// Upgrade existing accounts without changing their data.
+if (!db.prepare('PRAGMA table_info(users)').all().some((column) => column.name === 'avatar')) {
+    db.exec('ALTER TABLE users ADD COLUMN avatar TEXT');
+}
+
 const initialDirectory = [
     ['math', '数学', [
         ['集合与逻辑', ['集合及其运算', '充分条件与必要条件', '全称与存在量词']],

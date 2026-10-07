@@ -7,6 +7,7 @@ export interface User {
   username: string;
   role: 'admin' | 'user';
   active: boolean;
+  avatar: string | null;
 }
 
 export interface Subject {
