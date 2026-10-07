@@ -55,6 +55,7 @@ db.exec(`
         primary_knowledge_point_id INTEGER REFERENCES knowledge_points(id) ON DELETE SET NULL,
         auxiliary_knowledge_point_ids TEXT NOT NULL DEFAULT '[]',
         lifecycle TEXT NOT NULL DEFAULT 'draft' CHECK (lifecycle IN ('draft', 'archived')),
+        is_test INTEGER NOT NULL DEFAULT 0,
         question TEXT NOT NULL DEFAULT '',
         answer TEXT NOT NULL DEFAULT '',
         analysis TEXT NOT NULL DEFAULT '',
@@ -75,6 +76,9 @@ db.exec(`
 // Upgrade existing accounts without changing their data.
 if (!db.prepare('PRAGMA table_info(users)').all().some((column) => column.name === 'avatar')) {
     db.exec('ALTER TABLE users ADD COLUMN avatar TEXT');
+}
+if (!db.prepare('PRAGMA table_info(mistakes)').all().some((column) => column.name === 'is_test')) {
+    db.exec('ALTER TABLE mistakes ADD COLUMN is_test INTEGER NOT NULL DEFAULT 0');
 }
 
 const initialDirectory = [

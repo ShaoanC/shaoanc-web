@@ -1,6 +1,7 @@
 const crypto = require('node:crypto');
 const express = require('express');
 const { db } = require('./database');
+const { generateTestMistakes } = require('./test-data');
 const {
     fail, validateCredentials, validatePassword, hashPassword, verifyPassword, publicUser,
     createSession, clearSession, loadSession, requireUser, requireAdmin
@@ -36,6 +37,7 @@ function serializeMistake(row) {
         primaryKnowledgePointId: row.primary_knowledge_point_id,
         auxiliaryKnowledgePointIds: JSON.parse(row.auxiliary_knowledge_point_ids),
         lifecycle: row.lifecycle,
+        isTest: Boolean(row.is_test),
         question: row.question,
         answer: row.answer,
         analysis: row.analysis,
@@ -308,6 +310,13 @@ router.get('/mistakes', (req, res) => {
     }
     const where = ['m.user_id = ?'];
     const parameters = [req.user.id];
+    if (req.query.dataType) {
+        if (!['test', 'formal'].includes(req.query.dataType)) {
+            fail(400, '无效的数据类型');
+        }
+        where.push('m.is_test = ?');
+        parameters.push(req.query.dataType === 'test' ? 1 : 0);
+    }
     if (lifecycle !== 'all') {
         where.push('m.lifecycle = ?');
         parameters.push(lifecycle);
@@ -361,6 +370,15 @@ router.post('/mistakes', (req, res) => {
         values.lifecycle, values.question, values.answer, values.analysis, values.note, now, now);
     const row = db.prepare(`${mistakeSelect} WHERE m.id = ?`).get(inserted.lastInsertRowid);
     success(res, serializeMistake(row), 201);
+});
+
+router.post('/mistakes/test-data', (req, res) => {
+    success(res, { count: generateTestMistakes(req.user.id) }, 201);
+});
+
+router.delete('/mistakes/test-data', (req, res) => {
+    const deleted = db.prepare('DELETE FROM mistakes WHERE user_id = ? AND is_test = 1').run(req.user.id);
+    success(res, { count: deleted.changes });
 });
 
 router.get('/mistakes/:id', (req, res) => {
@@ -420,6 +438,7 @@ router.get('/stats', (req, res) => {
         total: rows.length,
         archived: archived.length,
         drafts: rows.length - archived.length,
+        testCount: rows.filter((row) => row.is_test === 1).length,
         reviewCount: rows.reduce((total, row) => total + row.reviews_count, 0),
         bySubject: subjects.map((subject) => ({ ...subject, count: archived.filter((row) => row.subject_id === subject.id).length })),
         byStatus: Object.entries(STATUS_NAMES).map(([id, name]) => ({ id, name, count: archived.filter((row) => row.latest_review_result === id).length })),

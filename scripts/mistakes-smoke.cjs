@@ -171,6 +171,51 @@ async function main() {
     assert.equal(reviewStats.byStatus.find((status) => status.id === 'familiar').count, 1);
     assert.equal(reviewStats.bySubject.find((subject) => subject.id === 'math').count, 1);
 
+    await anonymous('POST', '/mistakes/test-data', undefined, 401);
+    await anonymous('DELETE', '/mistakes/test-data', undefined, 401);
+    const formalWithTestText = await alice('POST', '/mistakes', {
+        ...mistakeFields, question: '测试文字也可以是正式错题', lifecycle: 'archived', isTest: true
+    }, 201);
+    assert.equal(formalWithTestText.isTest, false, 'Ordinary creation cannot assign the test marker');
+    assert.equal((await alice('PATCH', `/mistakes/${formalWithTestText.id}`, {
+        isTest: true, note: '测试题标签由服务器管理'
+    })).isTest, false, 'Ordinary editing cannot turn a formal mistake into test data');
+    assert.equal((await alice('POST', '/mistakes/test-data', undefined, 201)).count, 6);
+    assert.equal((await bob('POST', '/mistakes/test-data', undefined, 201)).count, 6);
+    const testMistakes = await alice('GET', '/mistakes?lifecycle=all&dataType=test');
+    assert.equal(testMistakes.length, 6);
+    assert.ok(testMistakes.every((mistake) => mistake.isTest === true));
+    assert.equal(testMistakes.filter((mistake) => mistake.lifecycle === 'archived').length, 5);
+    assert.equal(testMistakes.filter((mistake) => mistake.lifecycle === 'draft').length, 1);
+    const formalMistakes = await alice('GET', '/mistakes?lifecycle=all&dataType=formal');
+    assert.deepEqual(
+        formalMistakes.map((mistake) => mistake.id).sort((a, b) => a - b),
+        [aliceMistake.id, formalWithTestText.id].sort((a, b) => a - b)
+    );
+    assert.ok(formalMistakes.every((mistake) => mistake.isTest === false));
+    assert.equal((await alice('GET', '/stats')).testCount, 6);
+    const reviewedTestMistake = testMistakes.find((mistake) => mistake.lifecycle === 'archived');
+    await alice('POST', `/mistakes/${reviewedTestMistake.id}/reviews`, { result: 'familiar' }, 201);
+    const editedTestMistake = await alice('PATCH', `/mistakes/${reviewedTestMistake.id}`, {
+        question: 'Edited question with no sample wording', lifecycle: 'draft', isTest: false
+    });
+    assert.equal(editedTestMistake.isTest, true, 'Editing and changing lifecycle preserve the test marker');
+    assert.equal((await alice('DELETE', '/mistakes/test-data')).count, 6);
+    assert.deepEqual(await alice('GET', '/mistakes?lifecycle=all&dataType=test'), []);
+    assert.equal((await alice('GET', `/mistakes/${formalWithTestText.id}`)).isTest, false);
+    assert.equal((await alice('GET', `/mistakes/${aliceMistake.id}`)).id, aliceMistake.id);
+    const clearedTestStats = await alice('GET', '/stats');
+    assert.deepEqual(
+        [clearedTestStats.total, clearedTestStats.testCount, clearedTestStats.reviewCount],
+        [2, 0, reviewStats.reviewCount],
+        'Clearing test data preserves formal mistakes and removes test reviews'
+    );
+    assert.equal((await bob('GET', '/mistakes?lifecycle=all&dataType=test')).length, 6,
+        'Clearing test data does not affect another account');
+    assert.equal((await alice('DELETE', '/mistakes/test-data')).count, 0);
+    assert.equal((await bob('DELETE', '/mistakes/test-data')).count, 6);
+    await alice('DELETE', `/mistakes/${formalWithTestText.id}`);
+
     const previousSession = client();
     await previousSession('POST', '/auth/login', { username: 'smoke_alice', password: initialPassword });
     const newPassword = 'ChangedSmokePassword2026!';

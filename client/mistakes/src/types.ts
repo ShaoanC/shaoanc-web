@@ -24,6 +24,7 @@ export interface KnowledgePoint {
 }
 
 export interface Mistake {
+  isTest: boolean;
   id: number;
   subjectId: string | null;
   primaryKnowledgePointId: number | null;
@@ -46,6 +47,7 @@ export interface Review {
 }
 
 export interface Stats {
+  testCount: number;
   total: number;
   archived: number;
   drafts: number;

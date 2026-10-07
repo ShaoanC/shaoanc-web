@@ -2,13 +2,14 @@ import { useEffect, useState } from 'react';
 import { ArrowLeft, Check, FileText, Layers, LoaderCircle, Save, StickyNote } from 'lucide-react';
 import { api, json, navigate } from '../api';
 import { knowledgeLabel, useApp } from '../context';
-import { ErrorState, PageHeader } from '../components';
+import { DataTypeBadge, ErrorState, PageHeader } from '../components';
 import { LoadingContent } from '../motion';
 import { MarkdownField } from '../MarkdownField';
 import type { Lifecycle, Mistake } from '../types';
 
 export function EditorPage({ id }: { id?: number }) {
   const { subjects, knowledgePoints, notify } = useApp();
+  const [isTest, setIsTest] = useState(false);
   const [subjectId, setSubjectId] = useState('');
   const [primaryId, setPrimaryId] = useState('');
   const [auxiliaryIds, setAuxiliaryIds] = useState<number[]>([]);
@@ -28,6 +29,7 @@ export function EditorPage({ id }: { id?: number }) {
   useEffect(() => {
     if (!id) return;
     api<Mistake>(`/mistakes/${id}`).then((item) => {
+      setIsTest(item.isTest);
       setSubjectId(item.subjectId || '');
       setPrimaryId(item.primaryKnowledgePointId ? String(item.primaryKnowledgePointId) : '');
       setAuxiliaryIds(item.auxiliaryKnowledgePointIds);
@@ -56,7 +58,7 @@ export function EditorPage({ id }: { id?: number }) {
 
   return <>
     <a className="back-link" href={id ? `#/mistakes/${id}` : '#/mistakes'}><ArrowLeft size={16} /> {id ? '返回错题详情' : '返回我的错题'}</a>
-    <PageHeader eyebrow="留下题目，也留下思路" title={id ? '编辑错题' : '录入错题'} description="记录完整题干，补充答案和错因，再标注对应的知识点。" action={<span className="small-pill"><FileText size={14} /> 手动录入</span>} />
+    <PageHeader eyebrow="留下题目，也留下思路" title={id ? '编辑错题' : '录入错题'} description="记录完整题干，补充答案和错因，再标注对应的知识点。" action={<DataTypeBadge isTest={isTest} />} />
     <LoadingContent loading={loading} kind="editor">
     {loadError ? <ErrorState message={loadError} /> :
     <form onSubmit={(event) => { event.preventDefault(); void save('archived'); }}>

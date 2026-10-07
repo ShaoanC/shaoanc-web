@@ -11,6 +11,10 @@ export function ErrorState({ message, retry }: { message: string; retry?: () => 
   return <div className="error-state"><p>{message}</p>{retry && <button className="button secondary" onClick={retry}>重新加载</button>}</div>;
 }
 
+export function DataTypeBadge({ isTest }: { isTest: boolean }) {
+  return <span className={isTest ? 'data-type-badge test' : 'data-type-badge'}>{isTest ? '测试错题' : '正式错题'}</span>;
+}
+
 export function StatusBadge({ status }: { status: KnowledgeStatus }) {
   return <span className={`status-badge status-${status}`}><span />{STATUS_LABELS[status]}</span>;
 }
