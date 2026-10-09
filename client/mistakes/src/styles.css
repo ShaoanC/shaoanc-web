@@ -934,24 +934,36 @@ input[type='checkbox'] {
 .modal .field { margin-bottom: 16px; }
 
 /* ─── React-Toastify overrides ──────────────────────────────── */
-.Toastify__toast-container { font-family: 'Noto Sans SC', 'PingFang SC', sans-serif !important; }
-.Toastify__toast {
-  background: var(--surface-3) !important;
-  border: 1px solid var(--border-medium) !important;
-  border-radius: var(--radius-lg) !important;
-  overflow: hidden;
-  color: var(--text-primary) !important;
-  font-size: 17px !important;
-  box-shadow: none;
-  padding: 12px 16px !important;
+.Toastify__toast-container.mistakes-toast-container {
+  --toastify-toast-bd-radius: 0px;
+  --toastify-font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --toastify-color-progress-light: var(--primary);
+  --toastify-color-progress-success: var(--success);
+  --toastify-color-progress-error: var(--error);
+  max-width: calc(100vw - 32px);
+  font-family: var(--toastify-font-family);
 }
-.Toastify__toast--success { border-color: rgba(23,100,72,.25) !important; }
-.Toastify__toast--error   { border-color: rgba(174,68,59,.25) !important; }
-.Toastify__toast-body { font-size: 17px !important; line-height: 1.5 !important; }
-.Toastify__progress-bar--success { background: var(--success) !important; }
-.Toastify__progress-bar--error   { background: var(--error)   !important; }
-.Toastify__close-button { color: var(--text-tertiary) !important; opacity: 1 !important; }
-.Toastify__close-button:hover { color: var(--text-primary) !important; }
+.mistakes-toast-container .Toastify__toast {
+  background: var(--surface-2);
+  border: 1px solid var(--border-medium);
+  border-left: 4px solid var(--primary);
+  border-radius: 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 16px;
+  line-height: 1.75;
+  box-shadow: none;
+  padding: 16px 28px 16px 18px;
+}
+.mistakes-toast-container .Toastify__toast--error { border-left-color: var(--error); }
+.mistakes-toast-container .Toastify__toast-icon svg { fill: var(--primary); }
+.mistakes-toast-container .Toastify__toast--error .Toastify__toast-icon svg { fill: var(--error); }
+/* The library injects its CSS after mount; scoped selectors keep these overrides stable. */
+.mistakes-toast-container .Toastify__progress-bar--wrp { height: 3px; border-radius: 0; }
+.mistakes-toast-container .Toastify__progress-bar,
+.mistakes-toast-container .Toastify__progress-bar--bg { border-radius: 0; }
+.mistakes-toast-container .Toastify__close-button { color: var(--text-tertiary); opacity: 1; }
+.mistakes-toast-container .Toastify__close-button:hover { color: var(--text-primary); }
 
 /* ─── Auth page ─────────────────────────────────────────────── */
 .auth-page {
@@ -1504,13 +1516,6 @@ input[type='checkbox'] { width: 19px; height: 19px; min-height: 19px; }
 .modal-heading h2 { font-size: 24px; }
 .modal-description { font-size: 17px; }
 @keyframes modal-appear { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-.Toastify__toast-container { max-width: calc(100vw - 32px); font-family: 'Noto Sans SC', sans-serif !important; }
-.Toastify__toast { background: var(--surface-2) !important; color: var(--text-primary) !important; border: 1px solid var(--border-medium) !important; border-left: 4px solid var(--primary) !important; border-radius: 3px !important; box-shadow: none !important; padding: 16px 18px !important; font-size: 16px !important; }
-.Toastify__toast--error { border-left-color: var(--error) !important; }
-.Toastify__toast-body { font-size: 16px !important; line-height: 1.75 !important; }
-.Toastify__toast-icon svg { fill: var(--primary); }
-.Toastify__toast--error .Toastify__toast-icon svg { fill: var(--error); }
-.Toastify__progress-bar--default { background: var(--primary) !important; }
 
 /* The login scene is an open notebook, with no decorative gradient. */
 .auth-story { background: var(--surface-1); padding: 48px 58px; }
@@ -1799,8 +1804,17 @@ input[type='checkbox'] { width: 19px; height: 19px; min-height: 19px; }
   .modal { padding: 24px 20px; max-height: calc(100dvh - 32px); overflow-y: auto; }
   .modal-heading h2 { font-size: 22px; }
   .modal-description { font-size: 16px; }
-  .Toastify__toast-container { width: calc(100vw - 32px); margin: 16px; left: 0; right: 0; }
-  .Toastify__toast { margin-bottom: 12px !important; }
+  .Toastify__toast-container.mistakes-toast-container {
+    top: calc(16px + env(safe-area-inset-top, 0px));
+    left: calc(16px + env(safe-area-inset-left, 0px));
+    right: calc(16px + env(safe-area-inset-right, 0px));
+    width: auto;
+    max-width: none;
+    margin: 0;
+    transform: none;
+    align-items: stretch;
+  }
+  .mistakes-toast-container .Toastify__toast { width: 100%; margin-bottom: 12px; }
   .auth-page { grid-template-columns: minmax(0,1fr); }
   .auth-story { padding: 25px 24px 22px; }
   .auth-story .brand { padding-bottom: 0; }

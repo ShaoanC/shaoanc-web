@@ -187,6 +187,18 @@ async function main() {
     assert.ok(testMistakes.every((mistake) => mistake.isTest === true));
     assert.equal(testMistakes.filter((mistake) => mistake.lifecycle === 'archived').length, 5);
     assert.equal(testMistakes.filter((mistake) => mistake.lifecycle === 'draft').length, 1);
+    const richTextFields = ['question', 'answer', 'analysis', 'note'];
+    const sampleContent = testMistakes.flatMap((mistake) => richTextFields.map((field) => mistake[field])).join('\n');
+    assert.ok(testMistakes.every((mistake) => /^## /m.test(mistake.question) && mistake.question.includes('$')),
+        'Every sample question includes Markdown and LaTeX');
+    assert.ok([/^\|.+\|$/m, /^(?:```|~~~)/m, /^- \[[ x]\]/m, /\$\$/, /\\begin\{aligned\}/,
+        /\\begin\{cases\}/, /\\begin\{pmatrix\}/, /\\sum/].every((pattern) => pattern.test(sampleContent)),
+        'Samples cover tables, code, tasks, display math, aligned derivations, cases, matrices and sums');
+    assert.ok(testMistakes.every((mistake) => richTextFields.every((field) => mistake[field].includes('\n'))),
+        'Stored sample fields preserve multiline content');
+    const richSampleDetail = await alice('GET', `/mistakes/${testMistakes[0].id}`);
+    assert.deepEqual(richTextFields.map((field) => richSampleDetail[field]),
+        richTextFields.map((field) => testMistakes[0][field]), 'Detail reads preserve Markdown and LaTeX verbatim');
     const formalMistakes = await alice('GET', '/mistakes?lifecycle=all&dataType=formal');
     assert.deepEqual(
         formalMistakes.map((mistake) => mistake.id).sort((a, b) => a - b),
