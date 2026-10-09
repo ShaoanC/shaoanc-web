@@ -3,6 +3,7 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import remarkBreaks from 'remark-breaks';
 import rehypeKatex from 'rehype-katex';
+import { ScrollArea } from './ScrollArea';
 import type { Nodes, PhrasingContent, Root } from 'mdast';
 import 'katex/dist/katex.min.css';
 
@@ -73,7 +74,7 @@ function remarkCompact() {
 }
 
 const fullComponents: Components = {
-  table: ({ node: _node, ...props }) => <div className="markdown-table-scroll"><table {...props} /></div>,
+  table: ({ node: _node, ...props }) => <ScrollArea axis="horizontal" className="markdown-table-scroll" tabIndex={0} role="region" aria-label="表格，可横向滚动"><table {...props} /></ScrollArea>,
 };
 
 const compactComponents: Components = {
