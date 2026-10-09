@@ -65,10 +65,18 @@ export default function App() {
   const pendingWelcome = useRef<string | null>(null);
 
   useEffect(() => {
-    api<{ user: User | null }>('/auth/me').then((result) => setUser(result.user)).catch(() => setUser(null)).finally(() => setInitializing(false));
+    let active = true;
+    const openingRoute = (window.location.hash.slice(1) || '/mistakes').split('?')[0];
+    api<{ user: User | null }>('/auth/me').then((result) => {
+      if (!active) return;
+      if (result.user && ['/mistakes', '/'].includes(openingRoute)) {
+        pendingWelcome.current = `欢迎回来，${result.user.username}！`;
+      }
+      setUser(result.user);
+    }).catch(() => { if (active) setUser(null); }).finally(() => { if (active) setInitializing(false); });
     const onHash = () => { setPath(window.location.hash.slice(1) || '/mistakes'); window.scrollTo(0, 0); };
     window.addEventListener('hashchange', onHash);
-    return () => window.removeEventListener('hashchange', onHash);
+    return () => { active = false; window.removeEventListener('hashchange', onHash); };
   }, []);
 
   const notify = useCallback((message: string, kind: 'success' | 'error' = 'success') => { toast[kind](message); }, []);
