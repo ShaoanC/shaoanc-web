@@ -8,7 +8,7 @@ import { LoadingContent, SlidingTabs } from '../motion';
 import type { Mistake, Stats } from '../types';
 
 export function MistakesPage() {
-  const { subjects, knowledgePoints, notify } = useApp();
+  const { subjects, knowledgePoints } = useApp();
   const [mistakes, setMistakes] = useState<Mistake[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [lifecycle, setLifecycle] = useState('archived');
@@ -20,7 +20,6 @@ export function MistakesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [dataType, setDataType] = useState('');
-  const [testBusy, setTestBusy] = useState<'generate' | 'delete' | null>(null);
   const [view, setView] = useState<'list' | 'grid'>('list');
   const requestVersion = useRef(0);
 
@@ -54,16 +53,6 @@ export function MistakesPage() {
   useEffect(() => { void load(); }, [load]);
   const hasFilters = Boolean(subjectId || knowledgePointId || status || keyword || dataType);
   const clearFilters = () => { setDataType(''); setSubjectId(''); setKnowledgePointId(''); setStatus(''); setKeyword(''); setSearch(''); };
-  async function manageTestData(action: 'generate' | 'delete') {
-    setTestBusy(action);
-    try {
-      const result = await api<{ count: number }>('/mistakes/test-data', { method: action === 'generate' ? 'POST' : 'DELETE' });
-      notify(action === 'generate' ? '已生成 ' + result.count + ' 道测试错题（含 1 道草稿）。' : '已删除 ' + result.count + ' 道测试错题及其复习记录。');
-      if (action === 'generate') { clearFilters(); setLifecycle('archived'); }
-      await load();
-    } catch (err) { notify((err as Error).message, 'error'); }
-    finally { setTestBusy(null); }
-  }
   const subjectKnowledge = knowledgePoints.filter((point) => !subjectId || point.subjectId === subjectId);
   const metrics = [
     { label: '已归档错题', value: stats?.archived, icon: BookOpen, tone: 'green', hint: '已整理，可加入复习' },
@@ -75,7 +64,6 @@ export function MistakesPage() {
   return <>
     <PageHeader eyebrow="收集问题，积累答案" title="我的错题" description="记录做错的题，找到薄弱的知识点，再练到真正掌握。" action={<a className="button primary" href="#/new"><Plus size={18} /> 录入错题</a>} />
     <LoadingContent loading={!stats && loading} kind="summary"><div className="metrics-grid">{metrics.map(({ label, value, icon: Icon, tone, hint }) => <div className="metric-card" key={label}><div className="metric-top"><span>{label}</span><span className={`metric-icon ${tone}`}><Icon size={19} /></span></div><div className="metric-value">{value ?? <span className="text-muted">—</span>}<span>{label === '累计复习' ? '次' : '道'}</span></div><div className="metric-hint">{hint}</div></div>)}</div></LoadingContent>
-    <section className="test-data-tools" aria-label="测试错题工具"><div><strong>体验错题本</strong><p>每次生成 6 道示例，带有“测试错题”标签，可用于编辑和复习。当前账号共 {stats?.testCount ?? <span className="text-muted">—</span>} 道测试错题。</p><small>删除覆盖所有筛选条件、归档和草稿，仅删除测试错题及其复习记录，保留正式错题。测试数据会计入学习统计。</small></div><div className="test-data-actions"><button className="button secondary" disabled={Boolean(testBusy)} onClick={() => void manageTestData('generate')}>{testBusy === 'generate' ? '正在生成…' : '一键生成测试错题'}</button><button className="button ghost danger-text" disabled={Boolean(testBusy) || !stats?.testCount} onClick={() => void manageTestData('delete')}>{testBusy === 'delete' ? '正在删除…' : '一键删除所有测试错题'}</button></div></section>
     <div className="library-panel"><div className="library-heading"><SlidingTabs value={lifecycle} onChange={setLifecycle} ariaLabel="错题状态" tabs={[{ id: 'archived', label: <>已归档<span>{stats?.archived ?? <span className="text-muted">—</span>}</span></> }, { id: 'draft', label: <>草稿箱<span>{stats?.drafts ?? <span className="text-muted">—</span>}</span></> }]} /><a className="text-link" href="#/review"><RotateCcw size={15} /> 去复习<ArrowRight size={15} /></a></div>
       <div className="filter-bar"><label className="search-input"><Search size={18} /><input aria-label="搜索错题" placeholder="搜索题干、答案或笔记…" value={keyword} onChange={(event) => setKeyword(event.target.value)} />{keyword && <button className="icon-button" aria-label="清除搜索" onClick={() => setKeyword('')}><X size={15} /></button>}</label><select aria-label="按学科筛选" value={subjectId} onChange={(event) => { setSubjectId(event.target.value); setKnowledgePointId(''); }}><option value="">全部学科</option>{subjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.name}</option>)}</select><select aria-label="按知识点筛选" value={knowledgePointId} onChange={(event) => setKnowledgePointId(event.target.value)}><option value="">全部知识点</option>{subjectKnowledge.map((point) => <option key={point.id} value={point.id}>{knowledgeLabel(knowledgePoints, point.id)}</option>)}</select><select aria-label="按掌握程度筛选" value={status} onChange={(event) => setStatus(event.target.value)}><option value="">全部掌握程度</option><option value="unreviewed">未复习</option><option value="unknown">不会</option><option value="familiar">不熟</option><option value="mastered">掌握</option></select></div>
       <div className="data-type-filter"><label>数据类型 <select aria-label="按数据类型筛选" value={dataType} onChange={(event) => setDataType(event.target.value)}><option value="">全部错题</option><option value="formal">正式错题</option><option value="test">测试错题</option></select></label></div><div className="results-toolbar"><span><SlidersHorizontal size={14} /> {hasFilters ? '筛选结果' : lifecycle === 'draft' ? '继续完善你的草稿' : '你的学习积累'}<strong>{loading ? '…' : mistakes.length}</strong> 道{hasFilters && <button className="reset-filter" onClick={clearFilters}>清除筛选</button>}</span><div className="view-switch" aria-label="展示方式"><button className={view === 'list' ? 'active' : ''} onClick={() => setView('list')} aria-label="列表视图" aria-pressed={view === 'list'}><List size={17} /></button><button className={view === 'grid' ? 'active' : ''} onClick={() => setView('grid')} aria-label="卡片视图" aria-pressed={view === 'grid'}><LayoutGrid size={16} /></button></div></div>

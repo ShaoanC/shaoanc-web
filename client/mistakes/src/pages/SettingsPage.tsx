@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
-import { Check, ChevronRight, Copy, KeyRound, Layers, LoaderCircle, LockKeyhole, Pencil, Plus, ShieldCheck, Trash2, Users } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Check, ChevronRight, Copy, FlaskConical, KeyRound, Layers, LoaderCircle, LockKeyhole, Pencil, Plus, ShieldCheck, Trash2, Users } from 'lucide-react';
 import { api, formatDate, json } from '../api';
 import { knowledgeLabel, useApp } from '../context';
 import { EmptyState, ErrorState, Modal, PageHeader } from '../components';
 import { LoadingContent, SlidingTabs } from '../motion';
 import { ScrollArea } from '../ScrollArea';
-import type { Invite, KnowledgePoint, User } from '../types';
+import type { Invite, KnowledgePoint, Stats, User } from '../types';
 
 export function SettingsPage() {
   const { user, updateUser, subjects, knowledgePoints, refreshDirectory, notify } = useApp();
@@ -137,8 +137,9 @@ export function SettingsPage() {
   }
 
   return <>
-    <PageHeader eyebrow="管理账号与分类目录" title="设置" description={user.role === 'admin' ? '管理账号安全、邀请码与学习目录。' : '修改登录密码，查看当前账号信息。'} />
-    {user.role === 'admin' && <SlidingTabs className="settings-tabs" ariaLabel="设置分类" value={tab} onChange={setTab} tabs={[{ id: 'account', label: <><ShieldCheck size={18} />账号安全</> }, { id: 'invites', label: <><KeyRound size={18} />邀请码</> }, { id: 'users', label: <><Users size={18} />用户账号</> }, { id: 'knowledge', label: <><Layers size={18} />知识点目录</> }]} />}
+    <PageHeader eyebrow="管理账号与分类目录" title="设置" description={user.role === 'admin' ? '管理账号安全、邀请码、学习目录与测试错题。' : '修改登录密码，查看当前账号信息。'} />
+    {user.role === 'admin' && <SlidingTabs className="settings-tabs" ariaLabel="设置分类" value={tab} onChange={setTab} tabs={[{ id: 'account', label: <><ShieldCheck size={18} />账号安全</> }, { id: 'invites', label: <><KeyRound size={18} />邀请码</> }, { id: 'users', label: <><Users size={18} />用户账号</> }, { id: 'knowledge', label: <><Layers size={18} />知识点目录</> }, { id: 'test-data', label: <><FlaskConical size={18} />测试错题</> }]} />}
+    {user.role === 'admin' && tab === 'test-data' && <TestDataSettings />}
     {tab === 'account' && <div className="settings-account-layout"><section className="panel password-panel"><div className="panel-title"><span className="panel-title-icon violet"><LockKeyhole size={18} /></span><div><h2>修改密码</h2><p>设置一个只有你知道的密码。</p></div></div><form onSubmit={changePassword}><label className="field"><span>当前密码</span><input type="password" autoComplete="current-password" required value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} placeholder="输入当前密码" /></label><label className="field"><span>新密码</span><input type="password" autoComplete="new-password" required minLength={8} maxLength={128} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} placeholder="至少 8 位密码" /></label><label className="field"><span>确认新密码</span><input type="password" autoComplete="new-password" required minLength={8} maxLength={128} value={repeatPassword} onChange={(event) => setRepeatPassword(event.target.value)} placeholder="再次输入新密码" /></label>{passwordError && <div className="form-error" role="alert">{passwordError}</div>}<button className="button primary" disabled={passwordBusy}>{passwordBusy ? <LoaderCircle className="spin" size={17} /> : <Check size={17} />} 保存新密码</button></form></section><aside className="panel account-summary"><span className="large-avatar">{user.avatar ? <img src={user.avatar} alt="" /> : user.username.slice(0, 1).toUpperCase()}</span><input ref={avatarInput} type="file" accept="image/jpeg,image/png,image/webp" hidden disabled={avatarBusy} onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void saveAvatar(file); }} /><div className="avatar-actions"><button className="button secondary" disabled={avatarBusy} onClick={() => avatarInput.current?.click()}>{avatarBusy ? <LoaderCircle className="spin" size={16} /> : null}{avatarBusy ? '正在保存…' : user.avatar ? '更换头像' : '上传头像'}</button>{user.avatar && <button className="table-button" disabled={avatarBusy} onClick={() => void saveAvatar(null)}>恢复默认</button>}</div><p className="avatar-hint">JPG、PNG、WebP，最大 5 MB<br />自动居中裁剪为方形</p>{avatarError && <div className="form-error" role="alert">{avatarError}</div>}<h2>{user.username}</h2><span className="small-pill">{user.role === 'admin' ? '管理员账号' : '学习账号'}</span><div className="account-summary-note"><ShieldCheck size={20} /><strong>专属于你的错题本</strong><p>整理的题目、笔记与复习记录<br />会保存在你的账号下。</p></div></aside></div>}
     {['invites', 'users'].includes(tab) && <LoadingContent loading={adminLoading} kind="settings">{adminError ? <ErrorState message={adminError} /> : tab === 'invites' ? <section className="panel admin-panel"><div className="admin-panel-heading"><div><h2>邀请新同学</h2><p>每个邀请码可创建一个账号，使用后失效。</p></div><button className="button primary" disabled={generating} onClick={generateInvite}>{generating ? <LoaderCircle className="spin" size={17} /> : <Plus size={17} />} 生成邀请码</button></div>{invites.length ? <ScrollArea axis="horizontal" className="admin-table-wrap" tabIndex={0} role="region" aria-label="管理表格，可横向滚动"><table className="admin-table"><thead><tr><th>邀请码</th><th>状态</th><th>生成时间</th><th>操作</th></tr></thead><tbody>{invites.map((invite) => <tr key={invite.id}><td><code className="invite-code">{invite.code}</code></td><td><span className={`simple-badge ${invite.usedCount >= invite.maxUses ? 'neutral' : invite.active && (!invite.expiresAt || new Date(invite.expiresAt) > new Date()) ? 'green' : 'neutral'}`}>{invite.usedCount >= invite.maxUses ? '已使用' : !invite.active ? '已停用' : invite.expiresAt && new Date(invite.expiresAt) <= new Date() ? '已过期' : '可使用'}</span></td><td>{formatDate(invite.createdAt, true)}</td><td><button className="table-button" onClick={() => void copyInvite(invite.code)}><Copy size={14} /> 复制</button></td></tr>)}</tbody></table></ScrollArea> : <EmptyState title="还没有邀请码" description="生成一个邀请码，邀请同学开始积累自己的错题。" />}</section> : <section className="panel admin-panel"><div className="admin-panel-heading"><div><h2>用户账号</h2><p>管理账号使用状态，或为用户重置密码。</p></div><span className="count-pill">{users.length} 个账号</span></div><ScrollArea axis="horizontal" className="admin-table-wrap" tabIndex={0} role="region" aria-label="管理表格，可横向滚动"><table className="admin-table"><thead><tr><th>用户</th><th>角色</th><th>状态</th><th>操作</th></tr></thead><tbody>{users.map((account) => <tr key={account.id}><td><div className="table-user"><span className="avatar">{account.avatar ? <img src={account.avatar} alt="" /> : account.username.slice(0, 1).toUpperCase()}</span><strong>{account.username}</strong>{account.id === user.id && <span className="current-user">当前账号</span>}</div></td><td>{account.role === 'admin' ? '管理员' : '用户'}</td><td><span className={`simple-badge ${account.active ? 'green' : 'neutral'}`}>{account.active ? '正常' : '已停用'}</span></td><td><div className="table-actions"><button className="table-button" onClick={() => { setResetUser(account); setResetPassword(''); setResetError(''); }}><KeyRound size={14} /> 重置密码</button>{account.id !== user.id && <button className={`table-button ${account.active ? 'danger-text' : ''}`} disabled={changingUser === account.id} onClick={() => void toggleUser(account)}>{changingUser === account.id ? '处理中…' : account.active ? '停用' : '启用'}</button>}</div></td></tr>)}</tbody></table></ScrollArea></section>}</LoadingContent>}
     {tab === 'knowledge' && <section className="panel admin-panel"><div className="admin-panel-heading"><div><h2>知识点目录</h2><p>维护共享的知识点，可设置父级来整理知识层次。</p></div><button className="button primary" disabled={!subjectId} onClick={() => openPoint()}><Plus size={17} /> 新建知识点</button></div><SlidingTabs className="subject-tabs" ariaLabel="知识点学科" value={subjectId} onChange={setSubjectId} tabs={subjects.map((subject) => ({ id: subject.id, label: <>{subject.name}<span>{knowledgePoints.filter((point) => point.subjectId === subject.id).length}</span></> }))} />{points.length ? <div className="directory-list">{points.map((point) => <div className={`directory-row ${point.parentId ? 'child' : ''}`} key={point.id}><span className="directory-icon">{point.parentId ? <ChevronRight size={15} /> : <Layers size={16} />}</span><div className="directory-copy"><strong>{point.name}</strong>{point.parentId && <small>父级：{knowledgePoints.find((item) => item.id === point.parentId)?.name}</small>}</div><div className="directory-actions"><button className="icon-button" aria-label={`编辑${point.name}`} onClick={() => openPoint(point)}><Pencil size={16} /></button><button className="icon-button danger-text" aria-label={`删除${point.name}`} onClick={() => setDeletePoint(point)}><Trash2 size={16} /></button></div></div>)}</div> : <EmptyState title="这个学科还没有知识点" description="建立知识点目录，让错题归类更清晰。" />}</section>}
@@ -146,4 +147,34 @@ export function SettingsPage() {
     {pointModal && <Modal title={pointModal.point ? '编辑知识点' : '新建知识点'} onClose={() => setPointModal(null)}><form onSubmit={savePoint}><p className="modal-description">学科：{subjects.find((subject) => subject.id === subjectId)?.name}</p><label className="field"><span>知识点名称</span><input required maxLength={100} value={pointName} onChange={(event) => setPointName(event.target.value)} placeholder="例如：一元二次方程" /></label><label className="field"><span>父级知识点</span><select value={parentId} onChange={(event) => setParentId(event.target.value)}><option value="">无父级（一级知识点）</option>{points.filter((point) => point.id !== pointModal.point?.id).map((point) => <option key={point.id} value={point.id}>{knowledgeLabel(knowledgePoints, point.id)}</option>)}</select></label>{pointError && <div className="form-error" role="alert">{pointError}</div>}<div className="modal-actions"><button type="button" className="button secondary" onClick={() => setPointModal(null)}>取消</button><button className="button primary" disabled={pointBusy}>{pointBusy ? '正在保存…' : '保存知识点'}</button></div></form></Modal>}
     {deletePoint && <Modal title={`删除「${deletePoint.name}」？`} onClose={() => setDeletePoint(null)}><p className="modal-description">题目与复习记录会保留，关联到此知识点的标注将被清除。如有下级知识点，请先移动或删除下级。</p><div className="modal-actions"><button className="button secondary" onClick={() => setDeletePoint(null)}>取消</button><button className="button danger" disabled={pointBusy} onClick={removePoint}>{pointBusy ? '正在删除…' : '删除知识点'}</button></div></Modal>}
   </>;
+}
+
+function TestDataSettings() {
+  const { notify } = useApp();
+  const [testCount, setTestCount] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState<'generate' | 'delete' | null>(null);
+
+  const loadCount = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try { const stats = await api<Stats>('/stats'); setTestCount(stats.testCount); }
+    catch (err) { setError((err as Error).message); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { void loadCount(); }, [loadCount]);
+
+  async function manageTestData(action: 'generate' | 'delete') {
+    setBusy(action);
+    try {
+      const result = await api<{ count: number }>('/mistakes/test-data', { method: action === 'generate' ? 'POST' : 'DELETE' });
+      notify(action === 'generate' ? '已生成 ' + result.count + ' 道测试错题（含 1 道草稿）。' : '已删除 ' + result.count + ' 道测试错题及其复习记录。');
+      await loadCount();
+    } catch (err) { notify((err as Error).message, 'error'); }
+    finally { setBusy(null); }
+  }
+
+  return <LoadingContent loading={loading} kind="settings">{error ? <ErrorState message={error} retry={loadCount} /> : <section className="test-data-tools" aria-label="测试错题工具"><div><strong>体验错题本</strong><p>每次为当前管理员账号生成 6 道示例，带有“测试错题”标签，可用于编辑和复习。当前账号共 {testCount} 道测试错题。</p><small>删除覆盖所有筛选条件、归档和草稿，仅删除当前账号的测试错题及其复习记录，保留正式错题。测试数据会计入学习统计。</small></div><div className="test-data-actions"><button className="button secondary" disabled={Boolean(busy)} onClick={() => void manageTestData('generate')}>{busy === 'generate' ? '正在生成…' : '一键生成测试错题'}</button><button className="button ghost danger-text" disabled={Boolean(busy) || !testCount} onClick={() => void manageTestData('delete')}>{busy === 'delete' ? '正在删除…' : '一键删除所有测试错题'}</button></div></section>}</LoadingContent>;
 }

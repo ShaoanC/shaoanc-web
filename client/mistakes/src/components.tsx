@@ -1,7 +1,27 @@
-import { ArrowRight, BookOpen, Check, LoaderCircle, SearchX, X } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { ArrowRight, BookOpen, Check, LoaderCircle, Minus, SearchX, X } from 'lucide-react';
+import { useEffect, useRef, type ComponentPropsWithoutRef, type ReactNode } from 'react';
 import type { KnowledgeStatus } from './types';
 import { STATUS_LABELS } from './types';
+
+type CheckboxProps = Omit<ComponentPropsWithoutRef<'input'>, 'type'> & {
+  indeterminate?: boolean;
+};
+
+export function Checkbox({ indeterminate = false, className = '', ...props }: CheckboxProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (inputRef.current) inputRef.current.indeterminate = indeterminate;
+  }, [indeterminate, props.checked]);
+
+  return <span className="checkbox-control">
+    <input {...props} ref={inputRef} type="checkbox" className={`checkbox-input ${className}`.trim()} />
+    <span className="checkbox-mark" aria-hidden="true">
+      <Check className="checkbox-tick" size={14} strokeWidth={3} />
+      <Minus className="checkbox-mixed" size={14} strokeWidth={3} />
+    </span>
+  </span>;
+}
 
 export function Spinner({ text = '正在加载…' }: { text?: string }) {
   return <div className="loading-state"><LoaderCircle className="spin" size={22} /><span>{text}</span></div>;

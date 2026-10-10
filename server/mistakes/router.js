@@ -372,11 +372,11 @@ router.post('/mistakes', (req, res) => {
     success(res, serializeMistake(row), 201);
 });
 
-router.post('/mistakes/test-data', (req, res) => {
+router.post('/mistakes/test-data', requireAdmin, (req, res) => {
     success(res, { count: generateTestMistakes(req.user.id) }, 201);
 });
 
-router.delete('/mistakes/test-data', (req, res) => {
+router.delete('/mistakes/test-data', requireAdmin, (req, res) => {
     const deleted = db.prepare('DELETE FROM mistakes WHERE user_id = ? AND is_test = 1').run(req.user.id);
     success(res, { count: deleted.changes });
 });

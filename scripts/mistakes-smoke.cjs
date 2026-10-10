@@ -48,16 +48,18 @@ async function cleanup() {
 
 async function main() {
     process.env.MISTAKES_DB_PATH = databasePath;
-    const bootstrap = spawnSync(process.execPath, ['server/mistakes/create-admin.js'], {
-        cwd: projectDirectory,
-        encoding: 'utf8',
-        env: {
-            ...process.env,
-            MISTAKES_ADMIN_USERNAME: 'smoke_admin',
-            MISTAKES_ADMIN_PASSWORD: initialPassword
-        }
-    });
-    assert.equal(bootstrap.status, 0, bootstrap.stderr || bootstrap.stdout || 'Admin bootstrap failed');
+    for (const username of ['smoke_admin', 'smoke_second_admin']) {
+        const bootstrap = spawnSync(process.execPath, ['server/mistakes/create-admin.js'], {
+            cwd: projectDirectory,
+            encoding: 'utf8',
+            env: {
+                ...process.env,
+                MISTAKES_ADMIN_USERNAME: username,
+                MISTAKES_ADMIN_PASSWORD: initialPassword
+            }
+        });
+        assert.equal(bootstrap.status, 0, bootstrap.stderr || bootstrap.stdout || 'Admin bootstrap failed');
+    }
     app = require('../server/app.js');
     server = await new Promise((resolve, reject) => {
         const listener = app.listen(0, '127.0.0.1', () => resolve(listener));
@@ -66,11 +68,13 @@ async function main() {
     baseUrl = `http://127.0.0.1:${server.address().port}/api/mistakes`;
 
     const admin = client();
+    const secondAdmin = client();
     const alice = client();
     const bob = client();
     const anonymous = client();
     const login = await admin('POST', '/auth/login', { username: 'smoke_admin', password: initialPassword });
     assert.equal(login.user.role, 'admin');
+    await secondAdmin('POST', '/auth/login', { username: 'smoke_second_admin', password: initialPassword });
 
     const inviteAlice = await admin('POST', '/admin/invites', { maxUses: 1 }, 201);
     const inviteBob = await admin('POST', '/admin/invites', { maxUses: 1 }, 201);
@@ -173,16 +177,18 @@ async function main() {
 
     await anonymous('POST', '/mistakes/test-data', undefined, 401);
     await anonymous('DELETE', '/mistakes/test-data', undefined, 401);
-    const formalWithTestText = await alice('POST', '/mistakes', {
+    await alice('POST', '/mistakes/test-data', undefined, 403);
+    const formalWithTestText = await admin('POST', '/mistakes', {
         ...mistakeFields, question: '测试文字也可以是正式错题', lifecycle: 'archived', isTest: true
     }, 201);
     assert.equal(formalWithTestText.isTest, false, 'Ordinary creation cannot assign the test marker');
-    assert.equal((await alice('PATCH', `/mistakes/${formalWithTestText.id}`, {
+    assert.equal((await admin('PATCH', `/mistakes/${formalWithTestText.id}`, {
         isTest: true, note: '测试题标签由服务器管理'
     })).isTest, false, 'Ordinary editing cannot turn a formal mistake into test data');
-    assert.equal((await alice('POST', '/mistakes/test-data', undefined, 201)).count, 6);
-    assert.equal((await bob('POST', '/mistakes/test-data', undefined, 201)).count, 6);
-    const testMistakes = await alice('GET', '/mistakes?lifecycle=all&dataType=test');
+    assert.equal((await admin('POST', '/mistakes/test-data', undefined, 201)).count, 6);
+    assert.equal((await secondAdmin('POST', '/mistakes/test-data', undefined, 201)).count, 6);
+    await alice('DELETE', '/mistakes/test-data', undefined, 403);
+    const testMistakes = await admin('GET', '/mistakes?lifecycle=all&dataType=test');
     assert.equal(testMistakes.length, 6);
     assert.ok(testMistakes.every((mistake) => mistake.isTest === true));
     assert.equal(testMistakes.filter((mistake) => mistake.lifecycle === 'archived').length, 5);
@@ -196,37 +202,39 @@ async function main() {
         'Samples cover tables, code, tasks, display math, aligned derivations, cases, matrices and sums');
     assert.ok(testMistakes.every((mistake) => richTextFields.every((field) => mistake[field].includes('\n'))),
         'Stored sample fields preserve multiline content');
-    const richSampleDetail = await alice('GET', `/mistakes/${testMistakes[0].id}`);
+    const richSampleDetail = await admin('GET', `/mistakes/${testMistakes[0].id}`);
     assert.deepEqual(richTextFields.map((field) => richSampleDetail[field]),
         richTextFields.map((field) => testMistakes[0][field]), 'Detail reads preserve Markdown and LaTeX verbatim');
-    const formalMistakes = await alice('GET', '/mistakes?lifecycle=all&dataType=formal');
+    const formalMistakes = await admin('GET', '/mistakes?lifecycle=all&dataType=formal');
     assert.deepEqual(
         formalMistakes.map((mistake) => mistake.id).sort((a, b) => a - b),
-        [aliceMistake.id, formalWithTestText.id].sort((a, b) => a - b)
+        [formalWithTestText.id]
     );
     assert.ok(formalMistakes.every((mistake) => mistake.isTest === false));
-    assert.equal((await alice('GET', '/stats')).testCount, 6);
+    assert.equal((await admin('GET', '/stats')).testCount, 6);
     const reviewedTestMistake = testMistakes.find((mistake) => mistake.lifecycle === 'archived');
-    await alice('POST', `/mistakes/${reviewedTestMistake.id}/reviews`, { result: 'familiar' }, 201);
-    const editedTestMistake = await alice('PATCH', `/mistakes/${reviewedTestMistake.id}`, {
+    await admin('POST', `/mistakes/${reviewedTestMistake.id}/reviews`, { result: 'familiar' }, 201);
+    const editedTestMistake = await admin('PATCH', `/mistakes/${reviewedTestMistake.id}`, {
         question: 'Edited question with no sample wording', lifecycle: 'draft', isTest: false
     });
     assert.equal(editedTestMistake.isTest, true, 'Editing and changing lifecycle preserve the test marker');
-    assert.equal((await alice('DELETE', '/mistakes/test-data')).count, 6);
-    assert.deepEqual(await alice('GET', '/mistakes?lifecycle=all&dataType=test'), []);
-    assert.equal((await alice('GET', `/mistakes/${formalWithTestText.id}`)).isTest, false);
+    assert.equal((await admin('DELETE', '/mistakes/test-data')).count, 6);
+    assert.deepEqual(await admin('GET', '/mistakes?lifecycle=all&dataType=test'), []);
+    assert.equal((await admin('GET', `/mistakes/${formalWithTestText.id}`)).isTest, false);
     assert.equal((await alice('GET', `/mistakes/${aliceMistake.id}`)).id, aliceMistake.id);
-    const clearedTestStats = await alice('GET', '/stats');
+    const clearedTestStats = await admin('GET', '/stats');
     assert.deepEqual(
         [clearedTestStats.total, clearedTestStats.testCount, clearedTestStats.reviewCount],
-        [2, 0, reviewStats.reviewCount],
+        [1, 0, 0],
         'Clearing test data preserves formal mistakes and removes test reviews'
     );
-    assert.equal((await bob('GET', '/mistakes?lifecycle=all&dataType=test')).length, 6,
+    assert.equal((await secondAdmin('GET', '/mistakes?lifecycle=all&dataType=test')).length, 6,
         'Clearing test data does not affect another account');
-    assert.equal((await alice('DELETE', '/mistakes/test-data')).count, 0);
-    assert.equal((await bob('DELETE', '/mistakes/test-data')).count, 6);
-    await alice('DELETE', `/mistakes/${formalWithTestText.id}`);
+    assert.equal((await admin('DELETE', '/mistakes/test-data')).count, 0);
+    assert.equal((await secondAdmin('DELETE', '/mistakes/test-data')).count, 6);
+    assert.deepEqual(await alice('GET', '/mistakes?lifecycle=all&dataType=test'), [],
+        'Rejected sample generation does not create test data for regular users');
+    await admin('DELETE', `/mistakes/${formalWithTestText.id}`);
 
     const previousSession = client();
     await previousSession('POST', '/auth/login', { username: 'smoke_alice', password: initialPassword });

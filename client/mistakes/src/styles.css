@@ -221,8 +221,39 @@ select { cursor: pointer; padding-right: 28px;
 textarea { display: block; padding: 13px 14px; font-size: 18px; line-height: 1.8; resize: vertical; min-height: 90px; }
 input::placeholder, textarea::placeholder { color: var(--text-muted); }
 input[type='checkbox'] {
-  width: 15px; height: 15px; min-height: 15px; padding: 0;
+  width: 20px; height: 20px; min-height: 20px; padding: 0;
   accent-color: var(--primary); flex-shrink: 0; cursor: pointer;
+}
+
+/* Keep a native input for labels, keyboard controls and mixed-state semantics. */
+.checkbox-control {
+  position: relative; display: inline-flex; flex: 0 0 20px;
+  width: 20px; height: 20px; vertical-align: -.2em;
+}
+input.checkbox-input {
+  position: absolute; inset: 0; z-index: 1;
+  width: 100%; height: 100%; min-height: 0;
+  margin: 0; padding: 0; border: 0; opacity: 0; cursor: pointer;
+}
+.checkbox-mark {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 100%; height: 100%; border: 1.5px solid var(--text-muted);
+  border-radius: var(--radius-md); background: var(--surface-2); color: #fff;
+  pointer-events: none; transition: background .15s, border-color .15s, outline-color .15s;
+}
+.checkbox-mark svg { display: none; }
+.checkbox-input:is(:checked, :indeterminate) + .checkbox-mark { background: var(--primary); border-color: var(--primary); }
+.checkbox-input:checked:not(:indeterminate) + .checkbox-mark .checkbox-tick,
+.checkbox-input:indeterminate + .checkbox-mark .checkbox-mixed { display: block; }
+.checkbox-input:enabled:hover + .checkbox-mark { border-color: var(--primary); }
+.checkbox-input:enabled:is(:checked, :indeterminate):hover + .checkbox-mark { background: var(--primary-dark); border-color: var(--primary-dark); }
+.checkbox-input:focus-visible + .checkbox-mark { outline: 2px solid var(--primary); outline-offset: 3px; }
+.checkbox-input:disabled { cursor: not-allowed; }
+.checkbox-input:disabled + .checkbox-mark { opacity: .5; }
+
+@media (forced-colors: active) {
+  input.checkbox-input { opacity: 1; appearance: auto; }
+  .checkbox-mark { visibility: hidden; }
 }
 
 .field { display: flex; flex-direction: column; gap: 6px; }
@@ -595,19 +626,14 @@ input[type='checkbox'] {
 .knowledge-options { display: flex; flex-wrap: wrap; gap: 6px; }
 .knowledge-option {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 5px 10px; border-radius: var(--radius-full);
+  min-height: 40px; padding: 8px 10px; border-radius: var(--radius-full);
   border: 1px solid var(--border-medium); background: var(--surface-3);
   font-size: 15px; color: var(--text-secondary); cursor: pointer;
   transition: border-color .15s, background .15s, color .15s;
 }
 .knowledge-option:hover { border-color: var(--primary); color: var(--primary); }
 .knowledge-option.selected { border-color: var(--primary); background: rgba(23,100,72,.1); color: var(--primary); }
-.knowledge-option input[type='checkbox'] { display: none; }
-.custom-check {
-  width: 13px; height: 13px; border-radius: 3px;
-  border: 1.5px solid currentColor;
-  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
-}
+.knowledge-option:has(.checkbox-input:focus-visible) { outline: 2px solid var(--primary); outline-offset: 2px; }
 .note-panel textarea { min-height: 130px; }
 .editor-tip {
   padding: 14px 16px; background: var(--surface-3);
@@ -693,7 +719,8 @@ input[type='checkbox'] {
   padding: 10px 22px 14px; font-size: 15px; color: var(--text-secondary);
   border-bottom: 1px solid var(--border-subtle); margin-bottom: 4px;
 }
-.selection-toolbar label { display: flex; align-items: center; gap: 7px; cursor: pointer; }
+.selection-toolbar label { display: flex; align-items: center; gap: 10px; min-height: 40px; cursor: pointer; }
+.selection-toolbar label:has(.checkbox-input:disabled) { color: var(--text-muted); cursor: not-allowed; }
 .selection-toolbar strong { color: var(--primary); }
 .review-candidates { display: flex; flex-direction: column; }
 .review-candidate {
@@ -704,7 +731,7 @@ input[type='checkbox'] {
 .review-candidate:last-child { border-bottom: 0; }
 .review-candidate:hover { background: var(--surface-3); }
 .review-candidate.selected { background: rgba(23,100,72,.06); }
-.review-candidate > input { flex-shrink: 0; }
+.review-candidate:has(.checkbox-input:focus-visible) { outline: 2px solid var(--primary); outline-offset: -2px; }
 .review-candidate > div { flex: 1; min-width: 0; }
 .review-candidate h3 { font-size: 16px; font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.6; }
 .review-candidate > div > span { font-size: 14px; color: var(--text-tertiary); }
@@ -1274,7 +1301,6 @@ button svg, a svg { flex-shrink: 0; }
 input, select { min-height: 48px; padding: 11px 13px; font-size: 17px; background-color: var(--surface-2); }
 textarea { font-size: 18px; line-height: 1.85; background: var(--surface-2); }
 input:focus, textarea:focus, select:focus { outline: 2px solid rgba(23,100,72,.16); outline-offset: 1px; box-shadow: none; }
-input[type='checkbox'] { width: 19px; height: 19px; min-height: 19px; }
 .field { gap: 8px; }
 .field > span, .field > label { font-size: 16px; color: var(--text-primary); }
 .field small { font-size: 14px; }
@@ -1899,7 +1925,7 @@ input[type='checkbox'] { width: 19px; height: 19px; min-height: 19px; }
 .markdown-content--full :is(th, td) { min-width: 6em; padding: .5em .75em; border: 1px solid var(--border-medium); text-align: left; }
 .markdown-content--full th { background: var(--primary-soft); font-weight: 600; }
 .markdown-content--full .task-list-item { list-style: none; }
-.markdown-content--full .task-list-item > input { margin-right: .5em; accent-color: var(--primary); }
+.markdown-content--full .task-list-item .checkbox-control { margin-right: .5em; }
 .markdown-content--full .katex { font-size: 1.05em; }
 .markdown-content--full :not(.katex-display) > .katex { display: inline-block; max-width: 100%; overflow-x: auto; overflow-y: hidden; padding: .2em 0; vertical-align: middle; }
 /* KaTeX's vlist-t2 uses a -2px right margin; keep that overhang inside the measured content. */

@@ -4,6 +4,7 @@ import remarkMath from 'remark-math';
 import remarkBreaks from 'remark-breaks';
 import rehypeKatex from 'rehype-katex';
 import { ScrollArea } from './ScrollArea';
+import { Checkbox } from './components';
 import type { Nodes, PhrasingContent, Root } from 'mdast';
 import 'katex/dist/katex.min.css';
 
@@ -76,6 +77,7 @@ function remarkCompact() {
 
 const fullComponents: Components = {
   table: ({ node: _node, ...props }) => <ScrollArea axis="horizontal" className="markdown-table-scroll" tabIndex={0} role="region" aria-label="表格，可横向滚动"><table {...props} /></ScrollArea>,
+  input: ({ node: _node, type, ...props }) => type === 'checkbox' ? <Checkbox {...props} disabled aria-label={props.checked ? '已完成' : '未完成'} /> : <input {...props} type={type} />,
 };
 
 const compactComponents: Components = {
