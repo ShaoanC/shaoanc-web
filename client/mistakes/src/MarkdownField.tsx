@@ -25,7 +25,7 @@ export function MarkdownField({ name, label, value, onChange, rows, placeholder,
       </div>
     </div>
     {preview ? <div className={`markdown-field-preview${textareaClassName ? ` ${textareaClassName}` : ''}`} role="region" aria-label={`${name}预览`}>
-      {value.trim() ? <MarkdownContent>{value}</MarkdownContent> : <p className="muted">暂无内容可预览。</p>}
+      <MarkdownContent emptyText="暂无内容可预览。">{value}</MarkdownContent>
     </div> : <textarea id={id} className={textareaClassName} aria-describedby={`${id}-hint`} rows={rows} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} maxLength={20000} />}
     <small id={`${id}-hint`} className="markdown-field-hint">
       {hint && <>{hint}<br /></>}
