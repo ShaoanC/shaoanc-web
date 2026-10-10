@@ -1418,6 +1418,11 @@ input[type='checkbox'] { width: 19px; height: 19px; min-height: 19px; }
 .editor-tip p { font-size: 15px; }
 .editor-actions { padding-top: 26px; gap: 20px; }
 .editor-actions > div:last-child { gap: 10px; flex-shrink: 0; }
+.detail-page { padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
+.detail-edit-button {
+  position: fixed; right: calc(24px + env(safe-area-inset-right, 0px));
+  bottom: calc(24px + env(safe-area-inset-bottom, 0px)); z-index: 25;
+}
 .detail-layout { grid-template-columns: minmax(0,1fr) 310px; gap: 24px; }
 .detail-main { gap: 22px; }
 .detail-subtitle > span:last-child { font-size: 14px; }
@@ -1754,6 +1759,10 @@ input[type='checkbox'] { width: 19px; height: 19px; min-height: 19px; }
   .detail-header { gap: 20px; }
   .detail-actions { width: 100%; padding-top: 0; justify-content: space-between; }
   .detail-actions .secondary { flex: 1; }
+  .detail-edit-button {
+    right: calc(16px + env(safe-area-inset-right, 0px));
+    bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  }
   .question-text, .review-question-content { font-size: 19px; }
   .prose { font-size: 18px; }
   .draft-notice { flex-wrap: wrap; gap: 11px; padding: 16px; }
@@ -1893,6 +1902,8 @@ input[type='checkbox'] { width: 19px; height: 19px; min-height: 19px; }
 .markdown-content--full .task-list-item > input { margin-right: .5em; accent-color: var(--primary); }
 .markdown-content--full .katex { font-size: 1.05em; }
 .markdown-content--full :not(.katex-display) > .katex { display: inline-block; max-width: 100%; overflow-x: auto; overflow-y: hidden; padding: .2em 0; vertical-align: middle; }
+/* KaTeX's vlist-t2 uses a -2px right margin; keep that overhang inside the measured content. */
+.markdown-content--full :not(.katex-display) > .katex > .katex-html { display: inline-block; padding-right: 2px; }
 .markdown-content--full .katex-display { max-width: 100%; overflow-x: auto; overflow-y: hidden; padding: .3em .1em; margin: .9em 0; }
 .markdown-content--full .katex-error { white-space: pre-wrap; overflow-wrap: anywhere; }
 .markdown-content--full > :first-child { margin-top: 0; }
