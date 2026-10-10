@@ -2,6 +2,7 @@ const crypto = require('node:crypto');
 const express = require('express');
 const { db } = require('./database');
 const { generateTestMistakes } = require('./test-data');
+const { searchMistakes, updateCachedMistake, removeCachedMistake, invalidateUser, invalidateAll } = require('./search');
 const {
     fail, validateCredentials, validatePassword, hashPassword, verifyPassword, publicUser,
     createSession, clearSession, loadSession, requireUser, requireAdmin
@@ -271,6 +272,7 @@ router.patch('/knowledge-points/:id', requireAdmin, (req, res) => {
     const point = validatePoint(req.body || {}, existing);
     db.prepare('UPDATE knowledge_points SET subject_id = ?, parent_id = ?, name = ?, sort_order = ? WHERE id = ?')
         .run(point.subjectId, point.parentId, point.name, point.sortOrder, id);
+    invalidateAll();
     success(res, db.prepare(`${pointSelect} WHERE id = ?`).get(id));
 });
 
@@ -296,6 +298,7 @@ router.delete('/knowledge-points/:id', requireAdmin, (req, res) => {
         }
         db.prepare('DELETE FROM knowledge_points WHERE id = ?').run(id);
     })();
+    invalidateAll();
     success(res, null);
 });
 
@@ -345,14 +348,14 @@ router.get('/mistakes', (req, res) => {
         where.push("COALESCE((SELECT result FROM reviews WHERE mistake_id = m.id ORDER BY id DESC LIMIT 1), 'unreviewed') = ?");
         parameters.push(status);
     }
-    if (req.query.keyword) {
-        if (typeof req.query.keyword !== 'string') {
-            fail(400, '关键词须为文本');
-        }
-        where.push('(instr(m.question, ?) > 0 OR instr(m.answer, ?) > 0 OR instr(m.analysis, ?) > 0 OR instr(m.note, ?) > 0)');
-        parameters.push(...Array(4).fill(req.query.keyword));
+    if (req.query.keyword !== undefined && typeof req.query.keyword !== 'string') {
+        fail(400, '关键词须为文本');
     }
     const rows = db.prepare(`${mistakeSelect} WHERE ${where.join(' AND ')} ORDER BY m.updated_at DESC, m.id DESC`).all(...parameters);
+    if (req.query.keyword?.trim()) {
+        const matches = searchMistakes(req.user.id, rows, req.query.keyword);
+        return success(res, matches.map(({ row, search }) => ({ ...serializeMistake(row), search })));
+    }
     success(res, rows.map(serializeMistake));
 });
 
@@ -369,15 +372,19 @@ router.post('/mistakes', (req, res) => {
     `).run(req.user.id, values.subjectId, values.primaryKnowledgePointId, JSON.stringify(values.auxiliaryKnowledgePointIds),
         values.lifecycle, values.question, values.answer, values.analysis, values.note, now, now);
     const row = db.prepare(`${mistakeSelect} WHERE m.id = ?`).get(inserted.lastInsertRowid);
+    updateCachedMistake(req.user.id, row);
     success(res, serializeMistake(row), 201);
 });
 
 router.post('/mistakes/test-data', requireAdmin, (req, res) => {
-    success(res, { count: generateTestMistakes(req.user.id) }, 201);
+    const count = generateTestMistakes(req.user.id);
+    invalidateUser(req.user.id);
+    success(res, { count }, 201);
 });
 
 router.delete('/mistakes/test-data', requireAdmin, (req, res) => {
     const deleted = db.prepare('DELETE FROM mistakes WHERE user_id = ? AND is_test = 1').run(req.user.id);
+    invalidateUser(req.user.id);
     success(res, { count: deleted.changes });
 });
 
@@ -394,12 +401,15 @@ router.patch('/mistakes/:id', (req, res) => {
         WHERE id = ? AND user_id = ?
     `).run(values.subjectId, values.primaryKnowledgePointId, JSON.stringify(values.auxiliaryKnowledgePointIds),
         values.lifecycle, values.question, values.answer, values.analysis, values.note, new Date().toISOString(), row.id, req.user.id);
-    success(res, serializeMistake(ownMistake(req)));
+    const updated = ownMistake(req);
+    updateCachedMistake(req.user.id, updated);
+    success(res, serializeMistake(updated));
 });
 
 router.delete('/mistakes/:id', (req, res) => {
     const row = ownMistake(req);
     db.prepare('DELETE FROM mistakes WHERE id = ? AND user_id = ?').run(row.id, req.user.id);
+    removeCachedMistake(req.user.id, row.id);
     success(res, null);
 });
 

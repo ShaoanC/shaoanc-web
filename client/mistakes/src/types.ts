@@ -23,6 +23,15 @@ export interface KnowledgePoint {
   sortOrder?: number;
 }
 
+export interface MistakeSearch {
+  matchedTermCount: number;
+  totalTermCount: number;
+  snippets: {
+    field: 'question' | 'answer' | 'analysis' | 'note' | 'subject' | 'knowledgePoints';
+    segments: { text: string; matched: boolean }[];
+  }[];
+}
+
 export interface Mistake {
   isTest: boolean;
   id: number;
@@ -38,6 +47,7 @@ export interface Mistake {
   reviewsCount: number;
   createdAt: string;
   updatedAt: string;
+  search?: MistakeSearch;
 }
 
 export interface Review {

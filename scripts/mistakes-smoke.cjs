@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { runSearchSmoke } = require('./mistakes-search-smoke.cjs');
 
 const projectDirectory = path.resolve(__dirname, '..');
 const dataDirectory = path.join(projectDirectory, 'data');
@@ -251,6 +252,8 @@ async function main() {
     await alice('GET', `/mistakes/${aliceMistake.id}`, undefined, 404);
     const finalStats = await alice('GET', '/stats');
     assert.deepEqual([finalStats.total, finalStats.reviewCount], [0, 0], 'Deleting a mistake also removes its reviews');
+
+    await runSearchSmoke({ alice, bob, admin });
 
     await admin('PATCH', `/admin/users/${registrationBob.user.id}`, { active: false });
     await bob('GET', '/mistakes', undefined, 401);

@@ -1,6 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown, Search } from 'lucide-react';
+import PinyinMatch from 'pinyin-match';
 import { ScrollArea } from './ScrollArea';
 
 type SelectOption = { value: string; label: string; disabled?: boolean };
@@ -20,10 +21,15 @@ export function Select({ value, onChange, options, ariaLabel, searchable = false
   const list = useRef<HTMLDivElement>(null);
   const search = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
+  const [present, setPresent] = useState(false);
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(-1);
   const [position, setPosition] = useState({ top: 0, left: 0, width: 0, maxHeight: 320, above: false });
-  const filtered = useMemo(() => options.filter((option) => option.label.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())), [options, query]);
+  const filtered = useMemo(() => {
+    const keyword = query.trim().toLocaleLowerCase();
+    if (!keyword) return options;
+    return options.filter((option) => option.label.toLocaleLowerCase().includes(keyword) || PinyinMatch.match(option.label, keyword) !== false);
+  }, [options, query]);
   const selected = options.find((option) => option.value === value);
   const activeId = active >= 0 && filtered[active] ? `${id}-option-${active}` : undefined;
 
@@ -38,6 +44,7 @@ export function Select({ value, onChange, options, ariaLabel, searchable = false
     const indices = options.map((option, index) => option.disabled ? -1 : index).filter((index) => index >= 0);
     const current = options.findIndex((option) => option.value === value && !option.disabled);
     setActive(edge === 'last' ? indices.at(-1) ?? -1 : edge === 'first' ? indices[0] ?? -1 : current >= 0 ? current : indices[0] ?? -1);
+    setPresent(true);
     setOpen(true);
   }
 
@@ -46,6 +53,14 @@ export function Select({ value, onChange, options, ariaLabel, searchable = false
     onChange(option.value);
     close(true);
   }
+
+  useEffect(() => {
+    if (open || !present) return;
+    // Keep the portal through the 220ms exit transition; reopening cancels removal.
+    const duration = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 40 : 220;
+    const timer = window.setTimeout(() => setPresent(false), duration);
+    return () => window.clearTimeout(timer);
+  }, [open, present]);
 
   useLayoutEffect(() => {
     if (!open) return;
@@ -137,9 +152,9 @@ export function Select({ value, onChange, options, ariaLabel, searchable = false
       }}>
       <span className="custom-select-value">{selected?.label || '请选择'}</span><ChevronDown className="custom-select-chevron" size={16} aria-hidden="true" />
     </button>
-    {open && createPortal(<div ref={popup} className="custom-select-popup" style={{ position: 'fixed', top: position.top, left: position.left, width: position.width, maxHeight: position.maxHeight, transform: position.above ? 'translateY(-100%)' : undefined }} onKeyDown={navigate}
-      onBlur={(event) => { if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget as Node)) close(); }}>
-      {searchable && <div className="custom-select-search"><Search size={15} aria-hidden="true" /><input ref={search} className="custom-select-search-input" type="search" role="combobox" aria-label={`搜索${ariaLabel}`} aria-expanded="true" aria-autocomplete="list" aria-controls={`${id}-listbox`} aria-activedescendant={activeId} placeholder="搜索知识点…" value={query}
+    {present && createPortal(<div ref={popup} className={`custom-select-popup${open ? ' is-open' : ''}${position.above ? ' opens-above' : ''}`} aria-hidden={!open} inert={!open} style={{ position: 'fixed', top: position.top, left: position.left, width: position.width, maxHeight: position.maxHeight, transform: position.above ? 'translateY(-100%)' : undefined }} onKeyDown={navigate}
+      onBlur={(event) => { if (event.relatedTarget && event.relatedTarget !== trigger.current && !event.currentTarget.contains(event.relatedTarget as Node)) close(); }}>
+      {searchable && <div className="custom-select-search"><Search size={15} aria-hidden="true" /><input ref={search} className="custom-select-search-input" type="search" role="combobox" aria-label={`搜索${ariaLabel}`} aria-expanded={open} aria-autocomplete="list" aria-controls={`${id}-listbox`} aria-activedescendant={activeId} placeholder="汉字、拼音或首字母…" value={query}
         onChange={(event) => { setQuery(event.target.value); setActive(-1); }} /></div>}
       <ScrollArea ref={list} id={`${id}-listbox`} className="custom-select-options" role="listbox" aria-label={ariaLabel} aria-activedescendant={activeId} tabIndex={-1} style={{ maxHeight: Math.max(0, position.maxHeight - (searchable ? 54 : 12)), overflowY: 'auto' }}>
         {filtered.map((option, index) => <button key={option.value} id={`${id}-option-${index}`} type="button" role="option" tabIndex={-1} disabled={option.disabled} aria-selected={option.value === value}
