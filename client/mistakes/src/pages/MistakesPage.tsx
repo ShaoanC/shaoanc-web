@@ -5,6 +5,7 @@ import { knowledgeLabel, useApp } from '../context';
 import { EmptyState, ErrorState, Modal, PageHeader } from '../components';
 import { LoadingContent, SlidingTabs } from '../motion';
 import { Select } from '../Select';
+import { MobileFiltersDrawer } from '../MobileFiltersDrawer';
 import { MistakeRow } from '../MistakeRow';
 import { RATING_OPTIONS, StarRatingPicker } from '../StarRating';
 import type { Mistake, Stats } from '../types';
@@ -12,6 +13,29 @@ import type { Mistake, Stats } from '../types';
 type LibraryTab = 'archived' | 'draft' | 'trash';
 type ActionState = { id: number; mode: 'confirm' | 'swipe' | 'rating' } | null;
 type BusyState = { id?: number; kind: 'delete' | 'restore' | 'permanent' | 'clear' | 'rating' } | null;
+type LibraryFilters = { subjectId: string; knowledgePointId: string; status: string; rating: string };
+const EMPTY_FILTERS: LibraryFilters = { subjectId: '', knowledgePointId: '', status: '', rating: '' };
+
+function LibraryFilterFields({ filters, onChange, portalContainer, withLabels = false }: {
+  filters: LibraryFilters;
+  onChange: (filters: LibraryFilters) => void;
+  portalContainer?: HTMLElement | null;
+  withLabels?: boolean;
+}) {
+  const { subjects, knowledgePoints } = useApp();
+  const subjectKnowledge = knowledgePoints.filter((point) => !filters.subjectId || point.subjectId === filters.subjectId);
+  const fields = [
+    { key: 'subjectId' as const, label: '学科', options: [{ value: '', label: '全部学科' }, ...subjects.map((subject) => ({ value: subject.id, label: subject.name }))] },
+    { key: 'knowledgePointId' as const, label: '知识点', searchable: true, options: [{ value: '', label: '全部知识点' }, ...subjectKnowledge.map((point) => ({ value: String(point.id), label: knowledgeLabel(knowledgePoints, point.id) }))] },
+    { key: 'status' as const, label: '掌握程度', options: [{ value: '', label: '全部掌握程度' }, { value: 'unreviewed', label: '未复习' }, { value: 'unknown', label: '不会' }, { value: 'familiar', label: '不熟' }, { value: 'mastered', label: '掌握' }] },
+    { key: 'rating' as const, label: '星级', options: RATING_OPTIONS },
+  ];
+  return <>{fields.map((field) => {
+    const control = <Select key={field.key} ariaLabel={`按${field.label}筛选`} value={filters[field.key]} searchable={field.searchable} options={field.options} portalContainer={portalContainer}
+      onChange={(value) => onChange({ ...filters, [field.key]: value, ...(field.key === 'subjectId' ? { knowledgePointId: '' } : {}) })} />;
+    return withLabels ? <div key={field.key} className="field library-filter-field" data-base-ui-swipe-ignore=""><span>{field.label}</span>{control}</div> : control;
+  })}</>;
+}
 
 function currentTab(): LibraryTab {
   const query = new URLSearchParams(window.location.hash.split('?')[1]);
@@ -19,7 +43,7 @@ function currentTab(): LibraryTab {
 }
 
 export function MistakesPage() {
-  const { subjects, knowledgePoints, notify } = useApp();
+  const { notify } = useApp();
   const [mistakes, setMistakes] = useState<Mistake[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [lifecycle, setLifecycle] = useState<LibraryTab>(currentTab);
@@ -30,6 +54,9 @@ export function MistakesPage() {
   const [ratingPreview, setRatingPreview] = useState(0);
   const [ratingError, setRatingError] = useState('');
   const [mobile, setMobile] = useState(() => window.matchMedia('(max-width: 640px)').matches);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [draftFilters, setDraftFilters] = useState<LibraryFilters>(EMPTY_FILTERS);
+  const filterTrigger = useRef<HTMLButtonElement>(null);
   const [keyword, setKeyword] = useState('');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -56,6 +83,8 @@ export function MistakesPage() {
     media.addEventListener('change', update);
     return () => media.removeEventListener('change', update);
   }, []);
+
+  useEffect(() => { setFilterOpen(false); }, [mobile, lifecycle]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setSearch(keyword), 250);
@@ -191,9 +220,13 @@ export function MistakesPage() {
 
   const hasFilters = Boolean(subjectId || knowledgePointId || status || rating !== '' || keyword.trim());
   const searching = Boolean(search.trim());
-  const clearFilters = () => { setSubjectId(''); setKnowledgePointId(''); setStatus(''); setRating(''); setKeyword(''); setSearch(''); };
+  const appliedFilters = { subjectId, knowledgePointId, status, rating };
+  const filterCount = Object.values(appliedFilters).filter((value) => value !== '').length;
+  const updateFilters = (filters: LibraryFilters) => { setSubjectId(filters.subjectId); setKnowledgePointId(filters.knowledgePointId); setStatus(filters.status); setRating(filters.rating); };
+  const clearFilters = () => { updateFilters(EMPTY_FILTERS); setKeyword(''); setSearch(''); };
+  const openFilters = () => { setDraftFilters(appliedFilters); setAction(null); setFilterOpen(true); };
+  const applyFilters = () => { updateFilters(draftFilters); setFilterOpen(false); };
   const ratingTarget = action?.mode === 'rating' ? mistakes.find((item) => item.id === action.id) : undefined;
-  const subjectKnowledge = knowledgePoints.filter((point) => !subjectId || point.subjectId === subjectId);
   const metrics = [
     { label: '已归档错题', value: stats?.archived, icon: BookOpen, tone: 'green' },
     { label: '待巩固', value: stats ? stats.byStatus.filter((item) => ['unknown', 'familiar'].includes(item.id)).reduce((sum, item) => sum + item.count, 0) : undefined, icon: Target, tone: 'amber' },
@@ -210,12 +243,9 @@ export function MistakesPage() {
         { id: 'trash', label: <>回收站<span>{stats?.trashCount ?? '—'}</span></> },
       ]} /></div>
       {trashed && <div className="trash-notice"><p>删除的错题保留 30 天，恢复时会保留原内容和复习记录。</p><button className="button ghost danger-text" disabled={Boolean(busy) || !stats?.trashCount} onClick={() => setPermanentTarget('all')}><Trash2 size={16} />清空回收站</button></div>}
-      <div className="filter-bar has-rating-filter">
-        <label className="search-input"><Search size={18} /><input aria-label="搜索错题" placeholder="搜索错题内容、学科或知识点" value={keyword} onChange={(event) => setKeyword(event.target.value)} />{keyword && <button className="icon-button" aria-label="清除搜索" onClick={() => setKeyword('')}><X size={15} /></button>}</label>
-        <Select ariaLabel="按学科筛选" value={subjectId} onChange={(value) => { setSubjectId(value); setKnowledgePointId(''); }} options={[{ value: '', label: '全部学科' }, ...subjects.map((subject) => ({ value: subject.id, label: subject.name }))]} />
-        <Select ariaLabel="按知识点筛选" value={knowledgePointId} onChange={setKnowledgePointId} searchable options={[{ value: '', label: '全部知识点' }, ...subjectKnowledge.map((point) => ({ value: String(point.id), label: knowledgeLabel(knowledgePoints, point.id) }))]} />
-        <Select ariaLabel="按掌握程度筛选" value={status} onChange={setStatus} options={[{ value: '', label: '全部掌握程度' }, { value: 'unreviewed', label: '未复习' }, { value: 'unknown', label: '不会' }, { value: 'familiar', label: '不熟' }, { value: 'mastered', label: '掌握' }]} />
-        <Select ariaLabel="按星级筛选" value={rating} onChange={setRating} options={RATING_OPTIONS} />
+      <div className={`filter-bar ${mobile ? 'library-mobile-filters' : 'has-rating-filter'}`}>
+        <label className="search-input"><Search size={18} /><input aria-label="搜索错题" placeholder={mobile ? '搜索错题' : '搜索错题内容、学科或知识点'} value={keyword} onChange={(event) => setKeyword(event.target.value)} />{keyword && <button className="icon-button" aria-label="清除搜索" onClick={() => setKeyword('')}><X size={15} /></button>}</label>
+        {mobile ? <button ref={filterTrigger} type="button" className="library-filter-trigger" data-active={filterCount > 0} aria-haspopup="dialog" aria-expanded={filterOpen} aria-label={`筛选错题${filterCount ? `，已选 ${filterCount} 项条件` : ''}`} onClick={openFilters}><SlidersHorizontal size={17} /><span>筛选</span>{filterCount > 0 && <span className="library-filter-count">{filterCount}</span>}</button> : <LibraryFilterFields filters={appliedFilters} onChange={updateFilters} />}
       </div>
       <div className="results-toolbar"><span><SlidersHorizontal size={14} /> {searching ? '搜索结果' : hasFilters ? '筛选结果' : trashed ? '暂存的错题' : lifecycle === 'draft' ? '继续完善你的草稿' : '你的学习积累'}<strong>{loading ? '…' : mistakes.length}</strong> 道{hasFilters && <button className="reset-filter" onClick={clearFilters}>清除筛选</button>}</span><div className="view-switch" aria-label="展示方式"><button className={view === 'list' ? 'active' : ''} onClick={() => setView('list')} aria-label="列表视图" aria-pressed={view === 'list'}><List size={17} /></button><button className={view === 'grid' ? 'active' : ''} onClick={() => setView('grid')} aria-label="卡片视图" aria-pressed={view === 'grid'}><LayoutGrid size={16} /></button></div></div>
       <LoadingContent loading={loading} kind="rows">{error ? <ErrorState message={error} retry={() => void load()} /> : mistakes.length === 0 ? <EmptyState filtered={hasFilters}
@@ -232,6 +262,9 @@ export function MistakesPage() {
             onDelete={() => void moveOrRestore(mistake, 'delete')} onRestore={() => void moveOrRestore(mistake, 'restore')} onPermanentDelete={() => setPermanentTarget(mistake)} />)}
         </div>}</LoadingContent>
     </div>
+    {mobile && <MobileFiltersDrawer open={filterOpen} onOpenChange={(open) => open ? openFilters() : setFilterOpen(false)} onApply={applyFilters} onReset={() => setDraftFilters(EMPTY_FILTERS)} triggerRef={filterTrigger}>
+      {(portalContainer) => <LibraryFilterFields filters={draftFilters} onChange={setDraftFilters} portalContainer={portalContainer} withLabels />}
+    </MobileFiltersDrawer>}
     {!trashed && <div className="study-tip"><span><Target size={19} /></span><p><strong>温故而知新，可以为师矣</strong></p><a href="#/review">开始一次复习<ArrowRight size={15} /></a></div>}
     {!mobile && ratingTarget && <Modal title="设置星级" onClose={() => openRating(ratingTarget, false)}><StarRatingPicker value={ratingPreview} onChange={setRatingPreview} onCommit={(value) => void saveRating(ratingTarget, value)} disabled={busy?.kind === 'rating'} error={ratingError} onClose={() => openRating(ratingTarget, false)} autoFocus /></Modal>}
     {permanentTarget && <Modal title={permanentTarget === 'all' ? '清空回收站？' : '彻底删除这道错题？'} onClose={() => { if (!busy) setPermanentTarget(null); }}>

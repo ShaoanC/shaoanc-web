@@ -12,9 +12,10 @@ type SelectProps = {
   ariaLabel: string;
   searchable?: boolean;
   disabled?: boolean;
+  portalContainer?: HTMLElement | null;
 };
 
-export function Select({ value, onChange, options, ariaLabel, searchable = false, disabled = false }: SelectProps) {
+export function Select({ value, onChange, options, ariaLabel, searchable = false, disabled = false, portalContainer }: SelectProps) {
   const id = useId();
   const trigger = useRef<HTMLButtonElement>(null);
   const popup = useRef<HTMLDivElement>(null);
@@ -67,14 +68,21 @@ export function Select({ value, onChange, options, ariaLabel, searchable = false
     function place() {
       const rect = trigger.current?.getBoundingClientRect();
       if (!rect) return;
-      const below = window.innerHeight - rect.bottom - 12;
-      const above = rect.top - 12;
+      const viewport = window.visualViewport;
+      const viewportTop = viewport?.offsetTop ?? 0;
+      const viewportLeft = viewport?.offsetLeft ?? 0;
+      const viewportWidth = viewport?.width ?? window.innerWidth;
+      const below = viewportTop + (viewport?.height ?? window.innerHeight) - rect.bottom - 12;
+      const above = rect.top - viewportTop - 12;
       const desired = Math.min(320, filtered.length * 42 + (searchable ? 54 : 0) + 12);
       const upwards = below < Math.min(desired, 180) && above > below;
-      const width = Math.min(rect.width, window.innerWidth - 16);
+      const width = Math.min(rect.width, viewportWidth - 16);
+      const containerRect = portalContainer?.getBoundingClientRect();
+      const top = upwards ? rect.top - 6 : rect.bottom + 6;
+      const left = Math.max(viewportLeft + 8, Math.min(rect.left, viewportLeft + viewportWidth - width - 8));
       setPosition({
-        top: upwards ? rect.top - 6 : rect.bottom + 6,
-        left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)),
+        top: containerRect ? top - containerRect.top - portalContainer!.clientTop + portalContainer!.scrollTop : top,
+        left: containerRect ? left - containerRect.left - portalContainer!.clientLeft + portalContainer!.scrollLeft : left,
         width,
         maxHeight: Math.min(320, Math.max(0, upwards ? above : below)),
         above: upwards,
@@ -83,11 +91,15 @@ export function Select({ value, onChange, options, ariaLabel, searchable = false
     place();
     window.addEventListener('resize', place);
     window.addEventListener('scroll', place, true);
+    window.visualViewport?.addEventListener('resize', place);
+    window.visualViewport?.addEventListener('scroll', place);
     return () => {
       window.removeEventListener('resize', place);
       window.removeEventListener('scroll', place, true);
+      window.visualViewport?.removeEventListener('resize', place);
+      window.visualViewport?.removeEventListener('scroll', place);
     };
-  }, [open, filtered.length, searchable]);
+  }, [open, filtered.length, searchable, portalContainer]);
 
   useLayoutEffect(() => {
     if (open) (searchable ? search.current : list.current)?.focus();
@@ -180,7 +192,7 @@ export function Select({ value, onChange, options, ariaLabel, searchable = false
       }}>
       <span className="custom-select-value">{selected?.label || '请选择'}</span><ChevronDown className="custom-select-chevron" size={16} aria-hidden="true" />
     </button>
-    {present && createPortal(<div ref={popup} className={`custom-select-popup${open ? ' is-open' : ''}${position.above ? ' opens-above' : ''}`} aria-hidden={!open} inert={!open} style={{ position: 'fixed', top: position.top, left: position.left, width: position.width, maxHeight: position.maxHeight, transform: position.above ? 'translateY(-100%)' : undefined }} onKeyDown={navigate}
+    {present && createPortal(<div ref={popup} className={`custom-select-popup${open ? ' is-open' : ''}${position.above ? ' opens-above' : ''}`} aria-hidden={!open} inert={!open} data-base-ui-swipe-ignore="" style={{ position: portalContainer ? 'absolute' : 'fixed', top: position.top, left: position.left, width: position.width, maxHeight: position.maxHeight, transform: position.above ? 'translateY(-100%)' : undefined }} onKeyDown={navigate}
       onBlur={(event) => { if (event.relatedTarget && event.relatedTarget !== trigger.current && !event.currentTarget.contains(event.relatedTarget as Node)) close(); }}>
       {searchable && <div className="custom-select-search"><Search size={15} aria-hidden="true" /><input ref={search} className="custom-select-search-input" type="search" role="combobox" aria-label={`搜索${ariaLabel}`} aria-expanded={open} aria-autocomplete="list" aria-controls={`${id}-listbox`} aria-activedescendant={activeId} placeholder="汉字、拼音或首字母…" value={query}
         onChange={(event) => { setQuery(event.target.value); setActive(-1); }} /></div>}
@@ -192,6 +204,6 @@ export function Select({ value, onChange, options, ariaLabel, searchable = false
         </button>)}
         {!filtered.length && <p className="custom-select-empty" role="status">{query.trim() ? '没有找到匹配的知识点' : '暂无可选项'}</p>}
       </ScrollArea>
-    </div>, document.body)}
+    </div>, portalContainer || document.body)}
   </div>;
 }

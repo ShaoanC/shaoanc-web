@@ -24,10 +24,10 @@ function RatingStars({ value }: { value: number }) {
   })}</>;
 }
 
-export function StarRatingDisplay({ value, showLabel = true }: { value: number; showLabel?: boolean }) {
-  return <span className="star-rating-display" role="img" aria-label={ratingLabel(value)}>
-    <span className="star-rating-stars"><RatingStars value={value} /></span>
-    {showLabel && <span className="star-rating-label" aria-hidden="true">{ratingLabel(value)}</span>}
+export function StarRatingDisplay({ value, showLabel = true, compact = false }: { value: number; showLabel?: boolean; compact?: boolean }) {
+  return <span className={`star-rating-display ${compact ? 'is-compact' : ''} ${value === 0 ? 'is-unmarked' : ''}`} role="img" aria-label={ratingLabel(value)}>
+    {compact ? <Star size={15} strokeWidth={1.6} aria-hidden="true" /> : <span className="star-rating-stars"><RatingStars value={value} /></span>}
+    {showLabel && <span className="star-rating-label" aria-hidden="true">{compact && value ? value : ratingLabel(value)}</span>}
   </span>;
 }
 
