@@ -282,7 +282,6 @@ function SkeletonEditorField() {
 
 function SkeletonWorkbench() {
   return <>
-    <SkeletonHeading />
     <div className="skeleton-workbench-tabs">{[0, 1, 2, 3].map((index) => <SkeletonLine size="short" key={index} />)}</div>
     <div className="skeleton-workbench-layout">
       <div className="skeleton-workbench-main">
