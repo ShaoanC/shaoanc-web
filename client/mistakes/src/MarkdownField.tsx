@@ -9,10 +9,9 @@ interface MarkdownFieldProps {
   rows?: number;
   placeholder?: string;
   textareaClassName?: string;
-  hint?: ReactNode;
 }
 
-export function MarkdownField({ name, label, value, onChange, rows, placeholder, textareaClassName, hint }: MarkdownFieldProps) {
+export function MarkdownField({ name, label, value, onChange, rows, placeholder, textareaClassName }: MarkdownFieldProps) {
   const id = useId();
   const [preview, setPreview] = useState(false);
 
@@ -26,10 +25,6 @@ export function MarkdownField({ name, label, value, onChange, rows, placeholder,
     </div>
     {preview ? <div className={`markdown-field-preview${textareaClassName ? ` ${textareaClassName}` : ''}`} role="region" aria-label={`${name}预览`}>
       <MarkdownContent emptyText="暂无内容可预览。">{value}</MarkdownContent>
-    </div> : <textarea id={id} className={textareaClassName} aria-describedby={`${id}-hint`} rows={rows} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} maxLength={20000} />}
-    <small id={`${id}-hint`} className="markdown-field-hint">
-      {hint && <>{hint}<br /></>}
-      支持 Markdown；行内公式用 $...$，块公式用独立行的 $$...$$。
-    </small>
+    </div> : <textarea id={id} className={textareaClassName} rows={rows} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} maxLength={20000} />}
   </div>;
 }
