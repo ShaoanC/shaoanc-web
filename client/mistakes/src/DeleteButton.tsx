@@ -4,12 +4,13 @@ import { Check, LoaderCircle, Trash2 } from 'lucide-react';
 interface DeleteButtonProps {
   onDelete: () => void;
   busy?: boolean;
+  disabled?: boolean;
   armed: boolean;
   onArmedChange: (armed: boolean) => void;
   className?: string;
 }
 
-export function DeleteButton({ onDelete, busy = false, armed, onArmedChange, className = '' }: DeleteButtonProps) {
+export function DeleteButton({ onDelete, busy = false, disabled = false, armed, onArmedChange, className = '' }: DeleteButtonProps) {
   const buttonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -32,7 +33,7 @@ export function DeleteButton({ onDelete, busy = false, armed, onArmedChange, cla
     ref={buttonRef}
     type="button"
     className={`quick-delete-button ${armed ? 'is-armed' : ''} ${className}`.trim()}
-    disabled={busy}
+    disabled={busy || disabled}
     aria-label={busy ? '正在删除' : armed ? '确认删除' : '删除错题'}
     aria-pressed={armed}
     onClick={() => { if (armed) onDelete(); else onArmedChange(true); }}

@@ -10,10 +10,9 @@ const FIELD_LABELS: Record<MistakeSearch['snippets'][number]['field'], string> =
 };
 
 export function SearchSummary({ search }: { search?: MistakeSearch }) {
-  if (!search) return null;
+  if (!search || search.snippets.length === 0) return null;
 
   return <div className="search-summary">
-    <span className="search-match-count">命中 {search.matchedTermCount}/{search.totalTermCount} 个关键词</span>
     {search.snippets.slice(0, 2).map((snippet, snippetIndex) => <p className="search-snippet" key={`${snippet.field}-${snippetIndex}`}>
       <span className="search-snippet-label">{FIELD_LABELS[snippet.field]}</span>
       <span className="search-snippet-text">{snippet.segments.map((segment, segmentIndex) => segment.matched

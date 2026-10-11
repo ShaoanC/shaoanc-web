@@ -75,9 +75,9 @@ export function MistakeRow({ mistake, grid, opened, armed, disabled, deleting, r
   const offset = mobile && !trashed ? dragOffset ?? (opened ? -DELETE_WIDTH : 0) : 0;
   const remainingDays = mistake.deletedAt ? Math.max(0, Math.ceil((Date.parse(mistake.deletedAt) + 30 * 86400000 - Date.now()) / 86400000)) : 0;
 
-  return <div className={`mistake-row ${grid ? 'is-grid' : ''} ${trashed ? 'is-trash' : ''} ${opened ? 'is-open' : ''}`} data-mistake-id={mistake.id}>
+  return <div {...handlers} className={`mistake-row ${grid ? 'is-grid' : ''} ${trashed ? 'is-trash' : ''} ${opened ? 'is-open' : ''}`} data-mistake-id={mistake.id} onTouchCancel={() => setDragOffset(null)}>
     {!trashed && <button type="button" className="swipe-delete-action" disabled={!opened || disabled} tabIndex={opened ? 0 : -1} aria-hidden={!opened} onClick={onDelete}><Trash2 size={20} /><span>{deleting ? '删除中…' : '删除'}</span></button>}
-    <div {...handlers} className={`mistake-item mistake-row-surface ${grid ? 'mistake-card' : ''} ${dragOffset !== null ? 'is-dragging' : ''}`} style={{ transform: offset ? `translateX(${offset}px)` : undefined }}
+    <div className={`mistake-item mistake-row-surface ${grid ? 'mistake-card' : ''} ${dragOffset !== null ? 'is-dragging' : ''}`} style={{ transform: offset ? `translateX(${offset}px)` : undefined }}
       onClickCapture={(event) => {
         if (Date.now() < suppressClickUntil.current) { event.preventDefault(); event.stopPropagation(); }
       }}
@@ -93,7 +93,7 @@ export function MistakeRow({ mistake, grid, opened, armed, disabled, deleting, r
         <StatusBadge status={mistake.latestReviewResult || 'unreviewed'} />
         <span className="mistake-date"><time dateTime={mistake.deletedAt || mistake.updatedAt}>{formatDate(mistake.deletedAt || mistake.updatedAt)}</time>{trashed && <small>还剩 {remainingDays} 天</small>}</span>
       </a>
-      <div className="mistake-actions">{trashed ? <><button type="button" className="button ghost restore-mistake-button" disabled={disabled} onClick={onRestore}><RotateCcw size={15} />{restoring ? '恢复中…' : '恢复'}</button><button type="button" className="button ghost danger-text permanent-delete-button" disabled={disabled} onClick={onPermanentDelete}><Trash2 size={15} />彻底删除</button></> : <DeleteButton armed={armed} busy={deleting} onArmedChange={onArmedChange} onDelete={onDelete} className={disabled ? 'is-disabled' : ''} />}</div>
+      <div className="mistake-actions">{trashed ? <><button type="button" className="button ghost restore-mistake-button" disabled={disabled} onClick={onRestore}><RotateCcw size={15} />{restoring ? '恢复中…' : '恢复'}</button><button type="button" className="button ghost danger-text permanent-delete-button" disabled={disabled} onClick={onPermanentDelete}><Trash2 size={15} />彻底删除</button></> : <DeleteButton armed={armed} busy={deleting} disabled={disabled} onArmedChange={onArmedChange} onDelete={onDelete} />}</div>
     </div>
   </div>;
 }

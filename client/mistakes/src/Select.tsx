@@ -109,6 +109,34 @@ export function Select({ value, onChange, options, ariaLabel, searchable = false
   }, [open]);
 
   useEffect(() => {
+    if (!open) return;
+    const menu = popup.current;
+    if (!menu) return;
+    let lastTouchY = 0;
+    function start(event: TouchEvent) {
+      lastTouchY = event.touches[0].clientY;
+    }
+    function move(event: TouchEvent) {
+      if (event.touches.length !== 1) return;
+      const deltaY = event.touches[0].clientY - lastTouchY;
+      lastTouchY = event.touches[0].clientY;
+      const optionsList = list.current;
+      // A short list or a scroll boundary must not hand the gesture to the page.
+      if (!optionsList?.contains(event.target as Node)
+        || (deltaY > 0 && optionsList.scrollTop <= 0)
+        || (deltaY < 0 && optionsList.scrollTop + optionsList.clientHeight >= optionsList.scrollHeight - 1)) {
+        event.preventDefault();
+      }
+    }
+    menu.addEventListener('touchstart', start, { passive: true });
+    menu.addEventListener('touchmove', move, { passive: false });
+    return () => {
+      menu.removeEventListener('touchstart', start);
+      menu.removeEventListener('touchmove', move);
+    };
+  }, [open]);
+
+  useEffect(() => {
     if (disabled) setOpen(false);
   }, [disabled]);
 

@@ -1972,16 +1972,13 @@ input:focus, textarea:focus, select:focus { outline: 2px solid rgba(23,100,72,.1
 .metric-value > .text-muted { color: var(--text-muted); font: inherit; letter-spacing: inherit; margin-left: 0; }
 
 /* Search excerpts retain plain text, with highlights supplied by the API. */
-.search-sort-label { margin-left: 6px; color: var(--text-secondary); }
 .search-summary { display: grid; gap: 5px; margin-top: 12px; min-width: 0; }
-.search-match-count { color: var(--text-tertiary); font-size: 12px; line-height: 1.6; }
 .search-snippet { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 9px; font-size: 14px; line-height: 1.75; }
 .search-snippet-label { color: var(--text-tertiary); white-space: nowrap; }
 .search-snippet-text { min-width: 0; color: var(--text-secondary); overflow-wrap: anywhere; white-space: pre-wrap; }
 .search-snippet-text mark { color: var(--text-primary); background: var(--accent-soft); font-weight: 600; border-radius: 2px; }
 .mistake-card .mistake-main { width: 100%; }
 @media (max-width: 640px) {
-  .search-sort-label { margin-left: 3px; }
   .search-snippet { font-size: 13px; gap: 7px; }
 }
 
@@ -2024,10 +2021,10 @@ input:focus, textarea:focus, select:focus { outline: 2px solid rgba(23,100,72,.1
 .custom-select-search:focus-within { border-bottom-color: var(--primary); }
 .custom-select-search-input { min-width: 0; min-height: 34px; padding: 6px 0; border: 0; background: transparent; font-size: 15px; }
 .custom-select-search-input:focus { outline: none; box-shadow: none; }
-.custom-select-options { min-height: 0; flex: 1; padding: 4px; }
+.custom-select-options { min-height: 0; flex: 1; padding: 4px; scrollbar-gutter: auto; }
 .custom-select-option {
-  display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  width: 100%; min-height: 40px; padding: 9px 12px; border: 0; border-radius: 3px;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  width: 100%; min-height: 40px; padding: 9px 8px; border: 0; border-radius: 3px;
   background: transparent; color: var(--text-secondary); text-align: left; font-size: 15px;
 }
 .custom-select-option-label { min-width: 0; line-height: 1.5; overflow-wrap: anywhere; }
@@ -2037,4 +2034,63 @@ input:focus, textarea:focus, select:focus { outline: 2px solid rgba(23,100,72,.1
 .custom-select-empty { padding: 18px 12px; color: var(--text-muted); text-align: center; font-size: 14px; }
 @media (max-width: 640px) {
   .data-type-filter { padding: 0 16px 18px; }
+}
+
+/* Quick actions share the existing reading layout; touch reveals the red action behind it. */
+.library-heading .sliding-tabs { flex: 1; }
+.library-review-link { flex-shrink: 0; }
+.trash-notice { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 24px; border-top: 1px solid var(--border-subtle); background: var(--surface-3); }
+.trash-notice p { color: var(--text-secondary); font-size: 14px; line-height: 1.7; }
+.trash-notice > button { flex-shrink: 0; }
+.mistake-row { position: relative; min-width: 0; overflow: hidden; border-bottom: 1px solid var(--border-subtle); }
+.mistakes-collection:not(.card-grid) > .mistake-row:last-child { border-bottom: 0; }
+.mistake-detail-link { display: contents; }
+.mistake-row .mistake-row-surface { position: relative; z-index: 1; background: var(--surface-2); border-bottom: 0; grid-template-columns: minmax(0,1fr) 108px 112px 100px; transition: transform 180ms var(--motion-ease), background 150ms; }
+.mistake-row .mistake-row-surface:hover { background: #F3F7F2; }
+.mistake-row .mistake-row-surface.is-dragging { transition: none; }
+.mistakes-collection:not(.card-grid) .list-column-head { grid-template-columns: minmax(0,1fr) 108px 112px 100px; }
+.trash-collection:not(.card-grid) .list-column-head, .mistake-row.is-trash .mistake-row-surface { grid-template-columns: minmax(0,1fr) 108px 128px 176px; }
+.mistake-actions { display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
+.mistake-actions .button { min-height: 38px; padding: 7px 8px; font-size: 13px; white-space: nowrap; }
+.mistake-row .mistake-date { display: flex; flex-direction: column; gap: 4px; }
+.mistake-date > small { font-size: 12px; color: var(--text-secondary); }
+.quick-delete-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 96px; min-height: 38px; padding: 8px 10px; border: 1px solid transparent; border-radius: 3px; background: transparent; color: var(--text-tertiary); font-size: 13px; white-space: nowrap; transition: background 180ms, color 180ms, border-color 180ms; }
+.quick-delete-button:hover { color: var(--error); background: var(--error-bg); }
+.quick-delete-button.is-armed { color: #fff; background: var(--error); border-color: var(--error); }
+.quick-delete-button > span { animation: quick-delete-label 180ms ease-out; }
+@keyframes quick-delete-label { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
+.quick-delete-button:focus-visible { outline: 2px solid var(--error); outline-offset: 2px; }
+.mistake-row:has(.mistake-detail-link:focus-visible) > .mistake-row-surface { outline: 2px solid var(--primary); outline-offset: -2px; }
+.swipe-delete-action { display: none; }
+.card-grid > .mistake-row:nth-child(odd) { border-right: 1px solid var(--border-medium); }
+.mistake-row .mistake-card { height: 100%; border: 0 !important; }
+.mistake-row.is-grid:not(.is-trash) .mistake-main { padding-right: 96px; }
+.mistake-row.is-grid:not(.is-trash) .mistake-actions { position: absolute; top: 20px; right: 16px; }
+.mistake-row.is-grid.is-trash .mistake-actions { align-self: flex-end; margin-top: auto; }
+
+@media (max-width: 640px) {
+  .library-heading { flex-wrap: wrap; gap: 0; }
+  .library-heading .sliding-tabs { flex-basis: 100%; gap: 14px; }
+  .library-review-link { margin-left: auto; padding: 8px 0 12px; }
+  .trash-notice { flex-wrap: wrap; gap: 5px; padding: 12px 16px; }
+  .trash-notice > button { margin-left: auto; padding: 6px 0; }
+  .mistake-row .mistake-row-surface, .mistake-row.is-trash .mistake-row-surface { grid-template-columns: minmax(0,1fr) auto; gap: 14px 12px; touch-action: pan-y; }
+  .mistake-row:not(.is-trash) { touch-action: pan-y; }
+  .mistake-detail-link > .mistake-main { grid-column: 1 / -1; }
+  .mistake-detail-link > .status-badge { grid-column: 1; justify-self: start; margin-left: 46px; }
+  .mistake-detail-link > .mistake-date { grid-column: 2; font-size: 13px; }
+  .mistake-row:not(.is-trash) .mistake-actions { display: none; }
+  .swipe-delete-action { position: absolute; inset: 0 0 0 auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; width: 88px; border: 0; border-radius: 0; color: #fff; background: var(--error); font-size: 14px; }
+  .swipe-delete-action:disabled { opacity: 1; }
+  .swipe-delete-action:focus-visible { outline: 2px solid #fff; outline-offset: -5px; }
+  .mistake-row.is-trash .mistake-actions { grid-column: 1 / -1; justify-self: end; }
+  .card-grid > .mistake-row:nth-child(odd) { border-right: 0; }
+  .mistake-row.is-grid:not(.is-trash) .mistake-main { padding-right: 0; }
+  .mistake-row.is-grid .mistake-date { margin-left: 46px; }
+  .mistake-row.is-grid.is-trash .mistake-actions { margin-top: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mistake-row .mistake-row-surface, .quick-delete-button { transition: none; }
+  .quick-delete-button > span { animation: none; }
 }
