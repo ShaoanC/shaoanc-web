@@ -122,7 +122,7 @@ export function GlobalLoadingProgress() {
   </div>;
 }
 
-export type SlidingTab = { id: string; label: ReactNode };
+export type SlidingTab = { id: string; label: ReactNode; panelId?: string };
 
 export function SlidingTabs({ tabs, value, onChange, ariaLabel, className = '' }: {
   tabs: readonly SlidingTab[];
@@ -184,7 +184,7 @@ export function SlidingTabs({ tabs, value, onChange, ariaLabel, className = '' }
   }
 
   return <div ref={container} className={`sliding-tabs ${className}`.trim()} role="tablist" aria-label={ariaLabel}>
-    {tabs.map((tab, index) => <button key={tab.id} type="button" role="tab" data-tab-id={tab.id} aria-selected={value === tab.id} tabIndex={value === tab.id ? 0 : -1} className={`sliding-tab${value === tab.id ? ' is-active' : ''}`} onClick={() => onChange(tab.id)} onKeyDown={(event) => handleKeyDown(event, index)}>{tab.label}</button>)}
+    {tabs.map((tab, index) => <button key={tab.id} id={tab.panelId ? `${tab.panelId}-tab` : undefined} type="button" role="tab" data-tab-id={tab.id} aria-controls={tab.panelId} aria-selected={value === tab.id} tabIndex={value === tab.id ? 0 : -1} className={`sliding-tab${value === tab.id ? ' is-active' : ''}`} onClick={() => onChange(tab.id)} onKeyDown={(event) => handleKeyDown(event, index)}>{tab.label}</button>)}
     <span className="tab-indicator" aria-hidden="true" style={{ width: indicator.width, transform: `translateX(${indicator.x}px)`, opacity: ready ? 1 : 0, ...(ready ? {} : { transition: 'none' }) }} />
   </div>;
 }
@@ -276,6 +276,36 @@ function SkeletonPanel({ chart = false, editor = false }: { chart?: boolean; edi
   return <div className={`skeleton-panel${chart ? ' skeleton-chart' : ''}`}><SkeletonLine size="medium" /><SkeletonLine size="short" />{chart ? <div className="skeleton-bars">{[74, 92, 55, 38].map((width, index) => <span className="skeleton-line skeleton-shimmer" style={{ width: `${width}%` }} key={index} />)}</div> : editor ? <>{[0, 1, 2].map((index) => <div className="skeleton-field" key={index}><SkeletonLine size="short" /><span className="skeleton-block skeleton-shimmer" /></div>)}</> : <><SkeletonLine /><SkeletonLine /><SkeletonLine size="medium" /></>}</div>;
 }
 
+function SkeletonEditorField() {
+  return <div className="skeleton-field"><SkeletonLine size="short" /><span className="skeleton-block skeleton-shimmer" /></div>;
+}
+
+function SkeletonWorkbench() {
+  return <>
+    <SkeletonHeading />
+    <div className="skeleton-workbench-tabs">{[0, 1, 2, 3].map((index) => <SkeletonLine size="short" key={index} />)}</div>
+    <div className="skeleton-workbench-layout">
+      <div className="skeleton-workbench-main">
+        <div className="skeleton-panel"><SkeletonLine size="medium" /><SkeletonEditorField /></div>
+        <div className="skeleton-panel skeleton-workbench-answers"><SkeletonLine size="medium" /><SkeletonEditorField /><SkeletonEditorField /></div>
+        <div className="skeleton-panel skeleton-workbench-note"><SkeletonLine size="medium" /><SkeletonEditorField /></div>
+      </div>
+      <div className="skeleton-panel skeleton-workbench-classification"><SkeletonLine size="medium" /><SkeletonEditorField /><SkeletonEditorField /></div>
+    </div>
+  </>;
+}
+
+function SkeletonReading() {
+  return <>
+    <div className="skeleton-reading-header"><SkeletonHeading /></div>
+    <div className="skeleton-reading-meta"><SkeletonLine size="short" /><SkeletonLine size="short" /><SkeletonLine size="short" /></div>
+    <div className="skeleton-panel skeleton-reading-document">
+      {[0, 1, 2].map((index) => <section key={index}><SkeletonLine size="short" /><SkeletonLine /><SkeletonLine /><SkeletonLine size="medium" /></section>)}
+    </div>
+    <div className="skeleton-panel skeleton-reading-history"><SkeletonLine size="medium" /><SkeletonLine /><SkeletonLine size="short" /></div>
+  </>;
+}
+
 export function Skeleton({ kind = 'library' }: { kind?: SkeletonKind }) {
   let content: ReactNode;
   switch (kind) {
@@ -284,8 +314,8 @@ export function Skeleton({ kind = 'library' }: { kind?: SkeletonKind }) {
     case 'review': content = <SkeletonRows review />; break;
     case 'settings': content = <><div className="skeleton-toolbar"><SkeletonLine size="medium" /><SkeletonLine size="short" /></div><SkeletonRows /></>; break;
     case 'stats': content = <><SkeletonSummary /><div className="skeleton-columns"><SkeletonPanel chart /><SkeletonPanel chart /></div><SkeletonPanel chart /></>; break;
-    case 'editor': content = <div className="skeleton-columns skeleton-detail"><SkeletonPanel editor /><div><SkeletonPanel /><SkeletonPanel editor /></div></div>; break;
-    case 'detail': content = <><SkeletonHeading /><div className="skeleton-columns skeleton-detail"><div><SkeletonPanel /><SkeletonPanel /><SkeletonPanel /></div><div><SkeletonPanel /><SkeletonPanel /></div></div></>; break;
+    case 'editor': content = <SkeletonWorkbench />; break;
+    case 'detail': content = <SkeletonReading />; break;
     case 'shell': content = <><SkeletonHeading /><SkeletonSummary /><SkeletonRows /></>; break;
     default: content = <><SkeletonHeading /><SkeletonSummary /><div className="skeleton-toolbar"><SkeletonLine size="medium" /><SkeletonLine size="short" /></div><SkeletonRows /></>;
   }

@@ -1,7 +1,12 @@
-import { useId, useState, type ReactNode } from 'react';
+import { useId, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from 'react';
 import { MarkdownContent } from './MarkdownContent';
 
+export interface MarkdownFieldHandle {
+  focus: () => void;
+}
+
 interface MarkdownFieldProps {
+  ref?: Ref<MarkdownFieldHandle>;
   name: string;
   label: ReactNode;
   value: string;
@@ -11,9 +16,17 @@ interface MarkdownFieldProps {
   textareaClassName?: string;
 }
 
-export function MarkdownField({ name, label, value, onChange, rows, placeholder, textareaClassName }: MarkdownFieldProps) {
+export function MarkdownField({ ref, name, label, value, onChange, rows, placeholder, textareaClassName }: MarkdownFieldProps) {
   const id = useId();
   const [preview, setPreview] = useState(false);
+  const input = useRef<HTMLTextAreaElement>(null);
+
+  useImperativeHandle(ref, () => ({
+    focus() {
+      setPreview(false);
+      requestAnimationFrame(() => input.current?.focus({ preventScroll: true }));
+    },
+  }), []);
 
   return <div className="field markdown-field">
     <div className="markdown-field-heading">
@@ -25,6 +38,6 @@ export function MarkdownField({ name, label, value, onChange, rows, placeholder,
     </div>
     {preview ? <div className={`markdown-field-preview${textareaClassName ? ` ${textareaClassName}` : ''}`} role="region" aria-label={`${name}预览`}>
       <MarkdownContent emptyText="暂无内容可预览。">{value}</MarkdownContent>
-    </div> : <textarea id={id} className={textareaClassName} rows={rows} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} maxLength={20000} />}
+    </div> : <textarea ref={input} id={id} className={textareaClassName} rows={rows} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} maxLength={20000} />}
   </div>;
 }

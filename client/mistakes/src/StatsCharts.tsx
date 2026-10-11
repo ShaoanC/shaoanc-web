@@ -61,7 +61,7 @@ export function MasteryChart({ data, total }: { data: Stats['byStatus']; total: 
       <ResponsiveContainer width="100%" height="100%">
         <PieChart aria-label={total ? '已归档错题的掌握程度分布' : '暂无已归档错题'}>
           <Pie data={ringData} dataKey="count" nameKey="name" cx="50%" cy="50%" innerRadius="68%" outerRadius="90%" paddingAngle={rows.filter((item) => item.count > 0).length > 1 ? 3 : 0} stroke="var(--surface-2)" strokeWidth={2} isAnimationActive={false} />
-          {total > 0 && <Tooltip content={(props) => <CountTooltip active={props.active} payload={props.payload} total={total} />} />}
+          {total > 0 && <Tooltip isAnimationActive={false} wrapperStyle={{ zIndex: 1 }} content={(props) => <CountTooltip active={props.active} payload={props.payload} total={total} />} />}
         </PieChart>
       </ResponsiveContainer>
       <div className="stats-mastery-center"><strong>{percentage}%</strong><span>当前掌握率</span></div>

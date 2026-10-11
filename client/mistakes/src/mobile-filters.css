@@ -9,6 +9,11 @@
 
 .mobile-filters-backdrop:is([data-starting-style], [data-ending-style]) { opacity: 0; }
 
+@supports (-webkit-touch-callout: none) {
+  body { position: relative; }
+  .mobile-filters-backdrop { position: absolute; }
+}
+
 .mobile-filters-viewport {
   position: fixed;
   inset: 0;
