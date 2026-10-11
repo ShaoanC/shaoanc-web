@@ -1475,7 +1475,7 @@ input:focus, textarea:focus, select:focus { outline: 2px solid rgba(23,100,72,.1
 .review-candidate > div > span { font-size: 14px; display: block; margin-top: 7px; }
 .review-preparation h2, .review-rating h2 { font-size: 24px; }
 .review-preparation p, .review-rating p { font-size: 16px; }
-.prep-selected { border: 0; border-top: 1px solid var(--border-medium); border-bottom: 1px solid var(--border-medium); border-radius: 0; background: transparent; padding: 18px 0; }
+.prep-selected { border: 0; border-bottom: 1px solid var(--border-medium); border-radius: 0; background: transparent; padding: 18px 0; }
 .prep-selected > strong { font-size: 38px; }
 .prep-selected > strong > small { font-size: 16px; }
 .prep-selected > span, .prep-hint { font-size: 14px; letter-spacing: 0; }
