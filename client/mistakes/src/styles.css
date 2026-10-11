@@ -1963,20 +1963,23 @@ input:focus, textarea:focus, select:focus { outline: 2px solid rgba(23,100,72,.1
 .test-data-tools p { color: var(--text-secondary); font-size: 13px; margin: 6px 0; }
 .test-data-tools small { display: block; color: var(--text-muted); font-size: 12px; line-height: 1.7; }
 .test-data-actions { display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; }
-.data-type-filter { padding: 0 24px 18px; font-size: 13px; color: var(--text-secondary); }
-.data-type-field { display: grid; gap: 8px; }
 @media (max-width: 650px) { .test-data-tools { align-items: stretch; flex-direction: column; } .test-data-actions { align-items: stretch; } }
 
 /* Keep display placeholders below reading text, including Markdown prose. */
 .text-muted { color: var(--text-muted); }
 .metric-value > .text-muted { color: var(--text-muted); font: inherit; letter-spacing: inherit; margin-left: 0; }
 
-/* Search excerpts retain plain text, with highlights supplied by the API. */
+/* Search excerpts keep text highlights and complete typeset formulas. */
 .search-summary { display: grid; gap: 5px; margin-top: 12px; min-width: 0; }
 .search-snippet { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 9px; font-size: 14px; line-height: 1.75; }
 .search-snippet-label { color: var(--text-tertiary); white-space: nowrap; }
 .search-snippet-text { min-width: 0; color: var(--text-secondary); overflow-wrap: anywhere; white-space: pre-wrap; }
 .search-snippet-text mark { color: var(--text-primary); background: var(--accent-soft); font-weight: 600; border-radius: 2px; }
+.search-snippet-math { display: inline-block; max-width: 100%; overflow-x: auto; overflow-y: hidden; padding: .2em .15em; vertical-align: middle; white-space: normal; }
+.search-snippet-math.is-display { display: block; width: max-content; margin: .25em 0; }
+.search-snippet-math .katex { font-size: 1em; }
+.search-snippet-math .katex-display { margin: 0; text-align: left; }
+.search-snippet-math .katex-html { padding-right: 2px; }
 .mistake-card .mistake-main { width: 100%; }
 @media (max-width: 640px) {
   .search-snippet { font-size: 13px; gap: 7px; }
@@ -2075,12 +2078,15 @@ input:focus, textarea:focus, select:focus { outline: 2px solid rgba(23,100,72,.1
   .trash-notice { flex-wrap: wrap; gap: 5px; padding: 12px 16px; }
   .trash-notice > button { margin-left: auto; padding: 6px 0; }
   .mistake-row .mistake-row-surface, .mistake-row.is-trash .mistake-row-surface { grid-template-columns: minmax(0,1fr) auto; gap: 14px 12px; touch-action: pan-y; }
-  .mistake-row:not(.is-trash) { touch-action: pan-y; }
+  .mistake-row:not(.is-trash) { touch-action: pan-y; background: var(--error); --swipe-settle: 360ms cubic-bezier(.22,1.2,.36,1); }
+  .mistake-row:not(.is-trash) .mistake-row-surface { transition: transform var(--swipe-settle), background 150ms; }
+  .mistake-row.is-dragging .mistake-row-surface { transition: none; }
   .mistake-detail-link > .mistake-main { grid-column: 1 / -1; }
   .mistake-detail-link > .status-badge { grid-column: 1; justify-self: start; margin-left: 46px; }
   .mistake-detail-link > .mistake-date { grid-column: 2; font-size: 13px; }
   .mistake-row:not(.is-trash) .mistake-actions { display: none; }
-  .swipe-delete-action { position: absolute; inset: 0 0 0 auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; width: 88px; border: 0; border-radius: 0; color: #fff; background: var(--error); font-size: 14px; }
+  .swipe-delete-action { position: absolute; inset: 0 0 0 auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; width: 88px; min-width: 88px; border: 0; border-radius: 0; color: #fff; background: var(--error); font-size: 14px; transition: width var(--swipe-settle); }
+  .mistake-row.is-dragging .swipe-delete-action { transition: none; }
   .swipe-delete-action:disabled { opacity: 1; }
   .swipe-delete-action:focus-visible { outline: 2px solid #fff; outline-offset: -5px; }
   .mistake-row.is-trash .mistake-actions { grid-column: 1 / -1; justify-self: end; }
@@ -2091,6 +2097,6 @@ input:focus, textarea:focus, select:focus { outline: 2px solid rgba(23,100,72,.1
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .mistake-row .mistake-row-surface, .quick-delete-button { transition: none; }
+  .mistake-row .mistake-row-surface, .mistake-row:not(.is-trash) .mistake-row-surface, .swipe-delete-action, .quick-delete-button { transition: none; }
   .quick-delete-button > span { animation: none; }
 }

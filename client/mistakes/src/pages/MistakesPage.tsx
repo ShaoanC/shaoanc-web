@@ -29,7 +29,6 @@ export function MistakesPage() {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [dataType, setDataType] = useState('');
   const [view, setView] = useState<'list' | 'grid'>('list');
   const [action, setAction] = useState<ActionState>(null);
   const [busy, setBusy] = useState<BusyState>(null);
@@ -55,7 +54,6 @@ export function MistakesPage() {
     try {
       const query = new URLSearchParams({ lifecycle: lifecycle === 'trash' ? 'all' : lifecycle });
       if (lifecycle === 'trash') query.set('deleted', 'true');
-      if (dataType) query.set('dataType', dataType);
       if (subjectId) query.set('subjectId', subjectId);
       if (knowledgePointId) query.set('knowledgePointId', knowledgePointId);
       if (status) query.set('status', status);
@@ -69,10 +67,10 @@ export function MistakesPage() {
     } finally {
       if (version === requestVersion.current) setLoading(false);
     }
-  }, [lifecycle, subjectId, knowledgePointId, status, search, dataType]);
+  }, [lifecycle, subjectId, knowledgePointId, status, search]);
   const reload = useRef(load);
   useEffect(() => { reload.current = load; void load(); }, [load]);
-  useEffect(() => { setAction(null); }, [lifecycle, subjectId, knowledgePointId, status, keyword, dataType, view]);
+  useEffect(() => { setAction(null); }, [lifecycle, subjectId, knowledgePointId, status, keyword, view]);
 
   useEffect(() => {
     if (!action) return;
@@ -122,9 +120,9 @@ export function MistakesPage() {
     finally { setBusy(null); }
   }
 
-  const hasFilters = Boolean(subjectId || knowledgePointId || status || keyword || dataType);
+  const hasFilters = Boolean(subjectId || knowledgePointId || status || keyword.trim());
   const searching = Boolean(search.trim());
-  const clearFilters = () => { setDataType(''); setSubjectId(''); setKnowledgePointId(''); setStatus(''); setKeyword(''); setSearch(''); };
+  const clearFilters = () => { setSubjectId(''); setKnowledgePointId(''); setStatus(''); setKeyword(''); setSearch(''); };
   const subjectKnowledge = knowledgePoints.filter((point) => !subjectId || point.subjectId === subjectId);
   const metrics = [
     { label: '已归档错题', value: stats?.archived, icon: BookOpen, tone: 'green', hint: '已整理，可加入复习' },
@@ -144,15 +142,14 @@ export function MistakesPage() {
       ]} />{!trashed && <a className="text-link library-review-link" href="#/review"><RotateCcw size={15} /> 去复习<ArrowRight size={15} /></a>}</div>
       {trashed && <div className="trash-notice"><p>删除的错题保留 30 天，恢复时会保留原内容和复习记录。</p><button className="button ghost danger-text" disabled={Boolean(busy) || !stats?.trashCount} onClick={() => setPermanentTarget('all')}><Trash2 size={16} />清空回收站</button></div>}
       <div className="filter-bar">
-        <label className="search-input"><Search size={18} /><input aria-label="搜索错题" placeholder="搜索题干、答案、解析、笔记或分类名称" value={keyword} onChange={(event) => setKeyword(event.target.value)} />{keyword && <button className="icon-button" aria-label="清除搜索" onClick={() => setKeyword('')}><X size={15} /></button>}</label>
+        <label className="search-input"><Search size={18} /><input aria-label="搜索错题" placeholder="搜索错题内容、学科或知识点" value={keyword} onChange={(event) => setKeyword(event.target.value)} />{keyword && <button className="icon-button" aria-label="清除搜索" onClick={() => setKeyword('')}><X size={15} /></button>}</label>
         <Select ariaLabel="按学科筛选" value={subjectId} onChange={(value) => { setSubjectId(value); setKnowledgePointId(''); }} options={[{ value: '', label: '全部学科' }, ...subjects.map((subject) => ({ value: subject.id, label: subject.name }))]} />
         <Select ariaLabel="按知识点筛选" value={knowledgePointId} onChange={setKnowledgePointId} searchable options={[{ value: '', label: '全部知识点' }, ...subjectKnowledge.map((point) => ({ value: String(point.id), label: knowledgeLabel(knowledgePoints, point.id) }))]} />
         <Select ariaLabel="按掌握程度筛选" value={status} onChange={setStatus} options={[{ value: '', label: '全部掌握程度' }, { value: 'unreviewed', label: '未复习' }, { value: 'unknown', label: '不会' }, { value: 'familiar', label: '不熟' }, { value: 'mastered', label: '掌握' }]} />
       </div>
-      <div className="data-type-filter"><div className="data-type-field"><span>数据类型</span><Select ariaLabel="按数据类型筛选" value={dataType} onChange={setDataType} options={[{ value: '', label: '全部错题' }, { value: 'formal', label: '正式错题' }, { value: 'test', label: '测试错题' }]} /></div></div>
-      <div className="results-toolbar"><span><SlidersHorizontal size={14} /> {hasFilters ? '筛选结果' : trashed ? '暂存的错题' : lifecycle === 'draft' ? '继续完善你的草稿' : '你的学习积累'}<strong>{loading ? '…' : mistakes.length}</strong> 道{searching && <span className="search-sort-label">按关联度排序</span>}{hasFilters && <button className="reset-filter" onClick={clearFilters}>清除筛选</button>}</span><div className="view-switch" aria-label="展示方式"><button className={view === 'list' ? 'active' : ''} onClick={() => setView('list')} aria-label="列表视图" aria-pressed={view === 'list'}><List size={17} /></button><button className={view === 'grid' ? 'active' : ''} onClick={() => setView('grid')} aria-label="卡片视图" aria-pressed={view === 'grid'}><LayoutGrid size={16} /></button></div></div>
+      <div className="results-toolbar"><span><SlidersHorizontal size={14} /> {searching ? '搜索结果' : hasFilters ? '筛选结果' : trashed ? '暂存的错题' : lifecycle === 'draft' ? '继续完善你的草稿' : '你的学习积累'}<strong>{loading ? '…' : mistakes.length}</strong> 道{hasFilters && <button className="reset-filter" onClick={clearFilters}>清除筛选</button>}</span><div className="view-switch" aria-label="展示方式"><button className={view === 'list' ? 'active' : ''} onClick={() => setView('list')} aria-label="列表视图" aria-pressed={view === 'list'}><List size={17} /></button><button className={view === 'grid' ? 'active' : ''} onClick={() => setView('grid')} aria-label="卡片视图" aria-pressed={view === 'grid'}><LayoutGrid size={16} /></button></div></div>
       <LoadingContent loading={loading} kind="rows">{error ? <ErrorState message={error} retry={() => void load()} /> : mistakes.length === 0 ? <EmptyState filtered={hasFilters}
-        title={hasFilters ? '没有找到符合条件的错题' : trashed ? '回收站是空的' : lifecycle === 'draft' ? '草稿箱还是空的' : '你的第一道错题，从这里开始'}
+        title={searching ? '没有找到相关错题' : hasFilters ? '没有找到符合条件的错题' : trashed ? '回收站是空的' : lifecycle === 'draft' ? '草稿箱还是空的' : '你的第一道错题，从这里开始'}
         description={hasFilters ? '试试其他关键词，或调整筛选条件。' : trashed ? '删除的错题会在这里保留 30 天。' : lifecycle === 'draft' ? '录入时可以先存为草稿，之后再慢慢完善。' : '记下题目、梳理答案，再通过复习一点点掌握。'}
         action={hasFilters ? <button className="button secondary" onClick={clearFilters}>清除筛选</button> : trashed ? undefined : <a className="button primary" href="#/new"><Plus size={17} /> 录入第一道错题</a>} /> : <div className={`mistakes-collection ${view === 'grid' ? 'card-grid' : ''} ${trashed ? 'trash-collection' : ''}`}>
           {view === 'list' && <div className="list-column-head"><span>题目与知识点</span><span>掌握程度</span><span>{trashed ? '删除时间' : '最近整理'}</span><span>操作</span></div>}

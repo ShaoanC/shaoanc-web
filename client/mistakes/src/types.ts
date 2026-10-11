@@ -28,7 +28,7 @@ export interface MistakeSearch {
   totalTermCount: number;
   snippets: {
     field: 'question' | 'answer' | 'analysis' | 'note' | 'subject' | 'knowledgePoints';
-    segments: { text: string; matched: boolean }[];
+    segments: { text: string; matched: boolean; type?: 'math'; display?: boolean }[];
   }[];
 }
 

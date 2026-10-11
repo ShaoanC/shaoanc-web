@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { FileText, RotateCcw, Trash2 } from 'lucide-react';
 import { useSwipeable } from 'react-swipeable';
 import { formatDate } from './api';
@@ -27,10 +27,15 @@ interface MistakeRowProps {
 const DELETE_WIDTH = 88;
 const SWIPE_THRESHOLD = 48;
 
+function rubberBand(distance: number) {
+  return DELETE_WIDTH * (1 - 1 / (distance * 0.55 / DELETE_WIDTH + 1));
+}
+
 export function MistakeRow({ mistake, grid, opened, armed, disabled, deleting, restoring, onOpenChange, onArmedChange, onDelete, onRestore, onPermanentDelete }: MistakeRowProps) {
   const { subjects, knowledgePoints } = useApp();
   const [mobile, setMobile] = useState(() => window.matchMedia('(max-width: 640px)').matches);
   const [dragOffset, setDragOffset] = useState<number | null>(null);
+  const rowRef = useRef<HTMLDivElement | null>(null);
   const startedOpen = useRef(false);
   const horizontal = useRef(false);
   const suppressClickUntil = useRef(0);
@@ -46,7 +51,7 @@ export function MistakeRow({ mistake, grid, opened, armed, disabled, deleting, r
 
   const handlers = useSwipeable({
     trackTouch: mobile && !trashed && !disabled,
-    trackMouse: false,
+    trackMouse: mobile && !trashed && !disabled,
     preventScrollOnSwipe: false,
     delta: 10,
     onSwipeStart: ({ dir }) => {
@@ -57,7 +62,10 @@ export function MistakeRow({ mistake, grid, opened, armed, disabled, deleting, r
       if (!horizontal.current || absX <= absY) return;
       suppressClickUntil.current = Date.now() + 400;
       const origin = startedOpen.current ? -DELETE_WIDTH : 0;
-      setDragOffset(Math.max(startedOpen.current ? -DELETE_WIDTH * 2 : -DELETE_WIDTH, Math.min(0, origin + deltaX)));
+      const distance = Math.max(0, -(origin + deltaX));
+      // The first pull stretches past the action with resistance; a second pull follows the finger.
+      const reveal = startedOpen.current ? distance : Math.min(distance, DELETE_WIDTH) + rubberBand(Math.max(0, distance - DELETE_WIDTH));
+      setDragOffset(-Math.min(rowRef.current?.clientWidth || DELETE_WIDTH, reveal));
     },
     onSwiped: ({ dir, absX }) => {
       setDragOffset(null);
@@ -72,19 +80,24 @@ export function MistakeRow({ mistake, grid, opened, armed, disabled, deleting, r
     onTouchEndOrOnMouseUp: () => setDragOffset(null),
   });
 
+  const attachRow = useCallback((element: HTMLDivElement | null) => {
+    rowRef.current = element;
+    handlers.ref(element);
+  }, [handlers.ref]);
   const offset = mobile && !trashed ? dragOffset ?? (opened ? -DELETE_WIDTH : 0) : 0;
+  const actionWidth = Math.max(DELETE_WIDTH, -offset);
   const remainingDays = mistake.deletedAt ? Math.max(0, Math.ceil((Date.parse(mistake.deletedAt) + 30 * 86400000 - Date.now()) / 86400000)) : 0;
 
-  return <div {...handlers} className={`mistake-row ${grid ? 'is-grid' : ''} ${trashed ? 'is-trash' : ''} ${opened ? 'is-open' : ''}`} data-mistake-id={mistake.id} onTouchCancel={() => setDragOffset(null)}>
-    {!trashed && <button type="button" className="swipe-delete-action" disabled={!opened || disabled} tabIndex={opened ? 0 : -1} aria-hidden={!opened} onClick={onDelete}><Trash2 size={20} /><span>{deleting ? '删除中…' : '删除'}</span></button>}
+  return <div {...handlers} ref={attachRow} className={`mistake-row ${grid ? 'is-grid' : ''} ${trashed ? 'is-trash' : ''} ${opened ? 'is-open' : ''} ${dragOffset !== null ? 'is-dragging' : ''}`} data-mistake-id={mistake.id} onTouchCancel={() => setDragOffset(null)}
+    onClickCapture={(event) => {
+      if (Date.now() < suppressClickUntil.current) { event.preventDefault(); event.stopPropagation(); }
+    }}>
+    {!trashed && <button type="button" className="swipe-delete-action" style={{ width: actionWidth }} disabled={!opened || disabled} tabIndex={opened ? 0 : -1} aria-hidden={!opened} onClick={onDelete}><Trash2 size={20} /><span>{deleting ? '删除中…' : '删除'}</span></button>}
     <div className={`mistake-item mistake-row-surface ${grid ? 'mistake-card' : ''} ${dragOffset !== null ? 'is-dragging' : ''}`} style={{ transform: offset ? `translateX(${offset}px)` : undefined }}
-      onClickCapture={(event) => {
-        if (Date.now() < suppressClickUntil.current) { event.preventDefault(); event.stopPropagation(); }
-      }}
       onKeyDown={(event) => {
         if (mobile && !trashed && !disabled && event.key === 'Delete') { event.preventDefault(); onOpenChange(true); }
       }}>
-      <a className="mistake-detail-link" href={`#/mistakes/${mistake.id}`}>
+      <a className="mistake-detail-link" href={`#/mistakes/${mistake.id}`} onDragStart={(event) => { if (mobile) event.preventDefault(); }}>
         <div className="mistake-main"><span className={`subject-icon subject-${mistake.subjectId}`}>{subjectName?.slice(0, 1) || <FileText size={20} />}</span><div className="mistake-copy">
           <h3><MarkdownContent variant="compact" emptyText="尚未填写题干">{mistake.question}</MarkdownContent></h3>
           <div className="mistake-meta"><DataTypeBadge isTest={mistake.isTest} /><span className={`subject-tag subject-${mistake.subjectId}`}>{subjectName || mistake.subjectId || <span className="text-muted">未选学科</span>}</span><span className={`knowledge-tag ${knowledgePoints.some((point) => point.id === mistake.primaryKnowledgePointId) ? '' : 'text-muted'}`}>{knowledgeLabel(knowledgePoints, mistake.primaryKnowledgePointId)}</span>{mistake.lifecycle === 'draft' && <span className="draft-tag">草稿</span>}</div>

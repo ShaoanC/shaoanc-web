@@ -19,27 +19,29 @@ function normalize(text) {
     return text.normalize('NFKC').toLowerCase();
 }
 
-function nodeText(node) {
+function nodeRuns(node) {
     switch (node.type) {
         case 'text':
         case 'inlineCode':
         case 'code':
+            return [{ text: node.value }];
         case 'inlineMath':
         case 'math':
-            return node.value;
+            return [{ text: node.value, type: 'math', display: node.type === 'math' }];
         case 'image':
         case 'imageReference':
-            return node.alt || '';
+            return [{ text: node.alt || '' }];
         case 'definition':
         case 'footnoteReference':
         case 'html':
-            return '';
+            return [];
         case 'break':
         case 'thematicBreak':
-            return ' ';
+            return [{ text: ' ' }];
         case 'link': {
-            const label = node.children.map(nodeText).join('');
-            return label === node.url || `mailto:${label}` === node.url ? '' : label;
+            const runs = node.children.flatMap(nodeRuns);
+            const label = runs.map((run) => run.text).join('');
+            return label === node.url || `mailto:${label}` === node.url ? [] : runs;
         }
         case 'paragraph':
         case 'heading':
@@ -48,14 +50,42 @@ function nodeText(node) {
         case 'delete':
         case 'linkReference':
         case 'tableCell':
-            return node.children.map(nodeText).join('');
+            return node.children.flatMap(nodeRuns);
         default:
-            return node.children ? node.children.map(nodeText).join(' ') : '';
+            return node.children ? node.children.flatMap((child, index) => [
+                ...(index ? [{ text: ' ' }] : []), ...nodeRuns(child)
+            ]) : [];
     }
 }
 
 function plainText(markdown) {
-    return nodeText(markdownParser.parse(markdown)).replace(/\s+/gu, ' ').trim();
+    return nodeRuns(markdownParser.parse(markdown)).map((run) => run.text).join('').replace(/\s+/gu, ' ').trim();
+}
+
+function markdownContent(markdown) {
+    const runs = nodeRuns(markdownParser.parse(markdown));
+    const math = [];
+    let text = '';
+    let pendingSpace = false;
+    for (const run of runs) {
+        let start = null;
+        let end = 0;
+        for (const character of run.text) {
+            if (/\s/u.test(character)) {
+                pendingSpace = Boolean(text.length);
+                continue;
+            }
+            if (pendingSpace) {
+                text += ' ';
+                pendingSpace = false;
+            }
+            if (start === null) start = text.length;
+            text += character;
+            end = text.length;
+        }
+        if (run.type === 'math' && start !== null) math.push({ ...run, start, end });
+    }
+    return { text, math };
 }
 
 function queryTokens(text) {
@@ -227,7 +257,22 @@ function normalizedProjection(text) {
     return { normalized, starts, ends };
 }
 
-function snippetSegments(text, matchedTerms) {
+function appendTextSegments(segments, text, start, end, ranges) {
+    if (start >= end) return;
+    let cursor = start;
+    for (const range of ranges) {
+        if (range.start >= end) break;
+        if (range.end <= start) continue;
+        const rangeStart = Math.max(range.start, start);
+        const rangeEnd = Math.min(range.end, end);
+        if (cursor < rangeStart) segments.push({ text: text.slice(cursor, rangeStart), matched: false });
+        segments.push({ text: text.slice(rangeStart, rangeEnd), matched: true });
+        cursor = rangeEnd;
+    }
+    if (cursor < end) segments.push({ text: text.slice(cursor, end), matched: false });
+}
+
+function snippetSegments({ text, math }, matchedTerms) {
     const projection = normalizedProjection(text);
     const ranges = [];
     visitIndexTokens(projection.normalized, (term, start, end) => {
@@ -250,21 +295,29 @@ function snippetSegments(text, matchedTerms) {
     let hit = offsets.findIndex((offset) => offset >= merged[0].start);
     if (hit < 0) hit = 0;
     const startCharacter = Math.max(0, hit - 35);
-    const start = offsets[startCharacter];
-    const end = offsets[Math.min(characters.length, startCharacter + SNIPPET_LENGTH)];
+    let start = offsets[startCharacter];
+    let end = offsets[Math.min(characters.length, startCharacter + SNIPPET_LENGTH)];
+    // A formula is an indivisible excerpt, even when it crosses the context window.
+    for (const formula of math) {
+        if (formula.start < start && formula.end > start) start = formula.start;
+        if (formula.start < end && formula.end > end) end = formula.end;
+    }
     const segments = [];
     if (start > 0) segments.push({ text: '…', matched: false });
     let cursor = start;
-    for (const range of merged) {
-        if (range.start >= end) break;
-        if (range.end <= start) continue;
-        const rangeStart = Math.max(range.start, start);
-        const rangeEnd = Math.min(range.end, end);
-        if (cursor < rangeStart) segments.push({ text: text.slice(cursor, rangeStart), matched: false });
-        segments.push({ text: text.slice(rangeStart, rangeEnd), matched: true });
-        cursor = rangeEnd;
+    for (const formula of math) {
+        if (formula.start >= end) break;
+        if (formula.end <= start) continue;
+        appendTextSegments(segments, text, cursor, formula.start, merged);
+        segments.push({
+            text: formula.text,
+            matched: merged.some((range) => range.start < formula.end && range.end > formula.start),
+            type: 'math',
+            display: formula.display
+        });
+        cursor = formula.end;
     }
-    if (cursor < end) segments.push({ text: text.slice(cursor, end), matched: false });
+    appendTextSegments(segments, text, cursor, end, merged);
     if (end < text.length) segments.push({ text: '…', matched: false });
     return segments;
 }
@@ -285,7 +338,12 @@ function searchMetadata(row, result, terms, directory) {
             FIELD_BOOSTS[second.field] - FIELD_BOOSTS[first.field] ||
             SEARCH_FIELDS.indexOf(first.field) - SEARCH_FIELDS.indexOf(second.field))
         .slice(0, 2)
-        .map((entry) => ({ field: entry.field, segments: snippetSegments(fieldText(row, entry.field, directory), entry.terms) }))
+        .map((entry) => ({
+            field: entry.field,
+            segments: snippetSegments(BODY_FIELDS.includes(entry.field)
+                ? markdownContent(row[entry.field])
+                : { text: fieldText(row, entry.field, directory), math: [] }, entry.terms)
+        }))
         .filter((snippet) => snippet.segments.length);
     return { matchedTermCount: new Set(result.queryTerms).size, totalTermCount: terms.length, snippets };
 }

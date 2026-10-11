@@ -12,6 +12,8 @@ function assertSearchMetadata(mistake) {
         assert.ok(snippetFields.has(snippet.field));
         assert.ok(Array.isArray(snippet.segments) && snippet.segments.length > 0);
         assert.ok(snippet.segments.every((segment) => typeof segment.text === 'string' && typeof segment.matched === 'boolean'));
+        assert.ok(snippet.segments.every((segment) => segment.type === undefined ||
+            (segment.type === 'math' && typeof segment.display === 'boolean')));
         assert.ok(snippet.segments.some((segment) => segment.matched));
     }
 }
@@ -115,6 +117,53 @@ async function runSearchSmoke({ alice, bob, admin }) {
         assertHighlighted(primaryMatches.find((mistake) => mistake.id === full.id), 'knowledgePoints', /algebraoldtag/i);
         const auxiliaryMatches = await search(alice, 'AuxiliaryTag');
         assertHighlighted(auxiliaryMatches.find((mistake) => mistake.id === sequence.id), 'knowledgePoints', /auxiliarytag/i);
+
+        // Excerpts strip Markdown formatting while preserving complete, typed formulas.
+        const inlineFormula = String.raw`f(x)=\frac{MathSignal^2}{2}`;
+        const displayFormula = String.raw`\tag{1} DisplaySignal=\sqrt{4}`;
+        const formulaMistake = await createMistake(alice, {
+            question: `## 摘要样例\n\n**SnippetSignal** 与 $${inlineFormula}$；[链接文字](https://snippet-hidden.example/path)。`,
+            answer: `计算步骤：\n\n$$\n${displayFormula}\n$$`
+        });
+        const mixedResults = await search(alice, 'SnippetSignal');
+        assert.deepEqual(mixedResults.map((mistake) => mistake.id), [formulaMistake.id]);
+        assertHighlighted(mixedResults[0], 'question', /SnippetSignal/i);
+        const mixedSegments = mixedResults[0].search.snippets.find((snippet) => snippet.field === 'question').segments;
+        assert.deepEqual(mixedSegments.filter((segment) => segment.type === 'math'), [
+            { text: inlineFormula, matched: false, type: 'math', display: false }
+        ], 'Text matches retain nearby formulas without falsely highlighting them');
+        const mixedText = mixedSegments.map((segment) => segment.text).join('');
+        assert.ok(mixedText.includes('摘要样例') && mixedText.includes('链接文字'));
+        assert.ok(!/##|\*\*|https:\/\/|\$/.test(mixedText), 'Excerpts exclude Markdown markers and formula delimiters');
+        const mathResults = await search(alice, 'MathSignal');
+        assert.deepEqual(mathResults.map((mistake) => mistake.id), [formulaMistake.id]);
+        assertSearchMetadata(mathResults[0]);
+        const mathSegments = mathResults[0].search.snippets.find((snippet) => snippet.field === 'question').segments;
+        assert.deepEqual(mathSegments.filter((segment) => segment.matched), [
+            { text: inlineFormula, matched: true, type: 'math', display: false }
+        ], 'A match inside a formula highlights its complete source');
+        const displayResults = await search(alice, 'DisplaySignal');
+        assert.deepEqual(displayResults.map((mistake) => mistake.id), [formulaMistake.id]);
+        assertSearchMetadata(displayResults[0]);
+        assert.deepEqual(displayResults[0].search.snippets.find((snippet) => snippet.field === 'answer').segments
+            .filter((segment) => segment.type === 'math'), [
+            { text: displayFormula, matched: true, type: 'math', display: true }
+        ], 'Display formulas retain their original rendering mode');
+
+        const longFormula = `${Array.from({ length: 32 }, (_, index) => `a_{${index}}`).join('+')}+BoundarySignal`;
+        const boundaryMistake = await createMistake(alice, {
+            question: `**WindowSignal** ${'前文'.repeat(24)} $${longFormula}$ ${'后文'.repeat(50)}`
+        });
+        for (const keyword of ['WindowSignal', 'BoundarySignal']) {
+            const boundaryResults = await search(alice, keyword);
+            assert.deepEqual(boundaryResults.map((mistake) => mistake.id), [boundaryMistake.id]);
+            assertSearchMetadata(boundaryResults[0]);
+            const boundarySegments = boundaryResults[0].search.snippets.find((snippet) => snippet.field === 'question').segments;
+            assert.deepEqual(boundarySegments.filter((segment) => segment.type === 'math'), [
+                { text: longFormula, matched: keyword === 'BoundarySignal', type: 'math', display: false }
+            ], 'A formula remains whole when either context boundary falls inside it');
+            assert.ok(boundarySegments.some((segment) => segment.text === '…'), 'Long excerpts still indicate omitted context');
+        }
 
         // Writes update the shared index, including metadata changes across accounts.
         await alice('PATCH', `/mistakes/${full.id}`, { question: 'ReplacementSignal 的新题干' });
