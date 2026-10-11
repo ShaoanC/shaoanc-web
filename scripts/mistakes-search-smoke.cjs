@@ -44,11 +44,6 @@ async function runSearchSmoke({ alice, bob, admin }) {
         mistakes.set(mistake.id, actor);
         return mistake;
     };
-    const deleteMistake = async (mistake) => {
-        await mistakes.get(mistake.id)('DELETE', `/mistakes/${mistake.id}`);
-        mistakes.delete(mistake.id);
-    };
-
     try {
         const rootPoint = await createPoint('SearchRootTag');
         const primaryPoint = await createPoint('AlgebraOldTag', rootPoint.id);
@@ -125,18 +120,32 @@ async function runSearchSmoke({ alice, bob, admin }) {
         await alice('PATCH', `/mistakes/${full.id}`, { question: 'ReplacementSignal 的新题干' });
         assert.deepEqual(await search(alice, 'geometry'), [], 'Editing removes the old indexed text immediately');
         assert.deepEqual((await search(alice, 'ReplacementSignal')).map((mistake) => mistake.id), [full.id]);
-        await deleteMistake(partial);
-        assert.deepEqual(await search(alice, 'DeleteOnlyMarker'), [], 'Deleted mistakes disappear from search');
+        assert.deepEqual((await search(alice, 'DeleteOnlyMarker')).map((mistake) => mistake.id), [partial.id]);
+        await alice('DELETE', `/mistakes/${partial.id}`);
+        assert.deepEqual(await search(alice, 'DeleteOnlyMarker'), [], 'Soft deletion invalidates the active search cache');
+        const trashSearch = await search(alice, 'DeleteOnlyMarker', { deleted: 'true', lifecycle: 'all' });
+        assert.deepEqual(trashSearch.map((mistake) => mistake.id), [partial.id], 'Trash supports the same keyword search');
+        assertSearchMetadata(trashSearch[0]);
+        assert.deepEqual(await search(bob, 'DeleteOnlyMarker', { deleted: 'true', lifecycle: 'all' }), []);
+        await alice('POST', `/mistakes/${partial.id}/restore`);
+        assert.deepEqual((await search(alice, 'DeleteOnlyMarker')).map((mistake) => mistake.id), [partial.id],
+            'Restoring invalidates a warm search cache and makes the mistake searchable again');
+        assert.deepEqual(await search(alice, 'DeleteOnlyMarker', { deleted: 'true', lifecycle: 'all' }), []);
+        await alice('DELETE', `/mistakes/${partial.id}`);
         await admin('PATCH', `/knowledge-points/${primaryPoint.id}`, { name: 'TopologyNewTag' });
         for (const [actor, expectedId] of [[alice, full.id], [bob, foreign.id]]) {
             assert.deepEqual(await search(actor, 'AlgebraOldTag'), [], 'Renaming invalidates old metadata for every account');
             assert.ok((await search(actor, 'TopologyNewTag')).some((mistake) => mistake.id === expectedId));
         }
+        assert.deepEqual((await search(alice, 'TopologyNewTag', { deleted: 'true', lifecycle: 'all' }))
+            .map((mistake) => mistake.id), [partial.id], 'Knowledge-point renaming also updates trash search');
         await admin('DELETE', `/knowledge-points/${primaryPoint.id}`);
         points.delete(primaryPoint.id);
         assert.deepEqual(await search(alice, 'TopologyNewTag'), []);
         assert.deepEqual(await search(bob, 'TopologyNewTag'), []);
         assert.equal((await alice('GET', `/mistakes/${full.id}`)).primaryKnowledgePointId, null);
+        assert.equal((await alice('GET', `/mistakes/${partial.id}`)).primaryKnowledgePointId, null,
+            'Deleting metadata clears references on trashed mistakes');
         assert.deepEqual((await bob('GET', `/mistakes/${foreign.id}`)).auxiliaryKnowledgePointIds, [],
             'Deleting metadata clears primary and auxiliary references across accounts');
         assert.equal((await admin('POST', '/mistakes/test-data', undefined, 201)).count, 6);
@@ -155,7 +164,11 @@ async function runSearchSmoke({ alice, bob, admin }) {
         assert.deepEqual(await search(alice, '!!!'), [], 'A nonblank query without searchable terms returns no results');
     } finally {
         if (hasTestData) await admin('DELETE', '/mistakes/test-data');
-        for (const [id, actor] of mistakes) await actor('DELETE', `/mistakes/${id}`);
+        await admin('DELETE', '/mistakes/trash');
+        for (const [id, actor] of mistakes) {
+            await actor('DELETE', `/mistakes/${id}`);
+            await actor('DELETE', `/mistakes/${id}/permanent`);
+        }
         for (const id of [...points].reverse()) await admin('DELETE', `/knowledge-points/${id}`);
     }
 }

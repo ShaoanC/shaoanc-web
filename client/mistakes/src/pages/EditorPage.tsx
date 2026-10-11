@@ -30,6 +30,10 @@ export function EditorPage({ id }: { id?: number }) {
   useEffect(() => {
     if (!id) return;
     api<Mistake>(`/mistakes/${id}`).then((item) => {
+      if (item.deletedAt) {
+        setLoadError('这道错题在回收站中，请先恢复后再编辑。');
+        return;
+      }
       setIsTest(item.isTest);
       setSubjectId(item.subjectId || '');
       setPrimaryId(item.primaryKnowledgePointId ? String(item.primaryKnowledgePointId) : '');
@@ -59,7 +63,7 @@ export function EditorPage({ id }: { id?: number }) {
 
   return <>
     <a className="back-link" href={id ? `#/mistakes/${id}` : '#/mistakes'}><ArrowLeft size={16} /> {id ? '返回错题详情' : '返回我的错题'}</a>
-    <PageHeader eyebrow="留下题目，也留下思路" title={id ? '编辑错题' : '录入错题'} description="记录完整题干，补充答案和错因，再标注对应的知识点。" action={<DataTypeBadge isTest={isTest} />} />
+    <PageHeader eyebrow="留下题目，也留下思路" title={id ? '编辑错题' : '录入错题'} description="记录完整题干，补充答案和错因，再标注对应的知识点。" action={isTest ? <DataTypeBadge isTest /> : undefined} />
     <LoadingContent loading={loading} kind="editor">
     {loadError ? <ErrorState message={loadError} /> :
     <form onSubmit={(event) => { event.preventDefault(); void save('archived'); }}>

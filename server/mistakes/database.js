@@ -61,7 +61,8 @@ db.exec(`
         analysis TEXT NOT NULL DEFAULT '',
         note TEXT NOT NULL DEFAULT '',
         created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
+        updated_at TEXT NOT NULL,
+        deleted_at TEXT
     );
     CREATE INDEX IF NOT EXISTS mistakes_user ON mistakes(user_id, lifecycle, updated_at);
     CREATE TABLE IF NOT EXISTS reviews (
@@ -80,6 +81,10 @@ if (!db.prepare('PRAGMA table_info(users)').all().some((column) => column.name =
 if (!db.prepare('PRAGMA table_info(mistakes)').all().some((column) => column.name === 'is_test')) {
     db.exec('ALTER TABLE mistakes ADD COLUMN is_test INTEGER NOT NULL DEFAULT 0');
 }
+if (!db.prepare('PRAGMA table_info(mistakes)').all().some((column) => column.name === 'deleted_at')) {
+    db.exec('ALTER TABLE mistakes ADD COLUMN deleted_at TEXT');
+}
+db.exec('CREATE INDEX IF NOT EXISTS mistakes_trash ON mistakes(user_id, deleted_at)');
 
 const initialDirectory = [
     ['math', '数学', [

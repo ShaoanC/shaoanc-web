@@ -32,7 +32,7 @@ export function ErrorState({ message, retry }: { message: string; retry?: () => 
 }
 
 export function DataTypeBadge({ isTest }: { isTest: boolean }) {
-  return <span className={isTest ? 'data-type-badge test' : 'data-type-badge'}>{isTest ? '测试错题' : '正式错题'}</span>;
+  return isTest ? <span className="data-type-badge test">测试错题</span> : null;
 }
 
 export function StatusBadge({ status }: { status: KnowledgeStatus }) {

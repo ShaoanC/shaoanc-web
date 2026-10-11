@@ -47,6 +47,7 @@ export interface Mistake {
   reviewsCount: number;
   createdAt: string;
   updatedAt: string;
+  deletedAt: string | null;
   search?: MistakeSearch;
 }
 
@@ -57,6 +58,7 @@ export interface Review {
 }
 
 export interface Stats {
+  trashCount: number;
   testCount: number;
   total: number;
   archived: number;

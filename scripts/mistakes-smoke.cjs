@@ -155,6 +155,7 @@ async function main() {
     assert.equal(unmarkedMistake.lifecycle, 'archived');
     assert.equal(unmarkedMistake.primaryKnowledgePointId, null, 'Archived questions may remain unmarked');
     await alice('DELETE', `/mistakes/${unmarkedMistake.id}`);
+    await alice('DELETE', `/mistakes/${unmarkedMistake.id}/permanent`);
 
     const bobList = await bob('GET', '/mistakes?lifecycle=all');
     assert.deepEqual(bobList.map((mistake) => mistake.id), [bobMistake.id], 'Users only list their own records');
@@ -225,10 +226,13 @@ async function main() {
     assert.equal((await alice('GET', `/mistakes/${aliceMistake.id}`)).id, aliceMistake.id);
     const clearedTestStats = await admin('GET', '/stats');
     assert.deepEqual(
-        [clearedTestStats.total, clearedTestStats.testCount, clearedTestStats.reviewCount],
-        [1, 0, 0],
-        'Clearing test data preserves formal mistakes and removes test reviews'
+        [clearedTestStats.total, clearedTestStats.testCount, clearedTestStats.reviewCount, clearedTestStats.trashCount],
+        [1, 0, 0, 6],
+        'Moving test data to trash preserves formal mistakes and excludes test reviews from statistics'
     );
+    assert.equal((await admin('GET', '/mistakes?deleted=true&lifecycle=all&dataType=test')).length, 6);
+    assert.equal((await admin('GET', `/mistakes/${reviewedTestMistake.id}/reviews`)).length, 1,
+        'Bulk soft deletion retains review history');
     assert.equal((await secondAdmin('GET', '/mistakes?lifecycle=all&dataType=test')).length, 6,
         'Clearing test data does not affect another account');
     assert.equal((await admin('DELETE', '/mistakes/test-data')).count, 0);
@@ -236,6 +240,8 @@ async function main() {
     assert.deepEqual(await alice('GET', '/mistakes?lifecycle=all&dataType=test'), [],
         'Rejected sample generation does not create test data for regular users');
     await admin('DELETE', `/mistakes/${formalWithTestText.id}`);
+    assert.equal((await admin('DELETE', '/mistakes/trash')).count, 7);
+    assert.equal((await secondAdmin('DELETE', '/mistakes/trash')).count, 6);
 
     const previousSession = client();
     await previousSession('POST', '/auth/login', { username: 'smoke_alice', password: initialPassword });
@@ -247,11 +253,75 @@ async function main() {
     const changedLogin = await anonymous('POST', '/auth/login', { username: 'smoke_alice', password: newPassword });
     assert.equal(changedLogin.user.id, registrationAlice.user.id);
 
+    const archivedBeforeDelete = await alice('GET', `/mistakes/${aliceMistake.id}`);
+    const draftBeforeDelete = await bob('GET', `/mistakes/${bobMistake.id}`);
+    await alice('DELETE', `/mistakes/${aliceMistake.id}/permanent`, undefined, 409);
     await bob('DELETE', `/mistakes/${bobMistake.id}`);
     await alice('DELETE', `/mistakes/${aliceMistake.id}`);
+    const trashedMistake = await alice('GET', `/mistakes/${aliceMistake.id}`);
+    assert.ok(Number.isFinite(Date.parse(trashedMistake.deletedAt)), 'Trash records expose their deletion time');
+    assert.deepEqual(trashedMistake, { ...archivedBeforeDelete, deletedAt: trashedMistake.deletedAt },
+        'Soft deletion preserves content, lifecycle, review status and original update time');
+    await alice('DELETE', `/mistakes/${aliceMistake.id}`);
+    assert.equal((await alice('GET', `/mistakes/${aliceMistake.id}`)).deletedAt, trashedMistake.deletedAt,
+        'Repeating deletion does not extend the retention period');
+    assert.deepEqual(await alice('GET', '/mistakes?lifecycle=all'), []);
+    assert.deepEqual(await alice('GET', '/mistakes?status=familiar'), [], 'Trash is excluded from review candidates');
+    assert.deepEqual((await alice('GET', '/mistakes?deleted=true&lifecycle=all')).map((mistake) => mistake.id),
+        [aliceMistake.id], 'Trash stays scoped to the current account');
+    assert.deepEqual(await alice('GET', `/mistakes/${aliceMistake.id}/reviews`), reviews);
+    await alice('PATCH', `/mistakes/${aliceMistake.id}`, { note: 'Cannot edit trash' }, 409);
+    await alice('POST', `/mistakes/${aliceMistake.id}/reviews`, { result: 'mastered' }, 409);
+    await bob('POST', `/mistakes/${aliceMistake.id}/restore`, undefined, 404);
+    await bob('DELETE', `/mistakes/${aliceMistake.id}/permanent`, undefined, 404);
+    const trashStats = await alice('GET', '/stats');
+    assert.deepEqual([trashStats.total, trashStats.archived, trashStats.drafts, trashStats.reviewCount, trashStats.trashCount],
+        [0, 0, 0, 0, 1]);
+    assert.ok([...trashStats.bySubject, ...trashStats.byStatus, ...trashStats.byKnowledgePoint]
+        .every((item) => item.count === 0), 'Learning statistics exclude all trashed records');
+
+    const restoredArchive = await alice('POST', `/mistakes/${aliceMistake.id}/restore`);
+    const restoredDraft = await bob('POST', `/mistakes/${bobMistake.id}/restore`);
+    assert.deepEqual(restoredArchive, archivedBeforeDelete, 'Restoring an archive preserves its content and review history');
+    assert.deepEqual(restoredDraft, draftBeforeDelete, 'Restoring a draft preserves its original lifecycle and update time');
+    assert.equal((await alice('GET', '/stats')).reviewCount, 1);
+    assert.equal((await bob('GET', '/mistakes?lifecycle=draft'))[0].id, bobMistake.id);
+    await bob('DELETE', `/mistakes/${bobMistake.id}`);
+    await alice('DELETE', `/mistakes/${aliceMistake.id}`);
+    await alice('DELETE', `/mistakes/${aliceMistake.id}/permanent`);
     await alice('GET', `/mistakes/${aliceMistake.id}`, undefined, 404);
-    const finalStats = await alice('GET', '/stats');
-    assert.deepEqual([finalStats.total, finalStats.reviewCount], [0, 0], 'Deleting a mistake also removes its reviews');
+    assert.equal(app.db.prepare('SELECT COUNT(*) AS count FROM reviews WHERE mistake_id = ?').get(aliceMistake.id).count,
+        0, 'Permanent deletion cascades to review history');
+
+    for (const lifecycle of ['archived', 'draft']) {
+        const clearable = await alice('POST', '/mistakes', { ...mistakeFields, lifecycle }, 201);
+        await alice('DELETE', `/mistakes/${clearable.id}`);
+    }
+    assert.deepEqual(await alice('GET', '/mistakes?deleted=true&lifecycle=all&subjectId=physics'), []);
+    assert.equal((await alice('DELETE', '/mistakes/trash?subjectId=physics')).count, 2,
+        'Emptying trash clears the whole account regardless of current filters');
+    assert.equal((await alice('GET', '/stats')).trashCount, 0);
+    assert.equal((await bob('GET', '/mistakes?deleted=true&lifecycle=all'))[0].id, bobMistake.id,
+        'Emptying one account trash preserves another account trash');
+
+    // Trigger expiry at each public read/restore entrypoint without waiting for the cleanup timer.
+    for (const action of ['list', 'detail', 'restore']) {
+        const expiring = await alice('POST', '/mistakes', { ...mistakeFields, lifecycle: 'archived' }, 201);
+        await alice('POST', `/mistakes/${expiring.id}/reviews`, { result: 'familiar' }, 201);
+        await alice('DELETE', `/mistakes/${expiring.id}`);
+        const expiredAt = new Date(Date.now() - 720 * 60 * 60 * 1000 - 1000).toISOString();
+        app.db.prepare('UPDATE mistakes SET deleted_at = ? WHERE id = ?').run(expiredAt, expiring.id);
+        if (action === 'list') {
+            assert.deepEqual(await alice('GET', '/mistakes?deleted=true&lifecycle=all'), []);
+        } else {
+            await alice(action === 'restore' ? 'POST' : 'GET',
+                `/mistakes/${expiring.id}${action === 'restore' ? '/restore' : ''}`, undefined, 404);
+        }
+        assert.equal(app.db.prepare('SELECT id FROM mistakes WHERE id = ?').get(expiring.id), undefined,
+            'Records expire after 720 hours and cannot be restored');
+        assert.equal(app.db.prepare('SELECT COUNT(*) AS count FROM reviews WHERE mistake_id = ?').get(expiring.id).count, 0);
+    }
+    await bob('DELETE', '/mistakes/trash');
 
     await runSearchSmoke({ alice, bob, admin });
 

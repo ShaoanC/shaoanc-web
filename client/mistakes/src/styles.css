@@ -1800,6 +1800,7 @@ input:focus, textarea:focus, select:focus { outline: 2px solid rgba(23,100,72,.1
   .review-filters { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .selection-toolbar { padding: 12px 16px 16px; font-size: 14px; }
   .review-candidate { display: grid; grid-template-columns: 19px minmax(0,1fr); padding: 20px 16px; gap: 12px; }
+  .review-candidate .data-type-badge { grid-column: 2; justify-self: start; }
   .review-candidate .status-badge { grid-column: 2; justify-self: start; }
   .review-candidate h3 { font-size: 18px; }
   .review-candidate > div > span { font-size: 13px; }
@@ -1956,7 +1957,7 @@ input:focus, textarea:focus, select:focus { outline: 2px solid rgba(23,100,72,.1
 .avatar-actions { display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
 .avatar-hint { font-size: 12px; color: var(--text-muted); line-height: 1.7; margin: 10px 0; }
 
-.data-type-badge { display: inline-flex; align-items: center; padding: 3px 7px; font-size: 11px; line-height: 1.5; border: 1px solid var(--border-medium); color: var(--text-secondary); white-space: nowrap; }
+.data-type-badge { display: inline-flex; align-items: center; flex-shrink: 0; width: max-content; padding: 3px 7px; font-size: 11px; line-height: 1.5; border: 1px solid var(--border-medium); color: var(--text-secondary); white-space: nowrap; }
 .data-type-badge.test { color: var(--warning); background: var(--warning-bg); border-color: var(--accent); }
 .test-data-tools { display: flex; align-items: center; gap: 20px; justify-content: space-between; padding: 20px; margin-bottom: 24px; border: 1px solid var(--border-medium); background: var(--surface-2); }
 .test-data-tools p { color: var(--text-secondary); font-size: 13px; margin: 6px 0; }

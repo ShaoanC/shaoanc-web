@@ -170,11 +170,11 @@ function TestDataSettings() {
     setBusy(action);
     try {
       const result = await api<{ count: number }>('/mistakes/test-data', { method: action === 'generate' ? 'POST' : 'DELETE' });
-      notify(action === 'generate' ? '已生成 ' + result.count + ' 道测试错题（含 1 道草稿）。' : '已删除 ' + result.count + ' 道测试错题及其复习记录。');
+      notify(action === 'generate' ? '已生成 ' + result.count + ' 道测试错题（含 1 道草稿）。' : '已将 ' + result.count + ' 道测试错题移入回收站，30 天内可恢复。');
       await loadCount();
     } catch (err) { notify((err as Error).message, 'error'); }
     finally { setBusy(null); }
   }
 
-  return <LoadingContent loading={loading} kind="settings">{error ? <ErrorState message={error} retry={loadCount} /> : <section className="test-data-tools" aria-label="测试错题工具"><div><strong>体验错题本</strong><p>每次为当前管理员账号生成 6 道示例，带有“测试错题”标签，可用于编辑和复习。当前账号共 {testCount} 道测试错题。</p><small>删除覆盖所有筛选条件、归档和草稿，仅删除当前账号的测试错题及其复习记录，保留正式错题。测试数据会计入学习统计。</small></div><div className="test-data-actions"><button className="button secondary" disabled={Boolean(busy)} onClick={() => void manageTestData('generate')}>{busy === 'generate' ? '正在生成…' : '一键生成测试错题'}</button><button className="button ghost danger-text" disabled={Boolean(busy) || !testCount} onClick={() => void manageTestData('delete')}>{busy === 'delete' ? '正在删除…' : '一键删除所有测试错题'}</button></div></section>}</LoadingContent>;
+  return <LoadingContent loading={loading} kind="settings">{error ? <ErrorState message={error} retry={loadCount} /> : <section className="test-data-tools" aria-label="测试错题工具"><div><strong>体验错题本</strong><p>每次为当前管理员账号生成 6 道示例，带有“测试错题”标签，可用于编辑和复习。当前账号共 {testCount} 道测试错题。</p><small>移入回收站覆盖所有筛选条件、归档和草稿，仅处理当前账号的测试错题，30 天内可恢复题目及复习记录。测试数据会计入学习统计。</small></div><div className="test-data-actions"><button className="button secondary" disabled={Boolean(busy)} onClick={() => void manageTestData('generate')}>{busy === 'generate' ? '正在生成…' : '一键生成测试错题'}</button><button className="button ghost danger-text" disabled={Boolean(busy) || !testCount} onClick={() => void manageTestData('delete')}>{busy === 'delete' ? '正在删除…' : '测试错题移入回收站'}</button></div></section>}</LoadingContent>;
 }

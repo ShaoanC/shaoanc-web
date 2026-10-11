@@ -2,7 +2,8 @@ const crypto = require('node:crypto');
 const express = require('express');
 const { db } = require('./database');
 const { generateTestMistakes } = require('./test-data');
-const { searchMistakes, updateCachedMistake, removeCachedMistake, invalidateUser, invalidateAll } = require('./search');
+const { searchMistakes, updateCachedMistake, invalidateUser, invalidateAll } = require('./search');
+const { cleanupExpiredTrash } = require('./trash');
 const {
     fail, validateCredentials, validatePassword, hashPassword, verifyPassword, publicUser,
     createSession, clearSession, loadSession, requireUser, requireAdmin
@@ -46,14 +47,19 @@ function serializeMistake(row) {
         latestReviewResult: row.latest_review_result,
         reviewsCount: row.reviews_count,
         createdAt: row.created_at,
-        updatedAt: row.updated_at
+        updatedAt: row.updated_at,
+        deletedAt: row.deleted_at
     };
 }
 
-function ownMistake(req) {
+function ownMistake(req, allowedTrash = false) {
+    cleanupExpiredTrash(Date.now(), req.user.id);
     const row = db.prepare(`${mistakeSelect} WHERE m.id = ? AND m.user_id = ?`).get(idNumber(req.params.id), req.user.id);
     if (!row) {
         fail(404, '错题不存在');
+    }
+    if (row.deleted_at && !allowedTrash) {
+        fail(409, '请先恢复这道错题再进行操作');
     }
     return row;
 }
@@ -303,6 +309,10 @@ router.delete('/knowledge-points/:id', requireAdmin, (req, res) => {
 });
 
 router.get('/mistakes', (req, res) => {
+    const deleted = req.query.deleted === 'true';
+    if (deleted) {
+        cleanupExpiredTrash(Date.now(), req.user.id);
+    }
     const lifecycle = req.query.lifecycle || 'archived';
     if (!['draft', 'archived', 'all'].includes(lifecycle)) {
         fail(400, '无效的错题类型');
@@ -311,7 +321,7 @@ router.get('/mistakes', (req, res) => {
     if (status && !Object.hasOwn(STATUS_NAMES, status)) {
         fail(400, '无效的复习状态');
     }
-    const where = ['m.user_id = ?'];
+    const where = ['m.user_id = ?', deleted ? 'm.deleted_at IS NOT NULL' : 'm.deleted_at IS NULL'];
     const parameters = [req.user.id];
     if (req.query.dataType) {
         if (!['test', 'formal'].includes(req.query.dataType)) {
@@ -351,7 +361,8 @@ router.get('/mistakes', (req, res) => {
     if (req.query.keyword !== undefined && typeof req.query.keyword !== 'string') {
         fail(400, '关键词须为文本');
     }
-    const rows = db.prepare(`${mistakeSelect} WHERE ${where.join(' AND ')} ORDER BY m.updated_at DESC, m.id DESC`).all(...parameters);
+    const order = deleted ? 'm.deleted_at DESC, m.id DESC' : 'm.updated_at DESC, m.id DESC';
+    const rows = db.prepare(`${mistakeSelect} WHERE ${where.join(' AND ')} ORDER BY ${order}`).all(...parameters);
     if (req.query.keyword?.trim()) {
         const matches = searchMistakes(req.user.id, rows, req.query.keyword);
         return success(res, matches.map(({ row, search }) => ({ ...serializeMistake(row), search })));
@@ -383,13 +394,41 @@ router.post('/mistakes/test-data', requireAdmin, (req, res) => {
 });
 
 router.delete('/mistakes/test-data', requireAdmin, (req, res) => {
-    const deleted = db.prepare('DELETE FROM mistakes WHERE user_id = ? AND is_test = 1').run(req.user.id);
+    const deleted = db.prepare('UPDATE mistakes SET deleted_at = ? WHERE user_id = ? AND is_test = 1 AND deleted_at IS NULL')
+        .run(new Date().toISOString(), req.user.id);
     invalidateUser(req.user.id);
     success(res, { count: deleted.changes });
 });
 
-router.get('/mistakes/:id', (req, res) => {
+router.delete('/mistakes/trash', (req, res) => {
+    cleanupExpiredTrash(Date.now(), req.user.id);
+    const deleted = db.prepare('DELETE FROM mistakes WHERE user_id = ? AND deleted_at IS NOT NULL').run(req.user.id);
+    invalidateUser(req.user.id);
+    success(res, { count: deleted.changes });
+});
+
+router.post('/mistakes/:id/restore', (req, res) => {
+    const row = ownMistake(req, true);
+    if (!row.deleted_at) {
+        fail(409, '这道错题不在回收站中');
+    }
+    db.prepare('UPDATE mistakes SET deleted_at = NULL WHERE id = ? AND user_id = ?').run(row.id, req.user.id);
+    invalidateUser(req.user.id);
     success(res, serializeMistake(ownMistake(req)));
+});
+
+router.delete('/mistakes/:id/permanent', (req, res) => {
+    const row = ownMistake(req, true);
+    if (!row.deleted_at) {
+        fail(409, '请先将这道错题移入回收站');
+    }
+    db.prepare('DELETE FROM mistakes WHERE id = ? AND user_id = ? AND deleted_at IS NOT NULL').run(row.id, req.user.id);
+    invalidateUser(req.user.id);
+    success(res, null);
+});
+
+router.get('/mistakes/:id', (req, res) => {
+    success(res, serializeMistake(ownMistake(req, true)));
 });
 
 router.patch('/mistakes/:id', (req, res) => {
@@ -407,14 +446,15 @@ router.patch('/mistakes/:id', (req, res) => {
 });
 
 router.delete('/mistakes/:id', (req, res) => {
-    const row = ownMistake(req);
-    db.prepare('DELETE FROM mistakes WHERE id = ? AND user_id = ?').run(row.id, req.user.id);
-    removeCachedMistake(req.user.id, row.id);
+    const row = ownMistake(req, true);
+    db.prepare('UPDATE mistakes SET deleted_at = ? WHERE id = ? AND user_id = ? AND deleted_at IS NULL')
+        .run(new Date().toISOString(), row.id, req.user.id);
+    invalidateUser(req.user.id);
     success(res, null);
 });
 
 router.get('/mistakes/:id/reviews', (req, res) => {
-    const row = ownMistake(req);
+    const row = ownMistake(req, true);
     success(res, db.prepare('SELECT id, result, created_at AS createdAt FROM reviews WHERE mistake_id = ? ORDER BY id DESC').all(row.id));
 });
 
@@ -433,7 +473,9 @@ router.post('/mistakes/:id/reviews', (req, res) => {
 });
 
 router.get('/stats', (req, res) => {
-    const rows = db.prepare(`${mistakeSelect} WHERE m.user_id = ?`).all(req.user.id);
+    cleanupExpiredTrash(Date.now(), req.user.id);
+    const rows = db.prepare(`${mistakeSelect} WHERE m.user_id = ? AND m.deleted_at IS NULL`).all(req.user.id);
+    const trashCount = db.prepare('SELECT COUNT(*) AS count FROM mistakes WHERE user_id = ? AND deleted_at IS NOT NULL').get(req.user.id).count;
     const archived = rows.filter((row) => row.lifecycle === 'archived');
     const subjects = db.prepare('SELECT id, name FROM subjects ORDER BY sort_order, id').all();
     const points = db.prepare('SELECT id, name FROM knowledge_points ORDER BY subject_id, sort_order, id').all();
@@ -446,6 +488,7 @@ router.get('/stats', (req, res) => {
     }
     success(res, {
         total: rows.length,
+        trashCount,
         archived: archived.length,
         drafts: rows.length - archived.length,
         testCount: rows.filter((row) => row.is_test === 1).length,

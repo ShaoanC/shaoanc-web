@@ -4,6 +4,7 @@ const path = require('node:path');
 const express = require('express');
 const { db } = require('./mistakes/database');
 const mistakesRouter = require('./mistakes/router');
+const { cleanupExpiredTrash } = require('./mistakes/trash');
 const app = express();
 
 const PORT = process.env.PORT || 3000;
@@ -37,6 +38,14 @@ app.use((error, req, res, next) => {
 });
 
 if (require.main === module) {
+    cleanupExpiredTrash();
+    setInterval(() => {
+        try {
+            cleanupExpiredTrash();
+        } catch (error) {
+            console.error('Failed to clean expired trash:', error);
+        }
+    }, 60 * 60 * 1000).unref();
     app.listen(PORT, '127.0.0.1', () => {
         console.log(`Server running on 127.0.0.1:${PORT}`);
     });
