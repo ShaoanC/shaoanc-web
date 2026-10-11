@@ -1751,7 +1751,7 @@ input:focus, textarea:focus, select:focus { outline: 2px solid rgba(23,100,72,.1
   .filter-bar select { font-size: 15px; min-width: 0; }
   .filter-bar > :is(select, .custom-select):last-child { grid-column: 1 / -1; }
   .filter-bar .search-input > input { font-size: 15px; }
-  .results-toolbar { padding: 0 16px 15px; font-size: 13px; align-items: flex-start; }
+  .results-toolbar { padding: 0 16px 15px; font-size: 13px; align-items: center; }
   .results-toolbar > span { gap: 5px; line-height: 1.8; }
   .results-toolbar .view-switch { flex-shrink: 0; }
   .reset-filter { font-size: 13px; padding: 0 3px; }
@@ -2104,3 +2104,5 @@ input:focus, textarea:focus, select:focus { outline: 2px solid rgba(23,100,72,.1
 
 /* Three summary counts on the mistake library at every viewport size. */
 .metrics-grid.library-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.library-metrics .metric-card { min-height: 0; border-bottom: 0; }
+.library-metrics .metric-card:not(:last-child) { border-right: 1px solid var(--border-medium); }

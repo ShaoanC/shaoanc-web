@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowRight, BookOpen, CheckCircle2, LayoutGrid, List, Plus, RotateCcw, Search, SlidersHorizontal, Target, Trash2, X } from 'lucide-react';
+import { ArrowRight, BookOpen, CheckCircle2, LayoutGrid, List, Plus, Search, SlidersHorizontal, Target, Trash2, X } from 'lucide-react';
 import { api } from '../api';
 import { knowledgeLabel, useApp } from '../context';
 import { EmptyState, ErrorState, Modal, PageHeader } from '../components';
@@ -138,7 +138,7 @@ export function MistakesPage() {
         { id: 'archived', label: <>已归档<span>{stats?.archived ?? '—'}</span></> },
         { id: 'draft', label: <>草稿箱<span>{stats?.drafts ?? '—'}</span></> },
         { id: 'trash', label: <>回收站<span>{stats?.trashCount ?? '—'}</span></> },
-      ]} />{!trashed && <a className="text-link library-review-link" href="#/review"><RotateCcw size={15} /> 去复习<ArrowRight size={15} /></a>}</div>
+      ]} /></div>
       {trashed && <div className="trash-notice"><p>删除的错题保留 30 天，恢复时会保留原内容和复习记录。</p><button className="button ghost danger-text" disabled={Boolean(busy) || !stats?.trashCount} onClick={() => setPermanentTarget('all')}><Trash2 size={16} />清空回收站</button></div>}
       <div className="filter-bar">
         <label className="search-input"><Search size={18} /><input aria-label="搜索错题" placeholder="搜索错题内容、学科或知识点" value={keyword} onChange={(event) => setKeyword(event.target.value)} />{keyword && <button className="icon-button" aria-label="清除搜索" onClick={() => setKeyword('')}><X size={15} /></button>}</label>
