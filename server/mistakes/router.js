@@ -40,6 +40,7 @@ function serializeMistake(row) {
         auxiliaryKnowledgePointIds: JSON.parse(row.auxiliary_knowledge_point_ids),
         lifecycle: row.lifecycle,
         isTest: Boolean(row.is_test),
+        rating: row.rating,
         question: row.question,
         answer: row.answer,
         analysis: row.analysis,
@@ -68,8 +69,16 @@ function subjectExists(id) {
     return typeof id === 'string' && Boolean(db.prepare('SELECT id FROM subjects WHERE id = ?').get(id));
 }
 
+function validateRating(value) {
+    if (!Number.isFinite(value) || value < 0 || value > 5 || !Number.isInteger(value * 2)) {
+        fail(400, '星级须为 0 到 5 之间的半星档位');
+    }
+    return value;
+}
+
 function validateMistake(body, existing) {
     const values = { ...existing, ...body };
+    validateRating(values.rating);
     if (!['draft', 'archived'].includes(values.lifecycle)) {
         fail(400, '请选择草稿或归档');
     }
@@ -358,6 +367,13 @@ router.get('/mistakes', (req, res) => {
         where.push("COALESCE((SELECT result FROM reviews WHERE mistake_id = m.id ORDER BY id DESC LIMIT 1), 'unreviewed') = ?");
         parameters.push(status);
     }
+    if (req.query.rating !== undefined) {
+        if (typeof req.query.rating !== 'string' || !req.query.rating.trim()) {
+            fail(400, '请选择有效星级');
+        }
+        where.push('m.rating = ?');
+        parameters.push(validateRating(Number(req.query.rating)));
+    }
     if (req.query.keyword !== undefined && typeof req.query.keyword !== 'string') {
         fail(400, '关键词须为文本');
     }
@@ -373,15 +389,15 @@ router.get('/mistakes', (req, res) => {
 router.post('/mistakes', (req, res) => {
     const values = validateMistake(req.body || {}, {
         subjectId: null, primaryKnowledgePointId: null, auxiliaryKnowledgePointIds: [],
-        lifecycle: 'draft', question: '', answer: '', analysis: '', note: ''
+        lifecycle: 'draft', rating: 0, question: '', answer: '', analysis: '', note: ''
     });
     const now = new Date().toISOString();
     const inserted = db.prepare(`
         INSERT INTO mistakes (user_id, subject_id, primary_knowledge_point_id, auxiliary_knowledge_point_ids,
-            lifecycle, question, answer, analysis, note, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            lifecycle, rating, question, answer, analysis, note, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(req.user.id, values.subjectId, values.primaryKnowledgePointId, JSON.stringify(values.auxiliaryKnowledgePointIds),
-        values.lifecycle, values.question, values.answer, values.analysis, values.note, now, now);
+        values.lifecycle, values.rating, values.question, values.answer, values.analysis, values.note, now, now);
     const row = db.prepare(`${mistakeSelect} WHERE m.id = ?`).get(inserted.lastInsertRowid);
     updateCachedMistake(req.user.id, row);
     success(res, serializeMistake(row), 201);
@@ -436,10 +452,10 @@ router.patch('/mistakes/:id', (req, res) => {
     const values = validateMistake(req.body || {}, serializeMistake(row));
     db.prepare(`
         UPDATE mistakes SET subject_id = ?, primary_knowledge_point_id = ?, auxiliary_knowledge_point_ids = ?,
-            lifecycle = ?, question = ?, answer = ?, analysis = ?, note = ?, updated_at = ?
+            lifecycle = ?, rating = ?, question = ?, answer = ?, analysis = ?, note = ?, updated_at = ?
         WHERE id = ? AND user_id = ?
     `).run(values.subjectId, values.primaryKnowledgePointId, JSON.stringify(values.auxiliaryKnowledgePointIds),
-        values.lifecycle, values.question, values.answer, values.analysis, values.note, new Date().toISOString(), row.id, req.user.id);
+        values.lifecycle, values.rating, values.question, values.answer, values.analysis, values.note, new Date().toISOString(), row.id, req.user.id);
     const updated = ownMistake(req);
     updateCachedMistake(req.user.id, updated);
     success(res, serializeMistake(updated));

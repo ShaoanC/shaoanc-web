@@ -117,13 +117,23 @@ async function main() {
         lifecycle: 'draft'
     };
     const aliceMistake = await alice('POST', '/mistakes', mistakeFields, 201);
+    assert.equal(aliceMistake.rating, 0, 'New mistakes default to an unmarked rating');
     const bobMistake = await bob('POST', '/mistakes', {
         ...mistakeFields,
         subjectId: 'physics',
         primaryKnowledgePointId: physicsPoint.id,
         auxiliaryKnowledgePointIds: [],
-        question: 'Bob private smoke question'
+        question: 'Bob private smoke question',
+        rating: 2.5
     }, 201);
+    assert.equal(bobMistake.rating, 2.5, 'Creation accepts half-star ratings');
+    assert.equal((await alice('PATCH', `/mistakes/${aliceMistake.id}`, { rating: 0.5 })).rating, 0.5);
+    assert.equal((await alice('PATCH', `/mistakes/${aliceMistake.id}`, { rating: 0 })).rating, 0,
+        'A rating can be cleared to unmarked');
+    await alice('POST', '/mistakes', { ...mistakeFields, rating: 3.25 }, 400);
+    for (const rating of [-0.5, 6, 3.25, '3.5']) {
+        await alice('PATCH', `/mistakes/${aliceMistake.id}`, { rating }, 400);
+    }
     assert.equal((await alice('GET', '/mistakes')).length, 0, 'Drafts stay outside the default archived list');
     const drafts = await alice('GET', '/mistakes?lifecycle=draft');
     assert.deepEqual(drafts.map((mistake) => mistake.id), [aliceMistake.id]);
@@ -133,19 +143,26 @@ async function main() {
         [1, 0, 1, 0]
     );
 
+    await alice('PATCH', `/mistakes/${aliceMistake.id}`, { rating: 3.5 });
     const savedMistake = await alice('PATCH', `/mistakes/${aliceMistake.id}`, {
         ...mistakeFields, lifecycle: 'archived', note: 'Updated smoke note'
     });
     assert.equal(savedMistake.lifecycle, 'archived');
+    assert.equal(savedMistake.rating, 3.5, 'Editing other fields preserves the rating');
     const loadedMistake = await alice('GET', `/mistakes/${aliceMistake.id}`);
     assert.equal(loadedMistake.note, 'Updated smoke note');
     assert.equal(loadedMistake.answer, mistakeFields.answer);
     assert.deepEqual(loadedMistake.auxiliaryKnowledgePointIds, mistakeFields.auxiliaryKnowledgePointIds);
     const filters = new URLSearchParams({
-        subjectId: 'math', knowledgePointId: String(mathPoints[0].id), status: 'unreviewed', keyword: 'Smoke question'
+        subjectId: 'math', knowledgePointId: String(mathPoints[0].id), status: 'unreviewed', keyword: 'Smoke question', rating: '3.5'
     });
     const filteredMistakes = await alice('GET', `/mistakes?${filters}`);
     assert.deepEqual(filteredMistakes.map((mistake) => mistake.id), [aliceMistake.id]);
+    assert.equal(filteredMistakes[0].rating, 3.5, 'Rating filters combine with classification, status and keyword');
+    assert.deepEqual(await alice('GET', '/mistakes?rating=3'), [], 'Rating filters match the exact half-star level');
+    for (const rating of ['', '6', '3.25', 'invalid']) {
+        await alice('GET', `/mistakes?rating=${rating}`, undefined, 400);
+    }
     const chapterMistakes = await alice('GET', `/mistakes?knowledgePointId=${mathPoints[0].parentId}`);
     assert.deepEqual(chapterMistakes.map((mistake) => mistake.id), [aliceMistake.id], 'Chapter filters include descendant knowledge points');
     const unmarkedMistake = await alice('POST', '/mistakes', {
@@ -154,6 +171,8 @@ async function main() {
     }, 201);
     assert.equal(unmarkedMistake.lifecycle, 'archived');
     assert.equal(unmarkedMistake.primaryKnowledgePointId, null, 'Archived questions may remain unmarked');
+    assert.deepEqual((await alice('GET', '/mistakes?rating=0')).map((mistake) => mistake.id), [unmarkedMistake.id],
+        'Zero selects only unmarked mistakes');
     await alice('DELETE', `/mistakes/${unmarkedMistake.id}`);
     await alice('DELETE', `/mistakes/${unmarkedMistake.id}/permanent`);
 
@@ -166,6 +185,7 @@ async function main() {
     await anonymous('GET', '/mistakes', undefined, 401);
 
     await alice('POST', `/mistakes/${aliceMistake.id}/reviews`, { result: 'familiar' }, 201);
+    assert.equal((await alice('GET', `/mistakes/${aliceMistake.id}`)).rating, 3.5, 'Reviewing preserves the rating');
     const reviews = await alice('GET', `/mistakes/${aliceMistake.id}/reviews`);
     assert.equal(reviews.length, 1);
     assert.equal(reviews[0].result, 'familiar');

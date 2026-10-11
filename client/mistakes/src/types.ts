@@ -42,6 +42,7 @@ export interface Mistake {
   answer: string;
   analysis: string;
   note: string;
+  rating: number;
   lifecycle: Lifecycle;
   latestReviewResult: ReviewResult | null;
   reviewsCount: number;
