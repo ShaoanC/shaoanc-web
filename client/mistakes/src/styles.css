@@ -2101,3 +2101,6 @@ input:focus, textarea:focus, select:focus { outline: 2px solid rgba(23,100,72,.1
   .mistake-row .mistake-row-surface, .mistake-row:not(.is-trash) .mistake-row-surface, .swipe-delete-action, .quick-delete-button { transition: none; }
   .quick-delete-button > span { animation: none; }
 }
+
+/* Three summary counts on the mistake library at every viewport size. */
+.metrics-grid.library-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
