@@ -1459,7 +1459,8 @@ input:focus, textarea:focus, select:focus { outline: 2px solid rgba(23,100,72,.1
 .answer-section h3, .revealed-content h3 { font-size: 16px; letter-spacing: 0; color: var(--text-secondary); }
 .detail-facts dt { font-size: 14px; letter-spacing: 0; }
 .detail-facts dd { font-size: 16px; line-height: 1.75; }
-.detail-dates > span { font-size: 14px; align-items: flex-start; }
+.detail-dates > span { font-size: 14px; align-items: center; }
+.detail-dates > span > svg { flex-shrink: 0; }
 .draft-notice { border: 0; border-left: 3px solid var(--accent); border-radius: 0; }
 .draft-notice span { font-size: 15px; }
 .history-item { flex-wrap: wrap; gap: 8px; padding: 14px 0; }
