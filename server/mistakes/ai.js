@@ -114,9 +114,18 @@ async function requestResult(job, signal) {
         WHERE owner_user_id IS NULL OR owner_user_id = ? ORDER BY id`).all(job.user_id);
     const subjects = db.prepare('SELECT id, name FROM subjects').all();
     const instructions = job.type === 'question'
-        ? '依次阅读同一道题的多张裁剪图片，只转写题干、条件、选项，不作答。识别学科与主辅知识点，优先复用给定目录的完整名称路径，缺少时提出准确简短的新分支。返回 {"question":"Markdown", "subjectId":"学科id", "primaryPath":["章","知识点"], "auxiliaryPaths":[], "diagramImageIds":[含必要图形的图片编号]}。'
+        ? [
+            '依次阅读同一道题的多张裁剪图片，只转写题干、原题条件、选项和必要图形说明，不作答。',
+            '照片中可能同时有学生在横线、括号或答题框里填写的错误答案，以及蓝色笔写的订正答案。题干中应排除所有学生作答（无论对错）、订正、解题步骤、批改符号和分数；清空作答内容，保留原题的填空横线、空括号、答题框和题目结构，不把订正答案填回空白。',
+            '蓝色是订正的辅助线索，须结合书写位置、印刷或手写特征、划改痕迹和语义判断。保留原题本身的蓝色文字、手写题干、公式、选项和图形标注；不能仅凭颜色或是否手写删除内容。无法区分原题与作答的局部写[待确认]，不猜测、不根据答案反推题干。',
+            '识别学科与主辅知识点，优先复用给定目录的完整名称路径，缺少时提出准确简短的新分支。返回 {"question":"Markdown", "subjectId":"学科id", "primaryPath":["章","知识点"], "auxiliaryPaths":[], "diagramImageIds":[含必要图形的图片编号]}。'
+        ].join(' ')
         : job.type === 'answer'
-            ? '依次转写答案图片的全部答案和已有解题步骤，不自行解题，不丢弃长解析。返回 {"answer":"Markdown"}。'
+            ? [
+                '依次转写答案图片中的最终答案和对应的已有解题步骤，不自行解题，不丢弃长解析。',
+                '照片中可能同时有横线上的原错误答案和蓝色订正。存在明确的订正关系时，优先提取蓝色等订正笔迹中的最终答案和对应步骤，排除被替换的错误作答、划掉的内容以及批改符号和分数；没有订正时忠实转写现有答案，不擅自判断其正确性。',
+                '颜色仅是辅助线索，须结合位置、划改痕迹和语义判断，不忽略其他颜色的有效答案或必要步骤。多个答案冲突且无法确定最终版本的局部写[待确认]，不猜测、不自行计算补全。返回 {"answer":"Markdown"}。'
+            ].join(' ')
             : '根据题干和已有答案，用中文给出清晰的解题思路和关键步骤；检查答案，如发现矛盾说明原因。返回 {"analysis":"Markdown"}。';
     const content = [{ type: 'text', text: JSON.stringify({ input, subjects, ...(job.type === 'question' ? { directory } : {}) }) }];
     for (const id of imageIds) {
