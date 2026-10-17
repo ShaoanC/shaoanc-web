@@ -66,7 +66,10 @@ function safeAiError(error) {
     if (error.status === 429) return 'AI 服务请求过多或额度不足，请稍后重试';
     if (error.status === 400 || error.status === 404 || error.status === 422) return 'AI 接口或模型不支持此请求，请联系管理员检查配置';
     if (error.name === 'APIConnectionTimeoutError' || error.name === 'TimeoutError') return 'AI 响应超时，请重试';
-    if (error.name === 'ZodError' || error instanceof SyntaxError || error.code === 'INVALID_AI_RESULT') return 'AI 返回的内容格式不正确，请重新识别';
+    if (error.code === 'INCOMPLETE_AI_RESULT') return 'AI 返回内容被截断，请减少单次图片数量后重新识别';
+    if (error.code === 'INVALID_AI_SUBJECT') return 'AI 返回的学科编号无效，请重新识别';
+    if (error instanceof SyntaxError) return 'AI 返回的 JSON 无法解析，请重新识别';
+    if (error.name === 'ZodError' || error.code === 'INVALID_AI_RESULT') return 'AI 返回的字段缺失或类型不正确，请重新识别';
     return error.status === 503 && error.message === '管理员尚未启用并配置 AI 服务' ? error.message : 'AI 服务暂时不可用，请稍后重试';
 }
 

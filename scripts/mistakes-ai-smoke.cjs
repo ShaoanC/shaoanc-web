@@ -30,6 +30,14 @@ async function runAiSmoke() {
             if (hold) await delay(hold);
             const request = JSON.parse(body);
             const system = request.messages[0].content;
+            const example = JSON.parse(system.split('返回结构示例：')[1].split('。仅输出')[0]);
+            if ('question' in example) {
+                const supplied = JSON.parse(request.messages[1].content[0].text);
+                assert.ok(supplied.subjects.some((subject) => subject.id === example.subjectId));
+                assert.deepEqual(example.diagramImageIds, []);
+                assert.ok(system.includes('subjectId 必须原样使用 subjects 中某项的 id'));
+            }
+            assert.ok(system.includes(JSON.stringify({ formula: '$\\frac{1}{2}$' })));
             const content = request.messages[1]?.content || [];
             lastImages = Array.isArray(content) ? content.filter((part) => part.type === 'image_url').length : 0;
             const imageIds = Array.isArray(content) ? content.filter((part) => part.type === 'text' && part.text.startsWith('图片编号')).map((part) => Number(part.text.split(' ')[1])) : [];
