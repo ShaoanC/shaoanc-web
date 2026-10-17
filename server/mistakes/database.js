@@ -130,6 +130,10 @@ db.exec(`
     CREATE INDEX IF NOT EXISTS ai_jobs_pending ON ai_jobs(status);
     CREATE UNIQUE INDEX IF NOT EXISTS ai_jobs_automatic_input ON ai_jobs(mistake_id, type, fingerprint) WHERE automatic = 1;
 `);
+if (!db.prepare('PRAGMA table_info(mistake_images)').all().some((column) => column.name === 'source_image_id')) {
+    db.exec('ALTER TABLE mistake_images ADD COLUMN source_image_id INTEGER REFERENCES mistake_images(id) ON DELETE SET NULL');
+}
+db.exec('CREATE INDEX IF NOT EXISTS mistake_images_source ON mistake_images(source_image_id)');
 
 const initialDirectory = [
     ['math', '数学', [

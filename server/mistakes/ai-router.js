@@ -47,7 +47,7 @@ module.exports = function mountAiRoutes(router, { success, ownMistake, serialize
         const id = Number(req.params.id);
         const body = req.body || {};
         if (body.mode !== undefined && !['replace', 'append'].includes(body.mode)) fail(400, '无效的填入方式');
-        applyJob(id, req.user.id, { force: body.force === true, mode: body.mode });
+        applyJob(id, req.user.id, { force: body.force === true, mode: body.mode, review: body.review, expectedInput: body.expectedInput });
         const job = ownJob(id, req.user.id);
         req.params.id = String(job.mistake_id);
         success(res, { job: serializeJob(job), mistake: serializeMistake(ownMistake(req)) });

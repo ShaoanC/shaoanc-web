@@ -5,14 +5,14 @@ import { knowledgeLabel, useApp } from '../context';
 import { Checkbox, DataTypeBadge, ErrorState } from '../components';
 import { LoadingContent, SlidingTabs } from '../motion';
 import { MarkdownField, type MarkdownFieldHandle } from '../MarkdownField';
-import { MarkdownContent } from '../MarkdownContent';
 import { SaveDock } from '../SaveDock';
 import { ScrollArea } from '../ScrollArea';
 import { StarRatingPicker } from '../StarRating';
 import { PhotoInput, type PhotoInputHandle } from '../PhotoInput';
 import { ImageHistory } from '../ImageHistory';
-import { AI_LABELS, isActiveJob, useAiTasks } from '../AiTasks';
-import type { AiInput, AiJob, ImagePurpose } from '../ai-types';
+import { AiReview } from '../AiReview';
+import { isActiveJob, useAiTasks } from '../AiTasks';
+import type { AiApplyOptions, AiInput, AiJob, ImagePurpose } from '../ai-types';
 import type { Lifecycle, Mistake } from '../types';
 
 type EditorTab = 'question' | 'answers' | 'note' | 'classification';
@@ -35,6 +35,7 @@ export function EditorPage({ id }: { id?: number }) {
   const [loading, setLoading] = useState(Boolean(id));
   const [loadError, setLoadError] = useState('');
   const [error, setError] = useState('');
+  const [analysisNotice, setAnalysisNotice] = useState('');
   const [saving, setSaving] = useState<Lifecycle | null>(null);
   const pendingSave = useRef<Promise<Mistake> | null>(null);
   const [saveOpen, setSaveOpen] = useState(false);
@@ -72,7 +73,7 @@ export function EditorPage({ id }: { id?: number }) {
     api<Mistake>(`/mistakes/${id}`).then((item) => {
       if (!active) return;
       if (item.deletedAt) { setLoadError('这道错题在回收站中，请先恢复后再编辑。'); return; }
-      baseline.current = item; setIsTest(item.isTest);
+      baseline.current = item; setIsTest(item.isTest); setAnalysisNotice(item.analysisNotice || '');
       update({ ...inputOf(item), note: item.note, rating: item.rating, lifecycle: item.lifecycle });
     }).catch((err) => { if (active) setLoadError(err.message); }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
@@ -89,6 +90,7 @@ export function EditorPage({ id }: { id?: number }) {
     try {
       const item = await promise;
       baseline.current = item;
+      setAnalysisNotice(item.analysisNotice || '');
       if (!recordRef.current) {
         recordRef.current = item.id; setRecordId(item.id);
         window.history.replaceState(null, '', `#/mistakes/${item.id}/edit`);
@@ -128,12 +130,13 @@ export function EditorPage({ id }: { id?: number }) {
     try { const item = await ensureSaved(); await createJob({ mistakeId: item.id, type: 'analysis', input: inputOf(item) }); }
     catch (err) { setError((err as Error).message); notify((err as Error).message, 'error'); } finally { setStarting(false); }
   }
-  async function fill(job: AiJob, force = false, mode: 'replace' | 'append' = 'replace') {
+  async function fill(job: AiJob, force = false, mode: 'replace' | 'append' = 'replace', reviewed?: AiApplyOptions) {
     setApplying(job.id);
     try {
-      if (force) await ensureSaved();
+      if (force || reviewed) await ensureSaved();
       const before = { ...dataRef.current };
-      const result = await applyJob(job.id, { force, mode });
+      const result = await applyJob(job.id, reviewed || { force, mode });
+      setAnalysisNotice(result.mistake.analysisNotice || '');
       const patch: Partial<Form> = {};
       const contextMatches = job.type !== 'analysis' || (same(dataRef.current.question, before.question) && same(dataRef.current.answer, before.answer));
       const unchanged = contextMatches && resultFields(job).every((field) => same(dataRef.current[field], before[field]));
@@ -147,7 +150,7 @@ export function EditorPage({ id }: { id?: number }) {
       }
       setLocalConflicts((items) => unchanged ? items.filter((value) => value !== job.id) : [...new Set([...items, job.id])]);
       await refreshDirectory();
-    } catch (err) { setError((err as Error).message); }
+    } catch (err) { setError((err as Error).message); if (reviewed) throw err; }
     finally { setApplying(null); }
   }
 
@@ -156,12 +159,20 @@ export function EditorPage({ id }: { id?: number }) {
     for (const job of currentJobs) {
       if (job.status !== 'succeeded' || !job.result || processed.current.has(job.id)) continue;
       processed.current.add(job.id);
-      if (job.type === 'analysis' && job.applyStatus === 'applied') {
+      if (job.applyStatus === 'applied') {
         if (!job.finishedAt || Date.parse(job.finishedAt) < openedAt.current) continue;
-        const matches = ['question', 'answer', 'analysis'].every((field) => same(dataRef.current[field as keyof AiInput], job.input[field as keyof AiInput]));
-        if (matches) { update({ analysis: job.result.analysis || '' }); analysisField.current?.showPreview(); if (baseline.current) baseline.current.analysis = job.result.analysis || ''; }
-        else if (dataRef.current.analysis !== job.result.analysis) setLocalConflicts((items) => [...items, job.id]);
-      } else if (job.applyStatus === 'pending') {
+        const fields = resultFields(job);
+        const matches = (job.type === 'analysis' ? ['question', 'answer', 'analysis'] : fields).every((field) => same(dataRef.current[field as keyof AiInput], job.input[field as keyof AiInput]));
+        if (matches) {
+          if (job.type === 'question') {
+            void api<Mistake>(`/mistakes/${job.mistakeId}`).then((item) => {
+              if (!fields.every((field) => same(dataRef.current[field], job.input[field as keyof AiInput]))) { setLocalConflicts((items) => [...items, job.id]); return; }
+              const patch = Object.fromEntries(fields.map((field) => [field, item[field]])); update(patch); if (baseline.current) Object.assign(baseline.current, patch); questionField.current?.showPreview(); void refreshDirectory();
+            });
+          } else { update({ [job.type]: job.result[job.type] || '' }); ({ answer: answerField, analysis: analysisField })[job.type].current?.showPreview(); if (baseline.current) baseline.current[job.type] = job.result[job.type] || ''; }
+        }
+        else if (dataRef.current[job.type] !== job.result[job.type]) setLocalConflicts((items) => [...items, job.id]);
+      } else if (job.applyStatus === 'pending' && !job.result.needsReview && !job.result.figures?.length && !job.result.diagramImageIds?.length && !job.result.issues?.length && !/待确认|待补充|\[\[figure:/.test(job.result[job.type] || '')) {
         const latest = currentJobs.find((item) => item.type === job.type)?.id === job.id;
         if (latest && !job.input[job.type].trim() && resultFields(job).every((field) => same(dataRef.current[field], job.input[field as keyof AiInput]))) {
           void fill(job); break;
@@ -174,11 +185,7 @@ export function EditorPage({ id }: { id?: number }) {
   const tabs = (['question', 'answers', 'note', 'classification'] as const).map((name, index) => ({ id: name, label: ['题干', '解答', '笔记', '归类'][index], panelId: `${panelPrefix}-${name}` }));
   const panelProps = (name: EditorTab) => ({ id: `${panelPrefix}-${name}`, hidden: mobile && tab !== name, role: mobile ? 'tabpanel' : undefined, 'aria-labelledby': mobile ? `${panelPrefix}-${name}-tab` : undefined });
   function candidates(type: AiJob['type']) {
-    return currentJobs.filter((job) => job.type === type && job.status === 'succeeded' && job.result && (job.applyStatus !== 'applied' || localConflicts.includes(job.id)) && !dismissed.includes(job.id)).map((job) => <section className="ai-result" key={job.id}>
-      <h3>{AI_LABELS[type]}结果</h3><p className="ai-notice">{job.applyStatus === 'conflict' || localConflicts.includes(job.id) ? '你已修改内容，结果已保留供对照。' : '可以预览后填入；当前内容会保留到你作出选择。'}</p>
-      <MarkdownContent>{job.result?.[type] || ''}</MarkdownContent>{job.result?.primaryPath?.length ? <p className="ai-notice">知识点：{job.result.primaryPath.join(' / ')}</p> : null}
-      <div className="photo-actions"><button type="button" className="button primary" disabled={Boolean(applying) || Boolean(saving)} onClick={() => void fill(job, true)}>替换{type === 'question' ? '题干与归类' : type === 'answer' ? '答案' : '解析'}</button>{type === 'answer' && <button type="button" className="button secondary" disabled={Boolean(applying) || Boolean(saving)} onClick={() => void fill(job, true, 'append')}>追加到答案</button>}<button type="button" className="table-button" onClick={() => setDismissed((items) => [...items, job.id])}>暂不填入</button></div>
-    </section>);
+    return currentJobs.filter((job) => job.type === type && job.status === 'succeeded' && job.result && (job.applyStatus !== 'applied' || localConflicts.includes(job.id)) && !dismissed.includes(job.id)).map((job) => <AiReview key={job.id} job={job} input={inputOf(data)} busy={Boolean(applying) || Boolean(saving)} onApply={(options) => fill(job, Boolean(options.force), options.mode || 'replace', options)} onDismiss={() => setDismissed((items) => [...items, job.id])} />);
   }
 
   return <div className="editor-workbench">
@@ -198,6 +205,7 @@ export function EditorPage({ id }: { id?: number }) {
           <PhotoInput ref={answerPhotos} purpose="answer" ensureSaved={ensureSaved} onRecognize={(ids) => recognize('answer', ids)} aiAvailable={aiAvailable} actions={<button type="button" className="button secondary" disabled={!questionImageIds.length || !aiAvailable || reusingQuestionPhotos || Boolean(saving) || Boolean(applying) || currentJobs.some((job) => job.type === 'answer' && isActiveJob(job))} title={questionImageIds.length ? '按原顺序使用题干裁剪图识别答案，无需重新上传' : '先在题干中上传图片'} onClick={() => void reuseQuestionPhotos()}><Copy size={16} />{reusingQuestionPhotos ? '正在提交…' : `复用题干图片${questionImageIds.length ? `（${questionImageIds.length} 张）` : ''}`}</button>} />{candidates('answer')}
           <MarkdownField ref={answerField} name="正确答案" label={<>正确答案 <span className="optional-label">选填</span></>} rows={3} value={data.answer} onChange={(answer) => update({ answer })} placeholder="直接输入答案，或拍照识别后修改…" />
           <p className="ai-notice">手动输入的短答案会在保存时自动生成解析；图片识别的短答案会在填入后生成。</p>
+          {analysisNotice && <p className="ai-review-issues" role="status">{analysisNotice}</p>}
           <div className="photo-actions"><button type="button" className="button secondary" disabled={!aiAvailable || !data.question.trim() || starting || currentJobs.some((job) => job.type === 'analysis' && isActiveJob(job))} onClick={() => void generate()}><Sparkles size={16} />{starting ? '正在提交…' : '生成解析'}</button></div>
           {candidates('analysis')}<MarkdownField ref={analysisField} name="解题分析" label={<>解题分析 <span className="optional-label">选填</span></>} rows={5} value={data.analysis} onChange={(analysis) => update({ analysis })} placeholder="记录关键步骤、解题思路和需要注意的地方…" />
         </section>

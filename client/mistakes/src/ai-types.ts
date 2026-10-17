@@ -10,7 +10,13 @@ export interface MistakeImage {
   originalUrl: string;
   cropUrl: string;
   createdAt: string;
+  sourceImageId?: number | null;
 }
+export type FigureBox = [number, number, number, number];
+export interface AiFigure { id: string; imageId: number; box: FigureBox | null; description: string }
+export interface AiIssue { imageId: number | null; type: string; description: string }
+export interface AiReviewResult extends Partial<AiInput> { primaryPath?: string[]; auxiliaryPaths?: string[][]; figures?: AiFigure[]; diagramImageIds?: number[]; issues?: AiIssue[]; needsReview?: boolean }
+export interface AiApplyOptions { force?: boolean; mode?: 'replace' | 'append'; review?: AiReviewResult; expectedInput?: AiInput }
 export interface AiInput {
   question: string;
   answer: string;
@@ -27,7 +33,7 @@ export interface AiJob {
   applyStatus: 'pending' | 'applied' | 'conflict';
   input: AiInput;
   imageIds: number[];
-  result: (Partial<AiInput> & { primaryPath?: string[]; auxiliaryPaths?: string[][]; diagramImageIds?: number[] }) | null;
+  result: AiReviewResult | null;
   error: string | null;
   attempts: number;
   maxAttempts: number;

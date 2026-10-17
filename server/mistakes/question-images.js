@@ -5,6 +5,47 @@ const remarkMath = require('remark-math').default;
 
 const parser = unified().use(remarkParse).use(remarkGfm).use(remarkMath);
 
+function markdownImages(markdown) {
+    const tree = parser.parse(markdown);
+    const definitions = new Map();
+    const images = [];
+    function visit(node, callback) {
+        callback(node);
+        node.children?.forEach((child) => visit(child, callback));
+    }
+    visit(tree, (node) => {
+        if (node.type === 'definition' && !definitions.has(node.identifier)) definitions.set(node.identifier, node);
+    });
+    visit(tree, (node) => {
+        if (node.type !== 'image' && node.type !== 'imageReference') return;
+        const source = node.type === 'image' ? node : definitions.get(node.identifier);
+        if (!source) return;
+        const match = source.url.match(/^\/api\/mistakes\/images\/(\d+)\/(crop|original)$/);
+        images.push({ url: source.url, imageId: match ? Number(match[1]) : null, variant: match?.[2] || null,
+            alt: node.alt || '', start: node.position.start.offset, end: node.position.end.offset });
+    });
+    return images;
+}
+
+function legacyFigureText(markdown, figures) {
+    const byImage = new Map(figures.map((figure) => [figure.imageId, figure]));
+    const included = new Set();
+    const replacements = [];
+    for (const image of markdownImages(markdown)) {
+        const id = image.imageId || (/^\d+$/.test(image.url) ? Number(image.url) : null);
+        const figure = byImage.get(id);
+        if (!figure) continue;
+        const marker = `[[figure:${figure.id}]]`;
+        replacements.push({ ...image, replacement: included.has(id) ? '' : marker });
+        included.add(id);
+    }
+    for (const image of replacements.reverse()) markdown = markdown.slice(0, image.start) + image.replacement + markdown.slice(image.end);
+    for (const figure of figures) {
+        if (!included.has(figure.imageId)) markdown += `\n\n[[figure:${figure.id}]]`;
+    }
+    return markdown;
+}
+
 function questionWithImages(question, imageIds, diagramImageIds = []) {
     const allowed = new Set(imageIds);
     const embedded = new Set();
@@ -49,4 +90,4 @@ function questionWithImages(question, imageIds, diagramImageIds = []) {
     return question;
 }
 
-module.exports = { questionWithImages };
+module.exports = { questionWithImages, markdownImages, legacyFigureText };

@@ -18,10 +18,9 @@ async function runAiSmoke() {
     let failures = 0;
     let hold = 0;
     let calls = 0;
-    let lastImages = 0;
-    let lastImageIds = [];
-    let lastImageUrls = [];
-    let inlineDiagram = false;
+    let questionFixture = 'plain';
+    let answerFixture = 'plain';
+    const requests = {};
     const listen = (listener) => new Promise((resolve) => { const server = listener.listen(0, '127.0.0.1', () => resolve(server)); });
     const close = (listener) => listener && new Promise((resolve) => { listener.closeAllConnections(); listener.close(resolve); });
     try {
@@ -34,20 +33,40 @@ async function runAiSmoke() {
             const request = JSON.parse(body);
             const system = request.messages[0].content;
             const example = JSON.parse(system.split('返回结构示例：')[1].split('。仅输出')[0]);
-            if ('question' in example) {
-                const supplied = JSON.parse(request.messages[1].content[0].text);
-                assert.ok(supplied.subjects.some((subject) => subject.id === example.subjectId));
-                assert.deepEqual(example.diagramImageIds, []);
-                assert.ok(system.includes('subjectId 必须原样使用 subjects 中某项的 id'));
-            }
-            assert.ok(system.includes(JSON.stringify({ formula: '$\\frac{1}{2}$' })));
+            const type = 'question' in example ? 'question' : 'answer' in example ? 'answer' : 'analysis';
             const content = request.messages[1]?.content || [];
-            lastImages = Array.isArray(content) ? content.filter((part) => part.type === 'image_url').length : 0;
-            const imageIds = Array.isArray(content) ? content.filter((part) => part.type === 'text' && part.text.startsWith('图片编号')).map((part) => Number(part.text.split(' ')[1])) : [];
-            lastImageIds = imageIds;
-            lastImageUrls = content.filter((part) => part.type === 'image_url').map((part) => part.image_url.url);
-            const result = system.includes('只转写题干') ? { question: '已知 $x^2=4$，求正数 $x$。' + (inlineDiagram ? `\n\n![图 1-1](${imageIds[0]})\n\n(1) 根据图形回答。` : ''), subjectId: 'math', primaryPath: ['函数', 'AI 私有知识点'], auxiliaryPaths: [['函数', '函数性质']], diagramImageIds: imageIds.slice(0, 1) }
-                : system.includes('转写答案') ? { answer: '$x=2$' } : { analysis: '由 $x^2=4$ 得 $x=\\pm2$，因 $x>0$，故 $x=2$。' };
+            const imageIds = content.filter((part) => part.type === 'text' && part.text.startsWith('图片编号')).map((part) => Number(part.text.split(' ')[1]));
+            const imageUrls = content.filter((part) => part.type === 'image_url').map((part) => part.image_url.url);
+            requests[type] = { system, imageIds, imageUrls, body };
+            assert.ok(system.includes(JSON.stringify({ formula: '$\\frac{1}{2}$' })));
+            if (type === 'question') {
+                const supplied = JSON.parse(content[0].text);
+                assert.equal('input' in supplied, false, 'Question OCR does not receive saved field snapshots');
+                assert.ok(supplied.subjects.some((subject) => subject.id === example.subjectId));
+                assert.ok(Array.isArray(supplied.directory));
+                assert.ok(system.includes('subjectId 必须原样使用 subjects 中某项的 id'));
+            } else if (type === 'answer') {
+                const supplied = JSON.parse(content[0].text);
+                assert.equal('input' in supplied, false, 'Answer OCR does not receive saved field snapshots');
+                assert.equal('subjects' in supplied, false, 'Answer OCR receives no classification catalog');
+                assert.equal('directory' in supplied, false);
+            }
+            let result = type === 'question'
+                ? { question: '已知 $x^2=4$，求正数 $x$。', subjectId: 'math', primaryPath: ['函数', 'AI 私有知识点'], auxiliaryPaths: [['函数', '函数性质']], issues: [], figures: [], needsReview: false }
+                : type === 'answer' ? { answer: '$x=2$', issues: [], figures: [], needsReview: false }
+                    : { analysis: '由 $x^2=4$ 得 $x=\\pm2$，因 $x>0$，故 $x=2$。' };
+            if (type === 'question' && questionFixture === 'multiple') {
+                result = { ...result, question: '1. 已知 $x^2=4$。\n\n[[figure:geometry]]\n\n(1) 根据图形回答。\n\n[[figure:table]]', primaryPath: ['函数', '校对后才创建'], figures: [
+                    { id: 'geometry', imageId: imageIds[0], box: [0.08, 0.12, 0.4, 0.35], description: '几何图及原题标注' },
+                    { id: 'table', imageId: imageIds[0], box: [0.52, 0.48, 0.4, 0.42], description: '复杂数据表格' }
+                ] };
+            } else if (type === 'question' && questionFixture === 'invalid') {
+                result = { ...result, question: '函数图像如下。\n\n[[figure:invalid]]', figures: [{ id: 'invalid', imageId: imageIds[0], box: [0.9, 0.9, 0.2, 0.2], description: '越界区域' }] };
+            } else if (type === 'question' && questionFixture === 'unmatched') {
+                result = { ...result, question: '保留无法分类的原题文字。\n\n[[figure:missing]]', subjectId: null, primaryPath: [], auxiliaryPaths: [] };
+            } else if (type === 'answer' && answerFixture === 'uncertain') {
+                result = { ...result, answer: '(1) $x=2$；(2) [待确认]', issues: [{ imageId: imageIds[0], type: 'uncertain', description: '订正与原作答重叠，请检查。' }] };
+            }
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: JSON.stringify(result) }, finish_reason: 'stop' }] }));
         }));
@@ -85,15 +104,18 @@ async function runAiSmoke() {
         const input = (item) => ({ question: item.question, answer: item.answer, analysis: item.analysis, subjectId: item.subjectId, primaryKnowledgePointId: item.primaryKnowledgePointId, auxiliaryKnowledgePointIds: item.auxiliaryKnowledgePointIds });
         const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0, 0xff, 0xd9]);
         const originalJpeg = Buffer.concat([jpeg, Buffer.from('original')]);
-        async function upload(purpose, clientId) {
-            const form = new FormData(); form.append('original', new Blob([originalJpeg], { type: 'image/jpeg' }), 'source.jpg'); form.append('crop', new Blob([jpeg], { type: 'image/jpeg' }), 'crop.jpg'); form.append('purpose', purpose); form.append('clientId', clientId);
-            return alice('POST', `/mistakes/${mistake.id}/images`, form, 201);
+        async function upload(purpose, clientId, sourceImageId, request = alice, mistakeId = mistake.id, status = 201) {
+            const form = new FormData();
+            form.append('original', new Blob([originalJpeg], { type: 'image/jpeg' }), 'source.jpg');
+            form.append('crop', new Blob([jpeg], { type: 'image/jpeg' }), 'crop.jpg');
+            form.append('purpose', purpose); form.append('clientId', clientId);
+            if (sourceImageId !== undefined) form.append('sourceImageId', String(sourceImageId));
+            return request('POST', `/mistakes/${mistakeId}/images`, form, status);
         }
         const first = await upload('question', 'first');
         const second = await upload('question', 'second');
         const answerImage = await upload('answer', 'answer');
         assert.equal((await upload('question', 'first')).id, first.id, 'Upload retries are idempotent');
-        assert.equal((await alice('GET', `/mistakes/${mistake.id}/images`)).length, 3);
         assert.deepEqual(await alice('GET', first.cropUrl.replace('/api/mistakes', '')), jpeg);
         await bob('GET', first.cropUrl.replace('/api/mistakes', ''), null, 404);
         await anonymous('GET', first.cropUrl.replace('/api/mistakes', ''), null, 401);
@@ -105,97 +127,188 @@ async function runAiSmoke() {
             }
             throw new Error(`Task ${job.id} did not finish`);
         }
+        const latest = () => alice('GET', `/mistakes/${mistake.id}`);
+        const jobCount = async (type) => (await alice('GET', '/ai/jobs')).filter((job) => job.type === type).length;
+
         failures = 1;
         const question = await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'question', input: input(mistake), imageIds: [first.id, second.id] }, 201);
         const recognized = await completed(question);
-        assert.equal(recognized.status, 'succeeded', `${recognized.error} (mock calls: ${calls})`); assert.equal(recognized.attempts, 2); assert.equal(lastImages, 2);
+        assert.equal(recognized.status, 'succeeded', `${recognized.error} (mock calls: ${calls})`);
+        assert.equal(recognized.attempts, 2);
+        assert.equal(recognized.applyStatus, 'applied', 'Ordinary OCR fills an empty question automatically');
+        assert.equal(recognized.result.needsReview, false);
+        assert.deepEqual(recognized.result.figures, []);
+        assert.equal(requests.question.imageUrls.length, 2);
+        assert.equal((await latest()).question, recognized.result.question, 'New OCR never appends the whole source image');
         await bob('GET', `/ai/jobs/${question.id}`, null, 404);
-        let applied = await alice('POST', `/ai/jobs/${question.id}/apply`, {});
-        assert.match(applied.mistake.question, /\$x\^2=4\$/);
-        assert.match(applied.mistake.question, /!\[题目配图\]/);
-        inlineDiagram = true;
-        const inlineJob = await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'question', input: input(applied.mistake), imageIds: [first.id, second.id] }, 201);
-        const inlineResult = await completed(inlineJob);
-        assert.ok(inlineResult.result.question.includes(`![图 1-1](${first.cropUrl})\n\n(1)`), 'Preview resolves the image ID at its original position');
-        assert.equal(inlineResult.result.question.includes('![题目配图]'), false, 'An inline diagram is not appended again');
-        applied = await alice('POST', `/ai/jobs/${inlineJob.id}/apply`, {});
-        assert.equal(applied.mistake.question, inlineResult.result.question, 'Saved question matches its preview');
-        const legacy = applied.mistake.question.replace(first.cropUrl, String(first.id)) + `\n\n![题目配图](${first.cropUrl})`;
-        app.db.prepare('UPDATE mistakes SET question = ? WHERE id = ?').run(legacy, mistake.id);
-        const repaired = await alice('GET', `/mistakes/${mistake.id}`);
-        assert.ok(repaired.question.includes(`![图 1-1](${first.cropUrl})`), 'Existing saved questions resolve image IDs');
-        assert.equal(repaired.question.includes('![题目配图]'), false, 'Existing appended duplicates are removed');
-        const legacyJob = await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'question', input: input(repaired), imageIds: [first.id] }, 201);
-        await completed(legacyJob);
-        applied = await alice('POST', `/ai/jobs/${legacyJob.id}/apply`, {});
-        assert.equal(applied.job.applyStatus, 'applied', 'Legacy URL correction does not cause a false editing conflict');
-        const { questionWithImages } = require('../server/mistakes/question-images');
-        const reference = '![图\\[1\\]][diagram]\n\n[diagram]: ' + first.id + ' "结构图"\n\n`![示例](' + first.id + ')`';
-        assert.ok(questionWithImages(reference, [first.id], [first.id]).startsWith(`![图\\[1\\]](${first.cropUrl} "结构图")`));
-        assert.ok(questionWithImages(reference, [first.id]).includes('`![示例](' + first.id + ')`'), 'Code samples keep their original source');
-        const ownPoints = await alice('GET', '/knowledge-points');
-        const privatePoint = ownPoints.find((point) => point.name === 'AI 私有知识点');
+        const privatePoint = (await alice('GET', '/knowledge-points')).find((point) => point.name === 'AI 私有知识点');
         assert.equal(privatePoint.ownerUserId, users.alice);
         assert.equal((await bob('GET', '/knowledge-points')).some((point) => point.id === privatePoint.id), false);
         await bob('POST', '/mistakes', { subjectId: 'math', primaryKnowledgePointId: privatePoint.id }, 400);
         await admin('PATCH', `/knowledge-points/${privatePoint.id}`, { name: 'other' }, 404);
-        const reused = await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'answer', input: input(applied.mistake), imageIds: [second.id, first.id] }, 201);
-        assert.equal((await completed(reused)).status, 'succeeded');
-        assert.deepEqual(lastImageIds, [second.id, first.id], 'Answer recognition preserves the reused question image order');
-        assert.deepEqual(lastImageUrls, [jpeg, jpeg].map((image) => `data:image/jpeg;base64,${image.toString('base64')}`), 'Reused question images use the crops, not the originals');
-        assert.equal((await alice('GET', `/mistakes/${mistake.id}/images`)).length, 3, 'Reusing question images creates no duplicate uploads');
-        const answer = await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'answer', input: input(applied.mistake), imageIds: [answerImage.id] }, 201);
-        assert.equal((await completed(answer)).status, 'succeeded');
-        applied = await alice('POST', `/ai/jobs/${answer.id}/apply`, {});
+        const firstAnswer = await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'answer', input: input(await latest()), imageIds: [answerImage.id] }, 201);
+        assert.equal((await completed(firstAnswer)).applyStatus, 'applied', 'Ordinary OCR fills an empty answer automatically');
         const auto = (await alice('GET', '/ai/jobs')).find((job) => job.type === 'analysis');
         assert.ok(auto, 'Short recognized answer queues analysis');
         assert.equal((await completed(auto)).applyStatus, 'applied');
-        assert.match((await alice('GET', `/mistakes/${mistake.id}`)).analysis, /x=2/);
         await alice('PATCH', `/mistakes/${mistake.id}`, { analysis: '', generateAnalysis: true });
-        assert.equal((await alice('GET', '/ai/jobs')).filter((job) => job.type === 'analysis').length, 1, 'Unchanged inputs are not automatically regenerated');
+        assert.equal(await jobCount('analysis'), 1, 'Unchanged inputs are not automatically regenerated');
         await alice('PATCH', `/mistakes/${mistake.id}`, { answer: '详细步骤。'.repeat(30), generateAnalysis: true });
-        assert.equal((await alice('GET', '/ai/jobs')).filter((job) => job.type === 'analysis').length, 1, 'Long answer does not queue analysis');
-        const manual = await alice('POST', '/mistakes', { subjectId: 'math', question: '求 1+1', answer: '2', generateAnalysis: true }, 201);
-        const manualAnalysis = (await alice('GET', '/ai/jobs')).find((job) => job.mistakeId === manual.id);
-        assert.ok(manualAnalysis, 'Saving manual short answer queues analysis');
-        await completed(manualAnalysis);
-        const latest = await alice('GET', `/mistakes/${mistake.id}`);
-        hold = 250;
-        const conflict = await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'analysis', input: input(latest) }, 201);
-        await alice('PATCH', `/mistakes/${mistake.id}`, { question: '人工修改后的题目' });
-        assert.equal((await completed(conflict)).applyStatus, 'conflict');
-        assert.equal((await alice('GET', `/mistakes/${mistake.id}`)).analysis, '');
-        hold = 0;
-        const replacement = await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'answer', input: input(latest), imageIds: [answerImage.id] }, 201);
-        await completed(replacement);
+        assert.equal(await jobCount('analysis'), 1, 'Long answers do not queue automatic analysis');
+
+        await alice('PATCH', `/mistakes/${mistake.id}`, { question: '私密题干快照不发模型', answer: '私密答案快照不发模型', analysis: '私密解析快照不发模型' });
+        questionFixture = 'multiple';
+        const sourceSnapshot = await latest();
+        const multiple = await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'question', input: input(sourceSnapshot), imageIds: [first.id, second.id] }, 201);
+        const multipleResult = await completed(multiple);
+        assert.equal(multipleResult.status, 'succeeded');
+        assert.equal(multipleResult.result.needsReview, true, 'The server derives review from figures even when the model says false');
+        assert.notEqual(multipleResult.applyStatus, 'applied');
+        assert.equal(multipleResult.result.figures.length, 2, 'One image supports multiple independent regions');
+        assert.deepEqual(multipleResult.result.figures.map((figure) => figure.box), [[0.08, 0.12, 0.4, 0.35], [0.52, 0.48, 0.4, 0.42]]);
+        assert.equal((await latest()).question, sourceSnapshot.question);
+        for (const secret of ['私密题干快照不发模型', '私密答案快照不发模型', '私密解析快照不发模型']) assert.equal(requests.question.body.includes(secret), false);
+        assert.equal((await alice('GET', '/knowledge-points')).some((point) => point.name === '校对后才创建'), false, 'Recognition creates no knowledge points before review is applied');
+        await alice('POST', `/ai/jobs/${multiple.id}/apply`, {}, 409);
+        await alice('POST', `/ai/jobs/${multiple.id}/apply`, { review: { question: multipleResult.result.question } }, 400);
+        const geometry = await upload('question', 'figure-geometry', first.id);
+        const table = await upload('question', 'figure-table', first.id);
+        assert.equal(geometry.sourceImageId, first.id);
+        assert.equal((await upload('question', 'figure-geometry', first.id)).id, geometry.id, 'A retried figure upload reuses the same image ID');
+        await upload('answer', 'invalid-derived-purpose', first.id, alice, mistake.id, 400);
+        const otherMistake = await alice('POST', '/mistakes', {}, 201);
+        const otherImage = await upload('question', 'other', undefined, alice, otherMistake.id);
+        const bobMistake = await bob('POST', '/mistakes', {}, 201);
+        const bobImage = await upload('question', 'bob', undefined, bob, bobMistake.id);
+        const unrelated = await upload('question', 'unrelated');
+        await upload('question', 'invalid-derived-owner', bobImage.id, alice, mistake.id, 400);
+        await upload('question', 'invalid-derived-mistake', otherImage.id, alice, mistake.id, 400);
+        const finalQuestion = `1. 校对后的条件 $x^2=4$。\n\n![几何图](${geometry.cropUrl})\n\n(1) 根据图形回答。\n\n![复杂数据表格](${table.cropUrl})`;
+        const review = { question: finalQuestion, subjectId: 'math', primaryPath: ['函数', '校对后才创建'], auxiliaryPaths: [['函数', '函数性质']] };
+        for (const forbidden of [bobImage, otherImage, unrelated]) await alice('POST', `/ai/jobs/${multiple.id}/apply`, { review: { ...review, question: `![非法配图](${forbidden.cropUrl})` } }, 400);
+        await alice('PATCH', `/mistakes/${mistake.id}`, { question: '校对期间人工修改的题目' });
+        await alice('POST', `/ai/jobs/${multiple.id}/apply`, { review }, 409);
+        assert.equal((await latest()).question, '校对期间人工修改的题目');
+        assert.equal((await alice('GET', `/ai/jobs/${multiple.id}`)).result.question, multipleResult.result.question, 'Editing conflicts preserve the original OCR result');
+        const applied = await alice('POST', `/ai/jobs/${multiple.id}/apply`, { review, force: true });
+        assert.equal(applied.mistake.question, finalQuestion, 'The final text and diagram order are applied exactly as reviewed');
+        assert.equal(applied.job.result.question, multipleResult.result.question, 'Review does not overwrite the original recognition result');
+        assert.equal((await alice('GET', '/knowledge-points')).some((point) => point.name === '校对后才创建'), true);
+
+        questionFixture = 'invalid';
+        const invalid = await completed(await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'question', input: input(await latest()), imageIds: [first.id] }, 201));
+        assert.equal(invalid.status, 'succeeded', 'Invalid coordinates retain the transcription instead of failing the whole task');
+        assert.equal(invalid.result.needsReview, true);
+        assert.equal(invalid.result.figures[0].box, null, 'Invalid regions are never turned into automatic crops');
+        assert.ok(invalid.result.issues.some((issue) => issue.imageId === first.id));
+        await alice('POST', `/ai/jobs/${invalid.id}/apply`, { review: { question: invalid.result.question } }, 400);
+        await alice('POST', `/ai/jobs/${invalid.id}/apply`, { review: { question: '明确移除无效配图后的题干。' }, force: true });
+        questionFixture = 'unmatched';
+        const unmatched = await completed(await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'question', input: input(await latest()), imageIds: [first.id] }, 201));
+        assert.equal(unmatched.status, 'succeeded');
+        assert.equal(unmatched.result.subjectId, null, 'Uncertain classification preserves recognized text');
+        assert.equal(unmatched.result.needsReview, true, 'An unmatched diagram marker requires review');
+        assert.ok(unmatched.result.question.includes('保留无法分类的原题文字'));
+        await alice('POST', `/ai/jobs/${unmatched.id}/apply`, { review: { question: unmatched.result.question } }, 400);
+        await alice('POST', `/ai/jobs/${unmatched.id}/apply`, { review: { question: '保留无法分类的原题文字。', subjectId: null, primaryPath: [], auxiliaryPaths: [] }, force: true });
+        questionFixture = 'plain';
+        const legacyJob = await completed(await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'question', input: input(await latest()), imageIds: [first.id] }, 201));
+        app.db.prepare("UPDATE ai_jobs SET result_json = ?, apply_status = 'pending' WHERE id = ?").run(JSON.stringify({ question: `旧任务题干\n\n![旧配图](${first.id})`, subjectId: 'math', primaryPath: ['函数'], auxiliaryPaths: [], diagramImageIds: [first.id] }), legacyJob.id);
+        const legacy = await alice('GET', `/ai/jobs/${legacyJob.id}`);
+        assert.equal(legacy.result.needsReview, true);
+        assert.equal(legacy.result.figures[0].imageId, first.id);
+        assert.deepEqual(legacy.result.figures[0].box, [0, 0, 1, 1], 'Old diagramImageIds open as editable full-image regions');
+        assert.ok(legacy.result.question.includes('[[figure:'));
+        assert.equal(legacy.result.question.includes('![题目配图]'), false);
+        await alice('POST', `/ai/jobs/${legacy.id}/apply`, { review: { question: `旧任务题干\n\n![旧配图](${first.cropUrl})` }, force: true });
+        const { questionWithImages } = require('../server/mistakes/question-images');
+        const reference = '![图\\[1\\]][diagram]\n\n[diagram]: ' + first.id + ' "结构图"\n\n`![示例](' + first.id + ')`';
+        assert.ok(questionWithImages(reference, [first.id], [first.id]).startsWith(`![图\\[1\\]](${first.cropUrl} "结构图")`));
+        assert.ok(questionWithImages(reference, [first.id]).includes('`![示例](' + first.id + ')`'), 'Code samples keep their original source');
+
+        const imagesBeforeReuse = (await alice('GET', `/mistakes/${mistake.id}/images`)).length;
+        const reused = await completed(await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'answer', input: input(await latest()), imageIds: [second.id, first.id] }, 201));
+        assert.equal(reused.status, 'succeeded');
+        assert.deepEqual(requests.answer.imageIds, [second.id, first.id], 'Answer recognition preserves displayed image order');
+        assert.deepEqual(requests.answer.imageUrls, [jpeg, jpeg].map((image) => `data:image/jpeg;base64,${image.toString('base64')}`), 'Reused sources send cropped bytes, not originals');
+        assert.equal((await alice('GET', `/mistakes/${mistake.id}/images`)).length, imagesBeforeReuse);
+        assert.equal(requests.answer.body.includes('私密答案快照不发模型'), false);
         await alice('PATCH', `/mistakes/${mistake.id}`, { answer: '用户的新答案' });
-        await alice('POST', `/ai/jobs/${replacement.id}/apply`, {}, 409);
-        const appended = await alice('POST', `/ai/jobs/${replacement.id}/apply`, { force: true, mode: 'append' });
+        await alice('POST', `/ai/jobs/${reused.id}/apply`, {}, 409);
+        const appended = await alice('POST', `/ai/jobs/${reused.id}/apply`, { force: true, mode: 'append' });
         assert.match(appended.mistake.answer, /用户的新答案\n\n\$x=2\$/);
+        answerFixture = 'uncertain';
+        const uncertain = await completed(await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'answer', input: input(await latest()), imageIds: [answerImage.id] }, 201));
+        assert.equal(uncertain.result.needsReview, true);
+        assert.equal(uncertain.result.issues[0].imageId, answerImage.id);
+        assert.notEqual(uncertain.applyStatus, 'applied');
+        await alice('POST', `/ai/jobs/${uncertain.id}/apply`, {}, 409);
+        await alice('POST', `/ai/jobs/${uncertain.id}/apply`, { review: { answer: '(1) $x=2$；(2) $y=3$' }, force: true });
+        answerFixture = 'plain';
+
+        await alice('PATCH', `/mistakes/${mistake.id}`, { question: `根据图形求解。\n\n![几何图](${geometry.cropUrl})\n\n![外部图](https://example.invalid/no-fetch.jpg)`, answer: `$x=2$\n\n![答案图](${answerImage.cropUrl})`, analysis: '', generateAnalysis: true });
+        const illustrated = (await alice('GET', '/ai/jobs')).find((job) => job.type === 'analysis');
+        assert.equal((await completed(illustrated)).applyStatus, 'applied');
+        assert.deepEqual(requests.analysis.imageIds, [geometry.id, answerImage.id], 'Analysis sends owned question and answer images in reference order');
+        assert.equal(requests.analysis.imageUrls.length, 2, 'External image URLs are never fetched');
+        assert.deepEqual(illustrated.imageIds, [geometry.id, answerImage.id], 'Automatic job fingerprints include the resolved image IDs');
+        let illustratedCount = await jobCount('analysis');
+        await alice('PATCH', `/mistakes/${mistake.id}`, { analysis: '', generateAnalysis: true });
+        assert.equal(await jobCount('analysis'), illustratedCount, 'An identical text and image snapshot is not generated twice');
+        await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'analysis', input: { ...input(await latest()), question: `![别题配图](${otherImage.cropUrl})` } }, 400);
+        const manyImages = [first, second, geometry, table, unrelated];
+        for (let index = manyImages.length; index < 13; index += 1) manyImages.push(await upload('question', `limit-${index}`));
+        const twelveQuestion = '十二张配图仍可解析。\n\n' + manyImages.slice(0, 12).map((image, index) => `![图${index + 1}](${image.cropUrl})`).join('\n\n');
+        await alice('PATCH', `/mistakes/${mistake.id}`, { question: twelveQuestion, answer: '2', analysis: '', generateAnalysis: true });
+        const atLimit = (await alice('GET', '/ai/jobs')).find((job) => job.type === 'analysis');
+        assert.equal((await completed(atLimit)).applyStatus, 'applied');
+        assert.equal(requests.analysis.imageUrls.length, 12, 'Exactly twelve owned images are accepted');
+        illustratedCount = await jobCount('analysis');
+        const tooManyQuestion = '检查配图数量。\n\n' + manyImages.map((image, index) => `![图${index + 1}](${image.cropUrl})`).join('\n\n');
+        const tooMany = await alice('PATCH', `/mistakes/${mistake.id}`, { question: tooManyQuestion, answer: '2', analysis: '', generateAnalysis: true });
+        assert.equal(await jobCount('analysis'), illustratedCount, 'Automatic analysis skips more than twelve images without failing the save');
+        assert.ok(tooMany.analysisNotice?.includes('12'), 'The user is asked to simplify excessive analysis images');
+        await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'analysis', input: input(await latest()) }, 400);
+        await alice('PATCH', `/mistakes/${mistake.id}`, { question: '题干[待补充]', answer: '2', generateAnalysis: true });
+        await alice('PATCH', `/mistakes/${mistake.id}`, { question: '完整的题干', answer: '[待确认]', generateAnalysis: true });
+        assert.equal(await jobCount('analysis'), illustratedCount, 'Unresolved question or answer markers suppress automatic analysis');
+        await alice('PATCH', `/mistakes/${mistake.id}`, { answer: '2', generateAnalysis: true });
+        const resumed = (await alice('GET', '/ai/jobs')).find((job) => job.type === 'analysis');
+        assert.notEqual(resumed.id, illustrated.id, 'Saving completed text restores the automatic trigger');
+        assert.equal((await completed(resumed)).applyStatus, 'applied');
+        const conflictSnapshot = await latest();
+        await alice('PATCH', `/mistakes/${mistake.id}`, { analysis: '' });
+        hold = 250;
+        const conflict = await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'analysis', input: { ...input(conflictSnapshot), analysis: '' } }, 201);
+        await alice('PATCH', `/mistakes/${mistake.id}`, { question: '解析期间人工修改后的题目' });
+        assert.equal((await completed(conflict)).applyStatus, 'conflict');
+        assert.equal((await latest()).analysis, '');
+        hold = 0;
         for (const job of await alice('GET', '/ai/jobs')) if (['queued', 'running', 'retrying'].includes(job.status)) await completed(job);
         failures = 3;
-        const failed = await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'answer', input: input(appended.mistake), imageIds: [answerImage.id] }, 201);
+        const failed = await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'answer', input: input(await latest()), imageIds: [answerImage.id] }, 201);
         const failedResult = await completed(failed);
         assert.equal(failedResult.status, 'failed'); assert.equal(failedResult.attempts, 3);
         await alice('POST', `/ai/jobs/${failed.id}/retry`, {});
         assert.equal((await completed(failed)).status, 'succeeded');
         await ai.stopJobs();
-        const recovery = await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'answer', input: input(appended.mistake), imageIds: [answerImage.id] }, 201);
+        const recovery = await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'answer', input: input(await latest()), imageIds: [answerImage.id] }, 201);
         app.db.prepare("UPDATE ai_jobs SET status = 'running', attempts = 1 WHERE id = ?").run(recovery.id);
         ai.recoverJobs();
         assert.equal((await completed(recovery)).attempts, 2, 'Recovery preserves consumed attempts');
         hold = 250;
-        const cancelled = await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'answer', input: input(appended.mistake), imageIds: [answerImage.id] }, 201);
+        const cancelled = await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'answer', input: input(await latest()), imageIds: [answerImage.id] }, 201);
         await alice('POST', `/ai/jobs/${cancelled.id}/cancel`, {});
         await delay(350);
         assert.equal((await alice('GET', `/ai/jobs/${cancelled.id}`)).status, 'cancelled');
+        const imageRows = app.db.prepare('SELECT original_path, crop_path FROM mistake_images WHERE mistake_id = ?').all(mistake.id);
         await alice('DELETE', `/mistakes/${mistake.id}`);
-        assert.equal((await alice('GET', `/mistakes/${mistake.id}/images`)).length, 3, 'Trash retains images');
+        assert.equal((await alice('GET', `/mistakes/${mistake.id}/images`)).length, imageRows.length, 'Trash retains source and derived images');
         await alice('DELETE', `/mistakes/${mistake.id}/permanent`);
-        assert.equal(fs.readdirSync(process.env.MISTAKES_UPLOADS_PATH).length, 0, 'Permanent deletion removes image files');
+        for (const row of imageRows) for (const filename of [row.original_path, row.crop_path]) assert.equal(fs.existsSync(path.join(process.env.MISTAKES_UPLOADS_PATH, filename)), false, 'Permanent deletion removes source and derived files');
         await alice('GET', first.cropUrl.replace('/api/mistakes', ''), null, 404);
         assert.ok(calls > 0);
-        console.log('Photo AI smoke passed: uploads, multi-image OCR, private branches, short answers, retries, recovery, conflicts and cleanup.');
+        console.log('Photo AI smoke passed: OCR privacy, multi-region review, ownership, legacy diagrams, illustrated analysis, retries, conflicts and cleanup.');
     } finally {
         if (ai) await ai.stopJobs();
         await close(server); await close(mock);

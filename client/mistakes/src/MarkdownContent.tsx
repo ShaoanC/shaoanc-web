@@ -13,6 +13,7 @@ type MarkdownContentProps = {
   variant?: 'full' | 'compact';
   className?: string;
   emptyText?: string;
+  imageUrls?: Record<string, string>;
 };
 
 // Flatten parsed blocks, keeping formula nodes intact rather than slicing source text.
@@ -84,7 +85,7 @@ const compactComponents: Components = {
   p: ({ children }) => <span>{children}</span>,
 };
 
-export function MarkdownContent({ children, variant = 'full', className = '', emptyText }: MarkdownContentProps) {
+export function MarkdownContent({ children, variant = 'full', className = '', emptyText, imageUrls }: MarkdownContentProps) {
   const compact = variant === 'compact';
   const Tag = compact ? 'span' : 'div';
   const showEmptyText = !children.trim() && Boolean(emptyText);
@@ -93,7 +94,7 @@ export function MarkdownContent({ children, variant = 'full', className = '', em
     <ReactMarkdown
       remarkPlugins={compact ? [remarkGfm, remarkMath, remarkCompact] : [remarkGfm, remarkMath, remarkBreaks]}
       rehypePlugins={[rehypeKatex]}
-      components={compact ? compactComponents : fullComponents}
+      components={compact ? compactComponents : imageUrls ? { ...fullComponents, img: ({ node: _node, src, ...props }) => <img {...props} src={src && imageUrls[src] ? imageUrls[src] : src} /> } : fullComponents}
     >{showEmptyText ? emptyText : children}</ReactMarkdown>
   </Tag>;
 }

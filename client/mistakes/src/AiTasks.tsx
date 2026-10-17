@@ -5,7 +5,7 @@ import { api, json, formatDate } from './api';
 import { useApp } from './context';
 import { AiDialog } from './AiDialog';
 import { MarkdownContent } from './MarkdownContent';
-import type { AiApplyResult, AiConfig, AiJob, AiJobRequest } from './ai-types';
+import type { AiApplyOptions, AiApplyResult, AiConfig, AiJob, AiJobRequest } from './ai-types';
 
 export const AI_LABELS = { question: '题干识别', answer: '答案识别', analysis: '生成解析' };
 export const isActiveJob = (job: AiJob) => ['queued', 'running', 'retrying'].includes(job.status);
@@ -14,7 +14,7 @@ interface TasksState {
   jobs: AiJob[]; config: AiConfig | null;
   refresh: () => Promise<void>;
   createJob: (request: AiJobRequest) => Promise<AiJob>;
-  applyJob: (id: number, options?: { force?: boolean; mode?: 'replace' | 'append' }) => Promise<AiApplyResult>;
+  applyJob: (id: number, options?: AiApplyOptions) => Promise<AiApplyResult>;
   openTasks: () => void;
 }
 const Context = createContext<TasksState | null>(null);
@@ -65,7 +65,7 @@ export function AiTasksProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (previous.current) {
       jobs.filter((job) => job.status === 'succeeded' && previous.current!.has(job.id) && previous.current!.get(job.id) !== 'succeeded')
-        .forEach((job) => toast.success(`记录 #${job.mistakeId} ${AI_LABELS[job.type]}完成${job.applyStatus === 'applied' ? '，已填入。' : '，可打开编辑页查看。'}`, { autoClose: 8000 }));
+        .forEach((job) => toast.success(`记录 #${job.mistakeId} ${AI_LABELS[job.type]}完成${job.applyStatus === 'applied' ? '，已填入。' : '，待校对。'}`, { autoClose: 8000 }));
     }
     previous.current = new Map(jobs.map((job) => [job.id, job.status]));
     const failed = jobs.filter((job) => job.status === 'failed');
@@ -82,7 +82,7 @@ export function AiTasksProvider({ children }: { children: ReactNode }) {
     try { const job = await api<AiJob>('/ai/jobs', json(request)); setJobs((current) => [job, ...current.filter((item) => item.id !== job.id)]); return job; }
     catch (err) { toast.error((err as Error).message); throw err; }
   }, []);
-  const applyJob = useCallback(async (id: number, options: { force?: boolean; mode?: 'replace' | 'append' } = {}) => {
+  const applyJob = useCallback(async (id: number, options: AiApplyOptions = {}) => {
     try {
       const result = await api<AiApplyResult>(`/ai/jobs/${id}/apply`, json(options));
       setJobs((current) => current.map((job) => job.id === id ? result.job : job));
@@ -103,11 +103,11 @@ export function AiTasksProvider({ children }: { children: ReactNode }) {
       {!config?.configured && <p className="ai-notice">{user.role === 'admin' ? <a href="#/settings" onClick={() => setOpen(false)}>前往设置配置 AI 接口、密钥和多模态模型。</a> : '管理员尚未配置 AI，仍可手动录题和保存图片。'}</p>}
       {!ordered.length && <p className="ai-empty">还没有 AI 任务。在录入错题中上传图片，即可开始。</p>}
       <div className="ai-job-list">{ordered.map((job) => <article className={`ai-job ai-job-${job.status}`} key={job.id}>
-        <div className="ai-job-heading"><strong>{AI_LABELS[job.type]}</strong><span>{isActiveJob(job) && <LoaderCircle size={14} className="spin" />}{STATUS[job.status]}</span></div>
+        <div className="ai-job-heading"><strong>{AI_LABELS[job.type]}</strong><span>{isActiveJob(job) && <LoaderCircle size={14} className="spin" />}{job.status === 'succeeded' ? job.applyStatus === 'applied' ? '已填入' : '识别完成，待校对' : STATUS[job.status]}</span></div>
         <div className="ai-job-meta"><a href={`#/mistakes/${job.mistakeId}/edit`} onClick={() => setOpen(false)}>记录 #{job.mistakeId}</a><span>{Math.max(0, Math.floor(((job.finishedAt ? Date.parse(job.finishedAt) : clock) - Date.parse(job.createdAt)) / 1000))} 秒</span><span>尝试 {job.attempts}/{job.maxAttempts}</span><span>{formatDate(job.createdAt, true)}</span></div>
         {job.status === 'retrying' && <p className="ai-notice">正在等待重试{job.nextAttemptAt ? `，预计 ${Math.max(0, Math.ceil((Date.parse(job.nextAttemptAt) - clock) / 1000))} 秒后继续` : ''}。</p>}
         {job.error && <p className="ai-job-error">{job.error}</p>}
-        {job.result && <details><summary>{job.applyStatus === 'applied' ? '查看已填入的结果' : '预览待填入结果'}</summary><MarkdownContent>{job.result.question || job.result.answer || job.result.analysis || ''}</MarkdownContent>{job.result.primaryPath?.length ? <p className="ai-notice">知识点：{job.result.primaryPath.join(' / ')}</p> : null}</details>}
+        {job.result && <details><summary>查看原始识别结果</summary><MarkdownContent>{job.result.question || job.result.answer || job.result.analysis || ''}</MarkdownContent>{job.result.primaryPath?.length ? <p className="ai-notice">知识点：{job.result.primaryPath.join(' / ')}</p> : null}{job.result.issues?.map((issue, index) => <p className="ai-notice" key={index}>{issue.description}</p>)}{job.result.figures?.length ? <p className="ai-notice">定位 {job.result.figures.length} 个配图区域，打开编辑页调整范围和插入位置。</p> : null}</details>}
         <div className="ai-job-actions">{isActiveJob(job) ? <button className="table-button" disabled={busy === job.id} onClick={() => void act(job, 'cancel')}><X size={14} />取消</button> : ['failed', 'cancelled'].includes(job.status) && <button className="button secondary" disabled={busy === job.id} onClick={() => void act(job, 'retry')}><RotateCcw size={14} />重试</button>}<a className="text-link" href={`#/mistakes/${job.mistakeId}/edit`} onClick={() => setOpen(false)}>{job.status === 'failed' ? '补充后重新识别' : '打开编辑页'}</a></div>
       </article>)}</div>
     </AiDialog>

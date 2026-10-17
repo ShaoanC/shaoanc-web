@@ -2,7 +2,7 @@ import { useEffect, useImperativeHandle, useRef, useState, type ReactNode, type 
 import ReactCrop, { type PercentCrop } from 'react-image-crop';
 import imageCompression from 'browser-image-compression';
 import compressionWorkerUrl from 'browser-image-compression/dist/browser-image-compression.js?url';
-import { ArrowLeft, ArrowRight, Camera, Crop, ImagePlus, Trash2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Camera, Crop, ImagePlus, RotateCcw, RotateCw, Trash2 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { api } from './api';
 import { AiDialog } from './AiDialog';
@@ -29,7 +29,7 @@ export function PhotoInput({ purpose, ensureSaved, onRecognize, onUploaded, acti
   const current = entries[selected];
   const label = purpose === 'question' ? '题目' : '答案';
   useEffect(() => () => { urls.current.forEach(URL.revokeObjectURL); }, []);
-  useEffect(() => setImageReady(false), [current?.key]);
+  useEffect(() => setImageReady(false), [current?.key, current?.url]);
   function objectUrl(file: Blob) { const url = URL.createObjectURL(file); urls.current.add(url); return url; }
   function add(files: File[]) {
     const valid = files.filter((file) => ['image/jpeg', 'image/png', 'image/webp'].includes(file.type));
@@ -47,6 +47,24 @@ export function PhotoInput({ purpose, ensureSaved, onRecognize, onUploaded, acti
     } catch (err) { toast.error((err as Error).message); }
   } }));
   function changeCrop(crop: PercentCrop) { setEntries((items) => items.map((entry, index) => index === selected ? { ...entry, crop, uploaded: undefined, clientId: crypto.randomUUID() } : entry)); }
+  async function rotate(direction: -1 | 1) {
+    if (!current || busy) return;
+    setBusy(true); setImageReady(false);
+    try {
+      const image = await imageCompression.loadImage(current.url);
+      const canvas = document.createElement('canvas'); canvas.width = image.naturalHeight; canvas.height = image.naturalWidth;
+      const context = canvas.getContext('2d');
+      if (!context) throw new Error('浏览器无法旋转图片，请重试。');
+      context.fillStyle = '#fff'; context.fillRect(0, 0, canvas.width, canvas.height);
+      context.translate(canvas.width / 2, canvas.height / 2); context.rotate(direction * Math.PI / 2);
+      context.drawImage(image, -image.naturalWidth / 2, -image.naturalHeight / 2);
+      const file = await imageCompression.canvasToFile(canvas, 'image/jpeg', current.file.name.replace(/\.[^.]+$/, '') + '.jpg', Date.now(), .98);
+      const url = objectUrl(file);
+      setEntries((items) => items.map((entry) => entry.key === current.key ? { ...entry, file, url, crop: { ...fullCrop }, uploaded: undefined, clientId: crypto.randomUUID() } : entry));
+      URL.revokeObjectURL(current.url); urls.current.delete(current.url);
+    } catch (err) { setImageReady(true); toast.error((err as Error).message); }
+    finally { setBusy(false); }
+  }
   function move(index: number, offset: number) {
     const next = index + offset;
     if (next < 0 || next >= entries.length) return;
@@ -109,10 +127,11 @@ export function PhotoInput({ purpose, ensureSaved, onRecognize, onUploaded, acti
         <button type="button" disabled={busy} onClick={() => setSelected(index)} aria-label={`选择第 ${index + 1} 张图片`}><img src={entry.url} alt={`${label}图片 ${index + 1}`} /><small>{index + 1}. {entry.file.name}</small></button>
         <div className="photo-thumbnail-controls"><button type="button" className="icon-button" aria-label="向前移动" disabled={busy || index === 0} onClick={() => move(index, -1)}><ArrowLeft size={14} /></button><button type="button" className="icon-button" aria-label="移出本次识别" disabled={busy} onClick={() => remove(index)}><Trash2 size={14} /></button><button type="button" className="icon-button" aria-label="向后移动" disabled={busy || index === entries.length - 1} onClick={() => move(index, 1)}><ArrowRight size={14} /></button></div>
       </div>)}</div>
+      {current && <div className="photo-rotation-actions"><button type="button" className="button secondary" disabled={busy || !imageReady} onClick={() => void rotate(-1)}><RotateCcw size={16} />左转 90°</button><button type="button" className="button secondary" disabled={busy || !imageReady} onClick={() => void rotate(1)}><RotateCw size={16} />右转 90°</button></div>}
       {current ? <div className="photo-crop-stage"><ReactCrop crop={current.crop} onChange={(_, percent) => changeCrop(percent)} minWidth={20} minHeight={20} disabled={busy}>
         <img ref={photo} src={current.url} onLoad={() => setImageReady(true)} onError={() => { setImageReady(false); toast.error('图片无法读取，请移除后重新选择。'); }} alt={`裁剪第 ${selected + 1} 张${label}图片`} />
       </ReactCrop></div> : <p className="ai-empty">添加图片开始裁剪。</p>}
-      <div className="photo-crop-footer"><button type="button" className="button ghost" disabled={busy} onClick={() => album.current?.click()}><ImagePlus size={16} />追加图片</button><p>{stage || '整图和裁剪图均会压缩后备份。'}</p></div>
+      <div className="photo-crop-footer"><button type="button" className="button ghost" disabled={busy} onClick={() => album.current?.click()}><ImagePlus size={16} />追加图片</button><p>{stage || '旋转会重置选框。按显示方向备份整图与裁剪图，保留彩色笔迹。'}</p></div>
       {!aiAvailable && <p className="ai-notice">AI 尚未启用，可以先保存图片。</p>}
       <div className="photo-actions"><button type="button" className="button primary" disabled={busy || !entries.length || !imageReady || !aiAvailable} onClick={() => void upload(true)}>{busy ? '正在处理…' : `上传并识别${label}`}</button><button type="button" className="button secondary" disabled={busy || !entries.length || !imageReady} onClick={() => void upload(false)}>仅保存图片</button></div>
     </AiDialog>

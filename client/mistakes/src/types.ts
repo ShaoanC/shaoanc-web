@@ -34,6 +34,7 @@ export interface MistakeSearch {
 }
 
 export interface Mistake {
+  analysisNotice?: string;
   isTest: boolean;
   id: number;
   subjectId: string | null;

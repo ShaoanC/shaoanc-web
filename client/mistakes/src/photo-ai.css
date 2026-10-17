@@ -53,6 +53,67 @@
 .editor-uploaded { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 20px; }
 .markdown-content img { max-width: 100%; height: auto; }
 .knowledge-scope { margin: 16px 0; }
+.photo-dialog:has(.ai-review-grid) { width: min(1180px, calc(100vw - 32px)); }
+.ai-review-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+.ai-review-grid h3 { font-size: 17px; margin: 8px 0; }
+.ai-review-source, .ai-review-result { min-width: 0; }
+.ai-review-source { border-right: 1px solid var(--border-medium); padding-right: 24px; }
+.ai-review-tabs { display: none; }
+.ai-source-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.ai-source-tabs button, .ai-review-tabs button { padding: 6px 12px; background: var(--surface-1); border: 1px solid var(--border-medium); font-size: 14px; border-radius: 3px; }
+.ai-source-tabs button.is-active, .ai-review-tabs button[aria-pressed="true"] { background: var(--primary); border-color: var(--primary); color: white; }
+.ai-regions .ai-notice { display: flex; align-items: center; gap: 4px; margin: 6px 0; font-size: 13px; }
+.ai-image-toolbar { margin: 8px 0; }
+.ai-image-toolbar .button { padding: 6px 9px; font-size: 14px; }
+.ai-image-toolbar .is-active { border-color: var(--primary); background: var(--primary-soft); }
+.ai-region-scroll { overflow: auto; padding: 12px; background: var(--surface-4); text-align: center; }
+.ai-region-stage { display: inline-block; position: relative; max-width: 100%; vertical-align: top; line-height: 0; touch-action: none; user-select: none; }
+.ai-region-stage > img { display: block; max-width: 100%; max-height: 55dvh; width: auto; height: auto; pointer-events: none; }
+.ai-region-stage.is-drawing { cursor: crosshair; }
+.ai-region-box { position: absolute; border: 2px dashed var(--text-secondary); background: #17644808; cursor: move; touch-action: none; min-width: 1px; min-height: 1px; }
+.ai-region-box.is-selected { border: 2px solid var(--primary); background: #17644810; }
+.ai-region-box.is-active { border-color: #a26300; background: #d3ab361a; z-index: 2; }
+.ai-region-box.is-draft { pointer-events: none; border-style: dashed; border-color: #a26300; }
+.ai-region-number { position: absolute; left: -2px; top: -2px; display: grid; place-items: center; width: 23px; height: 23px; line-height: 1; font-size: 12px; font-weight: 600; background: var(--primary); color: white; pointer-events: none; }
+.ai-region-box.is-active .ai-region-number { background: #a26300; }
+.ai-region-handle { position: absolute; width: 13px; height: 13px; background: white; border: 2px solid var(--primary); z-index: 3; }
+.ai-region-nw { top: -7px; left: -7px; cursor: nwse-resize; }
+.ai-region-ne { top: -7px; right: -7px; cursor: nesw-resize; }
+.ai-region-sw { bottom: -7px; left: -7px; cursor: nesw-resize; }
+.ai-region-se { bottom: -7px; right: -7px; cursor: nwse-resize; }
+.ai-region-box.is-active .ai-region-handle { border-color: #a26300; }
+.ai-figure-list { display: grid; gap: 10px; margin-top: 16px; }
+.ai-figure-item { padding: 12px; border: 1px solid var(--border-medium); background: var(--surface-2); }
+.ai-figure-item.is-active { border-left: 3px solid var(--primary); }
+.ai-figure-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 14px; }
+.ai-figure-heading label { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ai-figure-heading small { color: var(--text-secondary); font-size: 12px; }
+.ai-figure-item .field { margin-top: 8px; }
+.ai-figure-item .field span { font-size: 13px; }
+.ai-figure-item .field input { padding: 7px 10px; }
+.ai-figure-item .photo-actions { margin-bottom: 0; gap: 16px; }
+.ai-figure-preview { display: flex; gap: 8px; align-items: flex-end; background: white; border: 0; margin-top: 10px; padding: 8px; max-width: 100%; }
+.ai-figure-preview img { max-width: 100%; max-height: 160px; object-fit: contain; }
+.ai-review-text { display: block; width: 100%; min-height: 350px; resize: vertical; line-height: 1.8; padding: 12px; font-size: 15px; }
+.ai-reviewed-preview { padding: 16px; min-height: 350px; border: 1px solid var(--border-medium); background: white; overflow-wrap: anywhere; }
+.ai-reviewed-preview .markdown-content { max-height: none; }
+.ai-review-issues { padding: 12px 14px; margin: 12px 0; background: var(--warning-bg); color: var(--warning); border-left: 3px solid var(--accent); font-size: 14px; line-height: 1.7; overflow-wrap: anywhere; }
+.ai-review-issues ul { padding-left: 20px; margin: 6px 0 0; }
+.ai-review-classification { border-top: 1px solid var(--border-medium); margin-top: 20px; padding-top: 8px; }
+.ai-review-classification .field { margin-top: 12px; }
+.ai-review-classification .field > span { font-size: 14px; }
+.ai-review-knowledge { max-height: 150px; overflow: auto; display: grid; gap: 6px; font-size: 13px; }
+.ai-review-knowledge label { display: flex; align-items: center; gap: 6px; }
+.ai-original-result { margin-top: 20px; font-size: 14px; }
+.ai-original-result summary { cursor: pointer; color: var(--primary); }
+.ai-original-result .markdown-content { max-height: 300px; overflow: auto; padding: 12px; background: var(--surface-1); }
+.ai-review-footer { border-top: 1px solid var(--border-medium); padding-top: 16px; margin-top: 20px; }
+.ai-candidate-excerpt { max-height: 150px; overflow: auto; }
+.ai-zoom-image { overflow: auto; max-height: 70dvh; }
+.ai-zoom-image img { display: block; min-width: 100%; max-width: none; height: auto; }
+.photo-rotation-actions { display: flex; gap: 8px; justify-content: center; margin: 12px 0; }
+.photo-history-order { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.photo-history-number { color: var(--primary); font-weight: 600; margin-right: auto; }
 @media (max-width: 640px) {
   .photo-dialog { width: 100vw; max-height: 94dvh; top: auto; bottom: 0; left: 0; transform: none; border-radius: 12px 12px 0 0; padding: 20px 16px max(24px, env(safe-area-inset-bottom)); }
   .photo-dialog-heading h2 { font-size: 21px; }
@@ -64,4 +125,17 @@
   .photo-history-pair { grid-template-columns: 1fr; }
   .ai-tasks-trigger.button { font-size: 13px; padding: 6px; min-height: 36px; }
   .ai-tasks-trigger .count-pill { font-size: 11px; padding: 1px 5px; min-width: 18px; }
+  .photo-dialog:has(.ai-review-grid) { width: 100vw; }
+  .ai-review-tabs { display: flex; gap: 8px; position: sticky; top: -20px; background: var(--surface-2); padding: 8px 0 12px; z-index: 4; }
+  .ai-review-tabs button { flex: 1; }
+  .ai-review-grid { display: block; }
+  .ai-review-source, .ai-review-result { display: none; border: 0; padding: 0; }
+  .ai-review-grid .is-mobile-active { display: block; }
+  .ai-region-handle { width: 18px; height: 18px; }
+  .ai-region-nw, .ai-region-ne { top: -10px; }
+  .ai-region-sw, .ai-region-se { bottom: -10px; }
+  .ai-region-nw, .ai-region-sw { left: -10px; }
+  .ai-region-ne, .ai-region-se { right: -10px; }
+  .ai-review-text { min-height: 40dvh; }
+  .ai-review-footer .button { width: 100%; }
 }
