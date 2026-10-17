@@ -19,6 +19,8 @@ async function runAiSmoke() {
     let hold = 0;
     let calls = 0;
     let lastImages = 0;
+    let lastImageIds = [];
+    let lastImageUrls = [];
     let inlineDiagram = false;
     const listen = (listener) => new Promise((resolve) => { const server = listener.listen(0, '127.0.0.1', () => resolve(server)); });
     const close = (listener) => listener && new Promise((resolve) => { listener.closeAllConnections(); listener.close(resolve); });
@@ -42,6 +44,8 @@ async function runAiSmoke() {
             const content = request.messages[1]?.content || [];
             lastImages = Array.isArray(content) ? content.filter((part) => part.type === 'image_url').length : 0;
             const imageIds = Array.isArray(content) ? content.filter((part) => part.type === 'text' && part.text.startsWith('图片编号')).map((part) => Number(part.text.split(' ')[1])) : [];
+            lastImageIds = imageIds;
+            lastImageUrls = content.filter((part) => part.type === 'image_url').map((part) => part.image_url.url);
             const result = system.includes('只转写题干') ? { question: '已知 $x^2=4$，求正数 $x$。' + (inlineDiagram ? `\n\n![图 1-1](${imageIds[0]})\n\n(1) 根据图形回答。` : ''), subjectId: 'math', primaryPath: ['函数', 'AI 私有知识点'], auxiliaryPaths: [['函数', '函数性质']], diagramImageIds: imageIds.slice(0, 1) }
                 : system.includes('转写答案') ? { answer: '$x=2$' } : { analysis: '由 $x^2=4$ 得 $x=\\pm2$，因 $x>0$，故 $x=2$。' };
             res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -80,8 +84,9 @@ async function runAiSmoke() {
         const mistake = await alice('POST', '/mistakes', {}, 201);
         const input = (item) => ({ question: item.question, answer: item.answer, analysis: item.analysis, subjectId: item.subjectId, primaryKnowledgePointId: item.primaryKnowledgePointId, auxiliaryKnowledgePointIds: item.auxiliaryKnowledgePointIds });
         const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0, 0xff, 0xd9]);
+        const originalJpeg = Buffer.concat([jpeg, Buffer.from('original')]);
         async function upload(purpose, clientId) {
-            const form = new FormData(); form.append('original', new Blob([jpeg], { type: 'image/jpeg' }), 'source.jpg'); form.append('crop', new Blob([jpeg], { type: 'image/jpeg' }), 'crop.jpg'); form.append('purpose', purpose); form.append('clientId', clientId);
+            const form = new FormData(); form.append('original', new Blob([originalJpeg], { type: 'image/jpeg' }), 'source.jpg'); form.append('crop', new Blob([jpeg], { type: 'image/jpeg' }), 'crop.jpg'); form.append('purpose', purpose); form.append('clientId', clientId);
             return alice('POST', `/mistakes/${mistake.id}/images`, form, 201);
         }
         const first = await upload('question', 'first');
@@ -103,7 +108,7 @@ async function runAiSmoke() {
         failures = 1;
         const question = await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'question', input: input(mistake), imageIds: [first.id, second.id] }, 201);
         const recognized = await completed(question);
-        assert.equal(recognized.status, 'succeeded'); assert.equal(recognized.attempts, 2); assert.equal(lastImages, 2);
+        assert.equal(recognized.status, 'succeeded', `${recognized.error} (mock calls: ${calls})`); assert.equal(recognized.attempts, 2); assert.equal(lastImages, 2);
         await bob('GET', `/ai/jobs/${question.id}`, null, 404);
         let applied = await alice('POST', `/ai/jobs/${question.id}/apply`, {});
         assert.match(applied.mistake.question, /\$x\^2=4\$/);
@@ -134,6 +139,11 @@ async function runAiSmoke() {
         assert.equal((await bob('GET', '/knowledge-points')).some((point) => point.id === privatePoint.id), false);
         await bob('POST', '/mistakes', { subjectId: 'math', primaryKnowledgePointId: privatePoint.id }, 400);
         await admin('PATCH', `/knowledge-points/${privatePoint.id}`, { name: 'other' }, 404);
+        const reused = await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'answer', input: input(applied.mistake), imageIds: [second.id, first.id] }, 201);
+        assert.equal((await completed(reused)).status, 'succeeded');
+        assert.deepEqual(lastImageIds, [second.id, first.id], 'Answer recognition preserves the reused question image order');
+        assert.deepEqual(lastImageUrls, [jpeg, jpeg].map((image) => `data:image/jpeg;base64,${image.toString('base64')}`), 'Reused question images use the crops, not the originals');
+        assert.equal((await alice('GET', `/mistakes/${mistake.id}/images`)).length, 3, 'Reusing question images creates no duplicate uploads');
         const answer = await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'answer', input: input(applied.mistake), imageIds: [answerImage.id] }, 201);
         assert.equal((await completed(answer)).status, 'succeeded');
         applied = await alice('POST', `/ai/jobs/${answer.id}/apply`, {});

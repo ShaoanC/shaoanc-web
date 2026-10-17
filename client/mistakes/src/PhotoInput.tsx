@@ -1,4 +1,4 @@
-import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react';
+import { useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from 'react';
 import ReactCrop, { type PercentCrop } from 'react-image-crop';
 import imageCompression from 'browser-image-compression';
 import compressionWorkerUrl from 'browser-image-compression/dist/browser-image-compression.js?url';
@@ -15,7 +15,7 @@ export interface PhotoInputHandle { reuse: (image: MistakeImage) => Promise<void
 const fullCrop: PercentCrop = { unit: '%', x: 0, y: 0, width: 100, height: 100 };
 const jpeg = (file: File, onProgress?: (n: number) => void) => imageCompression(file, { maxSizeMB: 1.5, maxWidthOrHeight: 2560, fileType: 'image/jpeg', initialQuality: .88, useWebWorker: true, libURL: compressionWorkerUrl, onProgress });
 
-export function PhotoInput({ purpose, ensureSaved, onRecognize, aiAvailable, ref }: { purpose: ImagePurpose; ensureSaved: () => Promise<Mistake>; onRecognize: (ids: number[]) => Promise<void>; aiAvailable: boolean; ref?: Ref<PhotoInputHandle> }) {
+export function PhotoInput({ purpose, ensureSaved, onRecognize, onUploaded, actions, aiAvailable, ref }: { purpose: ImagePurpose; ensureSaved: () => Promise<Mistake>; onRecognize: (ids: number[]) => Promise<void>; onUploaded?: (ids: number[]) => void; actions?: ReactNode; aiAvailable: boolean; ref?: Ref<PhotoInputHandle> }) {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState(0);
@@ -91,6 +91,7 @@ export function PhotoInput({ purpose, ensureSaved, onRecognize, aiAvailable, ref
         setEntries((items) => items.map((value) => value.key === entry.key ? { ...value, uploaded } : value));
       }
       toast.update(toastId, { render: `${snapshot.length} 张${label}图片已备份。`, type: 'success', isLoading: false, autoClose: 4500 });
+      onUploaded?.(ids);
       if (recognize) await onRecognize(ids);
       setOpen(false);
     } catch (err) { toast.update(toastId, { render: (err as Error).message, type: 'error', isLoading: false, autoClose: false, closeButton: true }); }
@@ -99,10 +100,10 @@ export function PhotoInput({ purpose, ensureSaved, onRecognize, aiAvailable, ref
   function fileInput(event: React.ChangeEvent<HTMLInputElement>) { add(Array.from(event.target.files || [])); event.target.value = ''; }
   return <div className="photo-entry">
     <div className="photo-entry-title"><Camera size={18} />{purpose === 'question' ? '从图片录入题目' : '也可以拍下答案'}</div>
-    <p>{purpose === 'question' ? '选中错题部分，多张图片按顺序一起识别。' : '识别后仍可直接修改下方答案。'}</p>
+    <p>{purpose === 'question' ? '选中错题部分，多张图片按顺序一起识别。' : '题目和答案在同一张图里时，可直接复用题干图片识别答案。'}</p>
     <input ref={camera} type="file" accept="image/jpeg,image/png,image/webp" capture="environment" hidden onChange={fileInput} disabled={busy} />
     <input ref={album} type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onChange={fileInput} disabled={busy} />
-    <div className="photo-actions"><button type="button" className="button secondary" disabled={busy} onClick={() => camera.current?.click()}><Camera size={16} />拍照{purpose === 'answer' ? '识别答案' : ''}</button><button type="button" className="button secondary" disabled={busy} onClick={() => album.current?.click()}><ImagePlus size={16} />选择图片</button>{entries.length > 0 && <button type="button" className="table-button" onClick={() => setOpen(true)}><Crop size={15} />{entries.length} 张待选图片</button>}</div>
+    <div className="photo-actions"><button type="button" className="button secondary" disabled={busy} onClick={() => camera.current?.click()}><Camera size={16} />拍照{purpose === 'answer' ? '识别答案' : ''}</button><button type="button" className="button secondary" disabled={busy} onClick={() => album.current?.click()}><ImagePlus size={16} />选择图片</button>{actions}{entries.length > 0 && <button type="button" className="table-button" onClick={() => setOpen(true)}><Crop size={15} />{entries.length} 张待选图片</button>}</div>
     <AiDialog open={open} onClose={() => { if (!busy) setOpen(false); }} title={`裁剪${label}图片`} description="拖动选框保留需要的部分。可逐张调整，再按当前顺序识别。" wide>
       <div className="photo-thumbnails">{entries.map((entry, index) => <div className={`photo-thumbnail${selected === index ? ' active' : ''}`} key={entry.key}>
         <button type="button" disabled={busy} onClick={() => setSelected(index)} aria-label={`选择第 ${index + 1} 张图片`}><img src={entry.url} alt={`${label}图片 ${index + 1}`} /><small>{index + 1}. {entry.file.name}</small></button>

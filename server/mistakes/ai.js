@@ -72,9 +72,9 @@ function createJob(userId, body) {
     const imageIds = Array.isArray(body.imageIds) ? [...new Set(body.imageIds)] : [];
     if (body.type !== 'analysis' && (!imageIds.length || imageIds.length > 12)) fail(400, '每次请选择 1–12 张裁剪图');
     for (const id of imageIds) {
-        const image = db.prepare('SELECT id FROM mistake_images WHERE id = ? AND mistake_id = ? AND user_id = ? AND purpose = ?')
-            .get(id, row.id, userId, body.type);
-        if (!image) fail(400, '图片不存在或用途与任务不一致');
+        const image = db.prepare('SELECT purpose FROM mistake_images WHERE id = ? AND mistake_id = ? AND user_id = ?')
+            .get(id, row.id, userId);
+        if (!image || (image.purpose !== body.type && !(body.type === 'answer' && image.purpose === 'question'))) fail(400, '图片不存在或用途与任务不一致');
     }
     if (body.type === 'analysis' && !input.question.trim()) fail(400, '请先填写题干');
     const fingerprint = crypto.createHash('sha256').update(JSON.stringify([body.type, input, imageIds])).digest('hex');

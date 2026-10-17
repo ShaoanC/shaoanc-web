@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { ArrowLeft, FileText, Layers, Pencil, Sparkles, StickyNote } from 'lucide-react';
+import { ArrowLeft, Copy, FileText, Layers, Pencil, Sparkles, StickyNote } from 'lucide-react';
 import { api, json, navigate } from '../api';
 import { knowledgeLabel, useApp } from '../context';
 import { Checkbox, DataTypeBadge, ErrorState } from '../components';
@@ -42,6 +42,8 @@ export function EditorPage({ id }: { id?: number }) {
   const [mobile, setMobile] = useState(() => window.matchMedia('(max-width: 640px)').matches);
   const [applying, setApplying] = useState<number | null>(null);
   const [starting, setStarting] = useState(false);
+  const [uploadedQuestionIds, setUploadedQuestionIds] = useState<number[] | null>(null);
+  const [reusingQuestionPhotos, setReusingQuestionPhotos] = useState(false);
   const processed = useRef(new Set<number>());
   const openedAt = useRef(Date.now());
   const [dismissed, setDismissed] = useState<number[]>([]);
@@ -54,6 +56,7 @@ export function EditorPage({ id }: { id?: number }) {
   const questionPhotos = useRef<PhotoInputHandle>(null);
   const answerPhotos = useRef<PhotoInputHandle>(null);
   const currentJobs = jobs.filter((job) => job.mistakeId === recordId);
+  const questionImageIds = uploadedQuestionIds ?? currentJobs.find((job) => job.type === 'question')?.imageIds ?? [];
   const aiAvailable = Boolean(config?.enabled && config.configured);
 
   function update(patch: Partial<Form>) { dataRef.current = { ...dataRef.current, ...patch }; setData(dataRef.current); }
@@ -113,6 +116,12 @@ export function EditorPage({ id }: { id?: number }) {
   async function recognize(purpose: ImagePurpose, imageIds: number[]) {
     try { const item = await ensureSaved(); await createJob({ mistakeId: item.id, type: purpose, imageIds, input: inputOf(item) }); setTab(purpose === 'question' ? 'question' : 'answers'); }
     catch (err) { setError((err as Error).message); throw err; }
+  }
+  async function reuseQuestionPhotos() {
+    setReusingQuestionPhotos(true);
+    try { await recognize('answer', questionImageIds); }
+    catch (err) { notify((err as Error).message, 'error'); }
+    finally { setReusingQuestionPhotos(false); }
   }
   async function generate() {
     setStarting(true);
@@ -182,11 +191,11 @@ export function EditorPage({ id }: { id?: number }) {
       <div className="editor-mobile-tabs"><SlidingTabs tabs={tabs} value={tab} onChange={(value) => setTab(value as EditorTab)} ariaLabel="编辑内容" /></div>
       <div className="editor-layout"><div className="editor-main">
         <section className="editor-block editor-question-block" {...panelProps('question')}><div className="editor-block-heading"><FileText size={18} /><h2>题目</h2><span>必填</span></div>
-          <PhotoInput ref={questionPhotos} purpose="question" ensureSaved={ensureSaved} onRecognize={(ids) => recognize('question', ids)} aiAvailable={aiAvailable} />{candidates('question')}
+          <PhotoInput ref={questionPhotos} purpose="question" ensureSaved={ensureSaved} onUploaded={setUploadedQuestionIds} onRecognize={(ids) => recognize('question', ids)} aiAvailable={aiAvailable} />{candidates('question')}
           <MarkdownField ref={questionField} name="题干" label={<>题干 <em>*</em></>} textareaClassName="question-editor" value={data.question} onChange={(question) => update({ question })} placeholder="输入题目内容，包括题目条件、问题和选项…" />
         </section>
         <section className="editor-block editor-answers-block" {...panelProps('answers')}><div className="editor-block-heading"><FileText size={18} /><h2>答案与分析</h2></div>
-          <PhotoInput ref={answerPhotos} purpose="answer" ensureSaved={ensureSaved} onRecognize={(ids) => recognize('answer', ids)} aiAvailable={aiAvailable} />{candidates('answer')}
+          <PhotoInput ref={answerPhotos} purpose="answer" ensureSaved={ensureSaved} onRecognize={(ids) => recognize('answer', ids)} aiAvailable={aiAvailable} actions={<button type="button" className="button secondary" disabled={!questionImageIds.length || !aiAvailable || reusingQuestionPhotos || Boolean(saving) || Boolean(applying) || currentJobs.some((job) => job.type === 'answer' && isActiveJob(job))} title={questionImageIds.length ? '按原顺序使用题干裁剪图识别答案，无需重新上传' : '先在题干中上传图片'} onClick={() => void reuseQuestionPhotos()}><Copy size={16} />{reusingQuestionPhotos ? '正在提交…' : `复用题干图片${questionImageIds.length ? `（${questionImageIds.length} 张）` : ''}`}</button>} />{candidates('answer')}
           <MarkdownField ref={answerField} name="正确答案" label={<>正确答案 <span className="optional-label">选填</span></>} rows={3} value={data.answer} onChange={(answer) => update({ answer })} placeholder="直接输入答案，或拍照识别后修改…" />
           <p className="ai-notice">手动输入的短答案会在保存时自动生成解析；图片识别的短答案会在填入后生成。</p>
           <div className="photo-actions"><button type="button" className="button secondary" disabled={!aiAvailable || !data.question.trim() || starting || currentJobs.some((job) => job.type === 'analysis' && isActiveJob(job))} onClick={() => void generate()}><Sparkles size={16} />{starting ? '正在提交…' : '生成解析'}</button></div>
