@@ -4,6 +4,7 @@ const crypto = require('node:crypto');
 const multer = require('multer');
 const { db } = require('./database');
 const { fail } = require('./auth');
+const { questionWithImages } = require('./question-images');
 
 const uploadsDirectory = path.resolve(process.env.MISTAKES_UPLOADS_PATH || path.join(__dirname, '..', '..', 'uploads', 'mistakes'));
 const multipart = multer({
@@ -34,6 +35,13 @@ function serializeImage(row) {
 
 function imagePath(filename) {
     return path.join(uploadsDirectory, path.basename(filename));
+}
+
+function questionForMistake(row) {
+    if (!row.question.includes('![')) return row.question;
+    const imageIds = db.prepare("SELECT id FROM mistake_images WHERE mistake_id = ? AND user_id = ? AND purpose = 'question'")
+        .all(row.id, row.user_id).map((image) => image.id);
+    return imageIds.length ? questionWithImages(row.question, imageIds) : row.question;
 }
 
 function saveImages(req, mistake) {
@@ -79,4 +87,4 @@ function deleteMistakeFiles(mistakeIds) {
     }
 }
 
-module.exports = { uploadImages, serializeImage, saveImages, imagePath, deleteMistakeFiles, uploadsDirectory };
+module.exports = { uploadImages, serializeImage, saveImages, imagePath, questionForMistake, deleteMistakeFiles, uploadsDirectory };

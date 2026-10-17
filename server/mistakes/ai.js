@@ -4,7 +4,8 @@ const { z } = require('zod');
 const { db } = require('./database');
 const { fail } = require('./auth');
 const { aiClient, publicConfig, safeAiError } = require('./ai-config');
-const { imagePath } = require('./images');
+const { imagePath, questionForMistake } = require('./images');
+const { questionWithImages } = require('./question-images');
 const { plainText, updateCachedMistake } = require('./search');
 
 const pendingStates = ['queued', 'running', 'retrying'];
@@ -21,13 +22,16 @@ const questionSchema = z.object({ question: text.min(1), subjectId: z.string(), 
     auxiliaryPaths: z.array(pathSchema).max(8).default([]), diagramImageIds: z.array(z.number().int()).default([]) });
 
 function inputFor(row) {
-    return { question: row.question, answer: row.answer, analysis: row.analysis, subjectId: row.subject_id,
+    return { question: questionForMistake(row), answer: row.answer, analysis: row.analysis, subjectId: row.subject_id,
         primaryKnowledgePointId: row.primary_knowledge_point_id, auxiliaryKnowledgePointIds: JSON.parse(row.auxiliary_knowledge_point_ids) };
 }
 
 function serializeJob(row) {
+    const imageIds = JSON.parse(row.image_ids);
+    const result = row.result_json ? JSON.parse(row.result_json) : null;
+    if (row.type === 'question' && result) result.question = questionWithImages(result.question, imageIds, result.diagramImageIds);
     return { id: row.id, mistakeId: row.mistake_id, type: row.type, status: row.status, applyStatus: row.apply_status,
-        input: JSON.parse(row.input_json), imageIds: JSON.parse(row.image_ids), result: row.result_json ? JSON.parse(row.result_json) : null,
+        input: JSON.parse(row.input_json), imageIds, result,
         error: row.error, attempts: row.attempts, maxAttempts: row.max_attempts, createdAt: row.created_at,
         startedAt: row.started_at, finishedAt: row.finished_at, nextAttemptAt: row.next_attempt_at };
 }
@@ -118,6 +122,7 @@ async function requestResult(job, signal) {
             '依次阅读同一道题的多张裁剪图片，只转写题干、原题条件、选项和必要图形说明，不作答。',
             '照片中可能同时有学生在横线、括号或答题框里填写的错误答案，以及蓝色笔写的订正答案。题干中应排除所有学生作答（无论对错）、订正、解题步骤、批改符号和分数；清空作答内容，保留原题的填空横线、空括号、答题框和题目结构，不把订正答案填回空白。',
             '蓝色是订正的辅助线索，须结合书写位置、印刷或手写特征、划改痕迹和语义判断。保留原题本身的蓝色文字、手写题干、公式、选项和图形标注；不能仅凭颜色或是否手写删除内容。无法区分原题与作答的局部写[待确认]，不猜测、不根据答案反推题干。',
+            '需要在题干中保留配图位置时，使用 ![图形说明](图片编号)，例如图片编号为 3 时写 ![图 1-1](3)，程序会转换为真实地址。不要编造图片文件名或地址；diagramImageIds 中已在题干引用的图片不会重复追加。',
             '识别学科与主辅知识点，优先复用给定目录的完整名称路径，缺少时提出准确简短的新分支。subjectId 必须原样使用 subjects 中某项的 id 字符串，不能填写学科中文名称。primaryPath 是知识点名称的字符串数组，auxiliaryPaths 是这些路径的数组。diagramImageIds 只能包含本次提供的图片编号（整数），没有必要图形时返回空数组。'
         ].join(' ')
         : job.type === 'answer'
@@ -165,8 +170,7 @@ function applyJob(id, userId, options = {}) {
             const primary = resolvePath(userId, result.subjectId, result.primaryPath);
             const auxiliary = [...new Set(result.auxiliaryPaths.map((names) => resolvePath(userId, result.subjectId, names)))].filter((pointId) => pointId && pointId !== primary);
             const allowedImages = JSON.parse(job.image_ids);
-            const diagrams = [...new Set(result.diagramImageIds)].filter((imageId) => allowedImages.includes(imageId));
-            const question = result.question + diagrams.map((imageId) => `\n\n![题目配图](/api/mistakes/images/${imageId}/crop)`).join('');
+            const question = questionWithImages(result.question, allowedImages, result.diagramImageIds);
             db.prepare('UPDATE mistakes SET question = ?, subject_id = ?, primary_knowledge_point_id = ?, auxiliary_knowledge_point_ids = ?, updated_at = ? WHERE id = ?')
                 .run(question, result.subjectId, primary, JSON.stringify(auxiliary), time, row.id);
         } else {

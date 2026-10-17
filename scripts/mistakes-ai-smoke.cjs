@@ -19,6 +19,7 @@ async function runAiSmoke() {
     let hold = 0;
     let calls = 0;
     let lastImages = 0;
+    let inlineDiagram = false;
     const listen = (listener) => new Promise((resolve) => { const server = listener.listen(0, '127.0.0.1', () => resolve(server)); });
     const close = (listener) => listener && new Promise((resolve) => { listener.closeAllConnections(); listener.close(resolve); });
     try {
@@ -41,7 +42,7 @@ async function runAiSmoke() {
             const content = request.messages[1]?.content || [];
             lastImages = Array.isArray(content) ? content.filter((part) => part.type === 'image_url').length : 0;
             const imageIds = Array.isArray(content) ? content.filter((part) => part.type === 'text' && part.text.startsWith('图片编号')).map((part) => Number(part.text.split(' ')[1])) : [];
-            const result = system.includes('只转写题干') ? { question: '已知 $x^2=4$，求正数 $x$。', subjectId: 'math', primaryPath: ['函数', 'AI 私有知识点'], auxiliaryPaths: [['函数', '函数性质']], diagramImageIds: imageIds.slice(0, 1) }
+            const result = system.includes('只转写题干') ? { question: '已知 $x^2=4$，求正数 $x$。' + (inlineDiagram ? `\n\n![图 1-1](${imageIds[0]})\n\n(1) 根据图形回答。` : ''), subjectId: 'math', primaryPath: ['函数', 'AI 私有知识点'], auxiliaryPaths: [['函数', '函数性质']], diagramImageIds: imageIds.slice(0, 1) }
                 : system.includes('转写答案') ? { answer: '$x=2$' } : { analysis: '由 $x^2=4$ 得 $x=\\pm2$，因 $x>0$，故 $x=2$。' };
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: JSON.stringify(result) }, finish_reason: 'stop' }] }));
@@ -107,6 +108,26 @@ async function runAiSmoke() {
         let applied = await alice('POST', `/ai/jobs/${question.id}/apply`, {});
         assert.match(applied.mistake.question, /\$x\^2=4\$/);
         assert.match(applied.mistake.question, /!\[题目配图\]/);
+        inlineDiagram = true;
+        const inlineJob = await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'question', input: input(applied.mistake), imageIds: [first.id, second.id] }, 201);
+        const inlineResult = await completed(inlineJob);
+        assert.ok(inlineResult.result.question.includes(`![图 1-1](${first.cropUrl})\n\n(1)`), 'Preview resolves the image ID at its original position');
+        assert.equal(inlineResult.result.question.includes('![题目配图]'), false, 'An inline diagram is not appended again');
+        applied = await alice('POST', `/ai/jobs/${inlineJob.id}/apply`, {});
+        assert.equal(applied.mistake.question, inlineResult.result.question, 'Saved question matches its preview');
+        const legacy = applied.mistake.question.replace(first.cropUrl, String(first.id)) + `\n\n![题目配图](${first.cropUrl})`;
+        app.db.prepare('UPDATE mistakes SET question = ? WHERE id = ?').run(legacy, mistake.id);
+        const repaired = await alice('GET', `/mistakes/${mistake.id}`);
+        assert.ok(repaired.question.includes(`![图 1-1](${first.cropUrl})`), 'Existing saved questions resolve image IDs');
+        assert.equal(repaired.question.includes('![题目配图]'), false, 'Existing appended duplicates are removed');
+        const legacyJob = await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'question', input: input(repaired), imageIds: [first.id] }, 201);
+        await completed(legacyJob);
+        applied = await alice('POST', `/ai/jobs/${legacyJob.id}/apply`, {});
+        assert.equal(applied.job.applyStatus, 'applied', 'Legacy URL correction does not cause a false editing conflict');
+        const { questionWithImages } = require('../server/mistakes/question-images');
+        const reference = '![图\\[1\\]][diagram]\n\n[diagram]: ' + first.id + ' "结构图"\n\n`![示例](' + first.id + ')`';
+        assert.ok(questionWithImages(reference, [first.id], [first.id]).startsWith(`![图\\[1\\]](${first.cropUrl} "结构图")`));
+        assert.ok(questionWithImages(reference, [first.id]).includes('`![示例](' + first.id + ')`'), 'Code samples keep their original source');
         const ownPoints = await alice('GET', '/knowledge-points');
         const privatePoint = ownPoints.find((point) => point.name === 'AI 私有知识点');
         assert.equal(privatePoint.ownerUserId, users.alice);

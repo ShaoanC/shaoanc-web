@@ -5,7 +5,7 @@ const { generateTestMistakes } = require('./test-data');
 const { searchMistakes, updateCachedMistake, invalidateUser, invalidateAll } = require('./search');
 const { cleanupExpiredTrash } = require('./trash');
 const { enqueueAutomatic, cancelMistakeJobs } = require('./ai');
-const { deleteMistakeFiles } = require('./images');
+const { deleteMistakeFiles, questionForMistake } = require('./images');
 const { getPublicCaptchaConfig, verifyCaptcha } = require('./captcha');
 const { loginIpLimit, loginFailureLimit, registrationLimit } = require('./auth-limits');
 const {
@@ -45,7 +45,7 @@ function serializeMistake(row) {
         lifecycle: row.lifecycle,
         isTest: Boolean(row.is_test),
         rating: row.rating,
-        question: row.question,
+        question: questionForMistake(row),
         answer: row.answer,
         analysis: row.analysis,
         note: row.note,
