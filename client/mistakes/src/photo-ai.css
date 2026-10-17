@@ -113,7 +113,9 @@
 .ai-issue-link:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
 .ai-zoom-image { overflow: auto; max-height: 70dvh; }
 .ai-zoom-image img { display: block; min-width: 100%; max-width: none; height: auto; }
-.photo-rotation-actions { display: flex; gap: 8px; justify-content: center; margin: 12px 0; }
+.photo-rotation-actions { display: flex; gap: 6px; justify-content: center; margin: 12px 0; }
+.photo-rotation-actions .button { min-height: 36px; padding: 5px 10px; font-size: 14px; gap: 5px; }
+.photo-rotation-actions .button svg { width: 14px; height: 14px; }
 .photo-history-order { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
 .photo-history-number { color: var(--primary); font-weight: 600; margin-right: auto; }
 .task-page-description { max-width: 760px; color: var(--text-secondary); line-height: 1.8; margin: -8px 0 24px; }
