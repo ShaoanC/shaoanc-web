@@ -10,6 +10,7 @@
     "build": "npm run typecheck && vite build --config client/mistakes/vite.config.mts",
     "test": "node scripts/mistakes-smoke.cjs && node scripts/mistakes-captcha-smoke.cjs",
     "test:ai": "node scripts/mistakes-ai-smoke.cjs",
+    "baseline:ai": "node scripts/mistakes-ai-baseline.cjs",
     "admin:create": "node server/mistakes/create-admin.js"
   },
   "keywords": [],

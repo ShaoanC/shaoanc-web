@@ -44,6 +44,7 @@ export function AiReview({ job, input, busy, onApply, onDismiss }: { job: AiJob;
   const [uploading, setUploading] = useState(false);
   const [stage, setStage] = useState('');
   const textInput = useRef<HTMLTextAreaElement>(null);
+  const sourcePanel = useRef<HTMLElement>(null);
   const cursor = useRef<{ start: number; end: number } | null>(null);
   const locked = busy || uploading;
   const source = images.find((image) => image.id === imageId);
@@ -75,6 +76,13 @@ export function AiReview({ job, input, busy, onApply, onDismiss }: { job: AiJob;
   }, [draft.figures, images, open]);
   function show() {
     setOpen(true);
+  }
+  function showIssue(imageId: number) {
+    setImageId(imageId);
+    setActiveId(draft.figures.find((figure) => figure.imageId === imageId)?.id || null);
+    setRedrawId(null);
+    setMobileView('image');
+    requestAnimationFrame(() => sourcePanel.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }));
   }
   function changeBox(id: string, box: FigureBox) {
     update({ figures: draftRef.current.figures.map((figure) => figure.id === id ? { ...figure, box, selected: true, clientId: crypto.randomUUID(), uploadedId: undefined, uploadedUrl: undefined } : figure) });
@@ -145,7 +153,7 @@ export function AiReview({ job, input, busy, onApply, onDismiss }: { job: AiJob;
     <AiDialog open={open} onClose={() => { if (!locked) setOpen(false); }} title={job.type === 'question' ? '校对题干与配图' : job.type === 'answer' ? '校对答案' : '校对解析'} description="检查原题内容与图形。框选只改变截图范围，重叠笔迹可保留原样。" wide>
       <div className="ai-review-tabs" role="group" aria-label="校对视图"><button type="button" aria-pressed={mobileView === 'image'} onClick={() => setMobileView('image')}>图片</button><button type="button" aria-pressed={mobileView === 'result'} onClick={() => setMobileView('result')}>结果</button></div>
       <div className="ai-review-grid">
-        <section className={`ai-review-source${mobileView === 'image' ? ' is-mobile-active' : ''}`}>
+        <section ref={sourcePanel} className={`ai-review-source${mobileView === 'image' ? ' is-mobile-active' : ''}`}>
           <h3>来源图片</h3><div className="ai-source-tabs">{job.imageIds.map((id, index) => <button type="button" key={id} className={id === imageId ? 'is-active' : ''} onClick={() => { setImageId(id); setRedrawId(null); }}>图片 {index + 1}</button>)}</div>
           {source ? <ImageRegions url={source.cropUrl} figures={draft.figures.map((figure, index) => ({ ...figure, number: index + 1 })).filter((figure) => figure.imageId === imageId)} activeId={activeId} onActive={setActiveId} onChange={changeBox} onAdd={add} disabled={locked} onZoom={() => setFull(source.cropUrl)} redrawId={redrawId} onRedrawDone={() => setRedrawId(null)} /> : <p className="ai-empty">{job.imageIds.length ? '正在加载来源图片…' : '这项任务没有来源图片。'}</p>}
           <p className="ai-notice">配图与题干使用同一张裁剪图。图形与作答重叠时，请检查截图内容；不会自动擦除彩色笔迹。</p>
@@ -161,7 +169,7 @@ export function AiReview({ job, input, busy, onApply, onDismiss }: { job: AiJob;
           <div className="markdown-field-heading"><h3>可编辑结果</h3><div className="markdown-field-modes"><button type="button" aria-pressed={!preview} onClick={() => setPreview(false)}>编辑</button><button type="button" aria-pressed={preview} onClick={() => setPreview(true)}>预览</button></div></div>
           {preview ? <div className="ai-reviewed-preview"><MarkdownContent imageUrls={imageUrls}>{previewText}</MarkdownContent></div> : <textarea ref={textInput} className="ai-review-text" aria-label="校对识别文字" maxLength={20000} value={draft.text} disabled={locked} onChange={(event) => update({ text: event.target.value })} onSelect={(event) => { cursor.current = { start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd }; }} />}
           <p className="ai-notice">配图标记决定填入位置。先在文字中放置光标，再点“插入配图”；没有光标时追加到末尾。预览支持公式与表格。</p>
-          {job.result?.issues?.length ? <div className="ai-review-issues" role="note"><strong>需要检查</strong><ul>{job.result.issues.map((issue, index) => <li key={index}>{issue.imageId ? `图片 ${job.imageIds.indexOf(issue.imageId) + 1}：` : ''}{issue.description}</li>)}</ul></div> : null}
+          {job.result?.issues?.length ? <div className="ai-review-issues" role="note"><strong>需要检查</strong><ul>{job.result.issues.map((issue, index) => <li key={index}>{issue.imageId && job.imageIds.includes(issue.imageId) ? <button type="button" className="ai-issue-link" onClick={() => showIssue(issue.imageId!)}>图片 {job.imageIds.indexOf(issue.imageId) + 1}：{issue.description}</button> : issue.description}</li>)}</ul></div> : null}
           {unmatched.length > 0 && <div className="ai-review-issues"><strong>以下标记没有有效选框</strong>{unmatched.map((id) => <p key={id}>{figureMarker(id)} <button type="button" className="table-button" disabled={locked} onClick={() => update({ text: draftRef.current.text.split(figureMarker(id)).join('') })}>移除标记</button></p>)}<p>请为对应配图重新框选；无对应配图时可补画后插入新标记。</p></div>}
           {unplaced.length > 0 && <p className="ai-notice">{unplaced.length} 张选中配图还没有插入文字，填入前请点“插入配图”或取消勾选。</p>}
           {job.type === 'question' && <div className="ai-review-classification"><h3>归类</h3><label className="field"><span>学科</span><select disabled={locked} value={draft.subjectId || ''} onChange={(event) => update({ subjectId: event.target.value || null, primaryKnowledgePointId: null, auxiliaryKnowledgePointIds: [], primaryPath: '', auxiliaryPaths: '' })}><option value="">暂不归类</option>{subjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.name}</option>)}</select></label><label className="field"><span>主知识点</span><select value={draft.primaryKnowledgePointId || ''} disabled={locked || !draft.subjectId} onChange={(event) => update({ primaryKnowledgePointId: event.target.value ? Number(event.target.value) : null, primaryPath: '' })}><option value="">暂不标注 / 使用下方建议</option>{points.map((point) => <option key={point.id} value={point.id}>{knowledgeLabel(knowledgePoints, point.id)}</option>)}</select></label><div className="field"><span>辅助知识点</span><div className="ai-review-knowledge">{points.filter((point) => point.id !== draft.primaryKnowledgePointId).map((point) => <label key={point.id}><input type="checkbox" disabled={locked} checked={draft.auxiliaryKnowledgePointIds.includes(point.id)} onChange={(event) => update({ auxiliaryKnowledgePointIds: event.target.checked ? [...draft.auxiliaryKnowledgePointIds, point.id] : draft.auxiliaryKnowledgePointIds.filter((id) => id !== point.id) })} />{knowledgeLabel(knowledgePoints, point.id)}</label>)}</div></div>{!draft.primaryKnowledgePointId && <label className="field"><span>建议主知识点路径（可修改，填入时才创建）</span><input disabled={locked || !draft.subjectId} value={draft.primaryPath} onChange={(event) => update({ primaryPath: event.target.value })} placeholder="如：几何 / 三角形" /></label>}<label className="field"><span>建议辅助知识点路径（每行一个）</span><textarea rows={2} disabled={locked || !draft.subjectId} value={draft.auxiliaryPaths} onChange={(event) => update({ auxiliaryPaths: event.target.value })} /></label></div>}

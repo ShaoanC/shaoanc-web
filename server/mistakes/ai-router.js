@@ -1,7 +1,8 @@
 const { db } = require('./database');
 const { fail, requireAdmin } = require('./auth');
 const { uploadImages, saveImages, serializeImage, uploadsDirectory } = require('./images');
-const { publicConfig, saveConfig, aiClient, safeAiError } = require('./ai-config');
+const { publicConfig, saveConfig, safeAiError } = require('./ai-config');
+const { testVision } = require('./ai-vision-test');
 const { createJob, serializeJob, ownJob, applyJob, retryJob, cancelJob } = require('./ai');
 
 module.exports = function mountAiRoutes(router, { success, ownMistake, serializeMistake, cleanupExpiredTrash }) {
@@ -10,9 +11,7 @@ module.exports = function mountAiRoutes(router, { success, ownMistake, serialize
     router.patch('/admin/ai/config', requireAdmin, (req, res) => { res.set('Cache-Control', 'no-store'); success(res, saveConfig(req.body || {})); });
     router.post('/admin/ai/test', requireAdmin, async (req, res) => {
         try {
-            const { client, config } = aiClient();
-            await client.chat.completions.create({ model: config.model, messages: [{ role: 'user', content: '请回复：连接成功。' }] });
-            success(res, { message: 'AI 连接成功，可上传题目进行图片识别。' });
+            success(res, await testVision());
         } catch (error) {
             res.status(400).json({ success: false, message: safeAiError(error) });
         }

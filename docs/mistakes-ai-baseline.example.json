@@ -1,0 +1,15 @@
+{
+  "source": "real",
+  "subjects": [{ "id": "math", "name": "数学" }],
+  "directory": [],
+  "cases": [
+    { "id": "printed", "type": "question", "images": ["images/01-printed.jpg"], "required": [], "forbidden": [], "expectedFigureCount": 0 },
+    { "id": "small-formula", "type": "question", "images": ["images/02-small-formula.jpg"], "required": [], "forbidden": [], "expectedFigureCount": 0 },
+    { "id": "correction-question", "type": "question", "images": ["images/03-correction.jpg"], "required": [], "forbidden": [], "expectedFigureCount": 0 },
+    { "id": "correction-answer", "type": "answer", "images": ["images/03-correction.jpg"], "required": [], "forbidden": [], "expectedFigureCount": 0 },
+    { "id": "overlap", "type": "question", "images": ["images/04-overlap-top.jpg", "images/05-overlap-bottom.jpg"], "required": [], "forbidden": [], "expectedFigureCount": 0 },
+    { "id": "table", "type": "question", "images": ["images/06-table.jpg"], "required": [], "forbidden": [], "expectedFigureCount": 1 },
+    { "id": "geometry", "type": "question", "images": ["images/07-geometry.jpg"], "required": [], "forbidden": [], "expectedFigureCount": 1 },
+    { "id": "blurred", "type": "question", "images": ["images/08-blurred.jpg"], "required": [], "forbidden": [], "expectedFigureCount": 0 }
+  ]
+}

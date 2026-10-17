@@ -16,11 +16,21 @@ async function runAiSmoke() {
     let app;
     let ai;
     let failures = 0;
+    let failureStatus = 500;
+    let visionReply = 'READ-5827';
+    let responseMode = '';
+    let includeUsage = true;
     let hold = 0;
     let calls = 0;
     let questionFixture = 'plain';
     let answerFixture = 'plain';
     const requests = {};
+    const metrics = [];
+    const originalInfo = console.info;
+    console.info = (message) => {
+        if (typeof message === 'string' && message.startsWith('{"event":"mistakes.ai.request"')) metrics.push(JSON.parse(message));
+        else originalInfo(message);
+    };
     const listen = (listener) => new Promise((resolve) => { const server = listener.listen(0, '127.0.0.1', () => resolve(server)); });
     const close = (listener) => listener && new Promise((resolve) => { listener.closeAllConnections(); listener.close(resolve); });
     try {
@@ -28,15 +38,24 @@ async function runAiSmoke() {
             let body = '';
             for await (const part of req) body += part;
             calls += 1;
-            if (failures > 0) { failures -= 1; res.writeHead(500, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: { message: 'temporary', type: 'server_error' } })); return; }
+            if (failures > 0) { failures -= 1; res.writeHead(failureStatus, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: { message: 'temporary', type: 'server_error' } })); return; }
             if (hold) await delay(hold);
             const request = JSON.parse(body);
+            const usage = includeUsage ? { usage: { prompt_tokens: 11, completion_tokens: 7, total_tokens: 18 } } : {};
+            if (request.messages.length === 1) {
+                assert.ok(request.messages[0].content.some((part) => part.type === 'image_url' && part.image_url.url.startsWith('data:image/jpeg;base64,')));
+                assert.equal(JSON.stringify(request.messages).includes('READ-5827'), false, 'The expected text is only in the image, not leaked in the prompt');
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ choices: [{ message: { content: visionReply }, finish_reason: 'stop' }], ...usage }));
+                return;
+            }
             const system = request.messages[0].content;
             const example = JSON.parse(system.split('返回结构示例：')[1].split('。仅输出')[0]);
             const type = 'question' in example ? 'question' : 'answer' in example ? 'answer' : 'analysis';
             const content = request.messages[1]?.content || [];
             const imageIds = content.filter((part) => part.type === 'text' && part.text.startsWith('图片编号')).map((part) => Number(part.text.split(' ')[1]));
             const imageUrls = content.filter((part) => part.type === 'image_url').map((part) => part.image_url.url);
+            for (const id of imageIds) assert.ok(content.some((part) => part.type === 'text' && part.text.includes('宽 640 像素，高 160 像素')), `Actual dimensions are provided for image ${id}`);
             requests[type] = { system, imageIds, imageUrls, body };
             assert.ok(system.includes(JSON.stringify({ formula: '$\\frac{1}{2}$' })));
             if (type === 'question') {
@@ -68,7 +87,8 @@ async function runAiSmoke() {
                 result = { ...result, answer: '(1) $x=2$；(2) [待确认]', issues: [{ imageId: imageIds[0], type: 'uncertain', description: '订正与原作答重叠，请检查。' }] };
             }
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: JSON.stringify(result) }, finish_reason: 'stop' }] }));
+            const output = responseMode === 'json' ? '{invalid' : responseMode === 'schema' ? '{"answer":12}' : JSON.stringify(result);
+            res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: output }, finish_reason: responseMode === 'truncated' ? 'length' : 'stop' }], ...usage }));
         }));
         app = require('../server/app');
         ai = require('../server/mistakes/ai');
@@ -88,7 +108,7 @@ async function runAiSmoke() {
                 if (response.headers.get('content-type')?.startsWith('image/')) { assert.equal(response.status, status); return Buffer.from(await response.arrayBuffer()); }
                 const payload = await response.json();
                 assert.equal(response.status, status, `${method} ${route}: ${JSON.stringify(payload)}`);
-                return payload.data;
+                return payload.success ? payload.data : payload;
             };
         }
         const alice = client(), bob = client(), admin = client(), anonymous = client();
@@ -100,9 +120,18 @@ async function runAiSmoke() {
         assert.equal(configured.hasApiKey, true);
         assert.equal(JSON.stringify(configured).includes('test-secret'), false);
         assert.deepEqual(await alice('GET', '/ai/config'), { enabled: true, configured: true });
+        assert.match((await admin('POST', '/admin/ai/test', {})).message, /图片识别测试通过/);
+        visionReply = '连接成功'; includeUsage = false;
+        assert.match((await admin('POST', '/admin/ai/test', {}, 400)).message, /已连通.*未正确读出/);
+        assert.equal(metrics.at(-1).errorCategory, 'vision_mismatch');
+        assert.equal(metrics.at(-1).usage, null, 'Missing provider usage is unknown, not zero');
+        visionReply = 'READ-5827'; includeUsage = true;
+        failureStatus = 400; failures = 1;
+        assert.match((await admin('POST', '/admin/ai/test', {}, 400)).message, /不支持此请求/);
+        failureStatus = 500;
         const mistake = await alice('POST', '/mistakes', {}, 201);
         const input = (item) => ({ question: item.question, answer: item.answer, analysis: item.analysis, subjectId: item.subjectId, primaryKnowledgePointId: item.primaryKnowledgePointId, auxiliaryKnowledgePointIds: item.auxiliaryKnowledgePointIds });
-        const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0, 0xff, 0xd9]);
+        const jpeg = fs.readFileSync(path.join(__dirname, '..', 'server', 'mistakes', 'fixtures', 'vision-test.jpg'));
         const originalJpeg = Buffer.concat([jpeg, Buffer.from('original')]);
         async function upload(purpose, clientId, sourceImageId, request = alice, mistakeId = mistake.id, status = 201) {
             const form = new FormData();
@@ -285,6 +314,45 @@ async function runAiSmoke() {
         assert.equal((await latest()).analysis, '');
         hold = 0;
         for (const job of await alice('GET', '/ai/jobs')) if (['queued', 'running', 'retrying'].includes(job.status)) await completed(job);
+        for (const [mode, attempts, category] of [['json', 2, 'format'], ['schema', 2, 'format'], ['truncated', 1, 'truncated']]) {
+            responseMode = mode;
+            const beforeCalls = calls;
+            const bad = await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'answer', input: input(await latest()), imageIds: [answerImage.id] }, 201);
+            const result = await completed(bad);
+            assert.equal(result.status, 'failed');
+            assert.equal(result.attempts, attempts);
+            assert.equal(calls - beforeCalls, attempts, `${mode} never resends the batch beyond its retry budget`);
+            assert.equal(metrics.at(-1).errorCategory, category);
+            if (mode === 'truncated') assert.match(result.error, /减少单次图片数量/);
+        }
+        responseMode = '';
+        failureStatus = 429; failures = 1;
+        const limited = await completed(await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'answer', input: input(await latest()), imageIds: [answerImage.id] }, 201));
+        assert.equal(limited.status, 'succeeded'); assert.equal(limited.attempts, 2);
+        failureStatus = 500;
+
+        const datasetDirectory = path.join(directory, 'baseline');
+        fs.mkdirSync(path.join(datasetDirectory, 'images'), { recursive: true });
+        const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'docs', 'mistakes-ai-baseline.example.json'), 'utf8'));
+        manifest.source = 'synthetic';
+        for (const name of new Set(manifest.cases.flatMap((item) => item.images))) fs.writeFileSync(path.join(datasetDirectory, name), jpeg);
+        const manifestPath = path.join(datasetDirectory, 'manifest.json');
+        fs.writeFileSync(manifestPath, JSON.stringify(manifest));
+        const { runBaseline, markdownReport, compareReports } = require('./mistakes-ai-baseline.cjs');
+        assert.deepEqual(await runBaseline(manifestPath, 'check', { checkOnly: true }), { source: 'synthetic', images: 8, cases: 8 });
+        const beforeBaselineCalls = calls;
+        const baseline = await runBaseline(manifestPath, 'synthetic-smoke');
+        assert.equal(calls - beforeBaselineCalls, 8, 'A baseline makes exactly one call per case');
+        assert.equal(baseline.cases.every((item) => item.calls === 1 && !item.errorCategory && item.review.manualEdits === null), true);
+        assert.ok(markdownReport(baseline).includes('null 表示未评分'));
+        assert.ok(compareReports(baseline, baseline).includes('待人工评分'));
+        const scored = structuredClone(baseline);
+        for (const item of scored.cases) item.review = { criticalContentErrors: 0, manualEdits: 0, figureComplete: true, handwritingLeak: false };
+        const regressed = structuredClone(scored); regressed.cases[0].review.criticalContentErrors = 1;
+        assert.ok(compareReports(scored, regressed).includes('出现退化'));
+        assert.deepEqual(metrics.at(-1).usage, { inputTokens: 11, outputTokens: 7, totalTokens: 18 });
+        assert.ok(metrics.every((entry) => entry.elapsedMs >= 0));
+        assert.equal(/test-secret|data:image|私密/.test(JSON.stringify(metrics)), false, 'Request logs contain metadata only');
         failures = 3;
         const failed = await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'answer', input: input(await latest()), imageIds: [answerImage.id] }, 201);
         const failedResult = await completed(failed);
@@ -310,6 +378,7 @@ async function runAiSmoke() {
         assert.ok(calls > 0);
         console.log('Photo AI smoke passed: OCR privacy, multi-region review, ownership, legacy diagrams, illustrated analysis, retries, conflicts and cleanup.');
     } finally {
+        console.info = originalInfo;
         if (ai) await ai.stopJobs();
         await close(server); await close(mock);
         app?.db.close();

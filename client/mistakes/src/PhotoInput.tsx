@@ -13,7 +13,31 @@ import 'react-image-crop/dist/ReactCrop.css';
 type Entry = { key: string; clientId: string; file: File; url: string; crop: PercentCrop; uploaded?: MistakeImage };
 export interface PhotoInputHandle { reuse: (image: MistakeImage) => Promise<void> }
 const fullCrop: PercentCrop = { unit: '%', x: 0, y: 0, width: 100, height: 100 };
-const jpeg = (file: File, onProgress?: (n: number) => void) => imageCompression(file, { maxSizeMB: 1.5, maxWidthOrHeight: 2560, fileType: 'image/jpeg', initialQuality: .88, useWebWorker: true, libURL: compressionWorkerUrl, onProgress });
+const compressJpeg = (file: File) => imageCompression(file, { maxSizeMB: 1.5, maxWidthOrHeight: 2560, fileType: 'image/jpeg', initialQuality: .88, useWebWorker: true, libURL: compressionWorkerUrl });
+// The compression library's PNG helper quantizes colors; native PNG preserves the canvas pixels.
+const losslessFile = (canvas: HTMLCanvasElement, name: string) => new Promise<File>((resolve, reject) => {
+  canvas.toBlob((blob) => blob ? resolve(new File([blob], name, { type: 'image/png', lastModified: Date.now() })) : reject(new Error('浏览器无法生成裁剪图片，请重试。')), 'image/png');
+});
+async function jpeg(file: File) {
+  if (file.type !== 'image/png') return compressJpeg(file);
+  const url = URL.createObjectURL(file);
+  try {
+    const image = await imageCompression.loadImage(url);
+    const scale = Math.min(1, 2560 / Math.max(image.naturalWidth, image.naturalHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('浏览器无法处理图片，请重试。');
+    context.fillStyle = '#fff'; context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    const encoded = await new Promise<File>((resolve, reject) => canvas.toBlob((blob) => blob
+      ? resolve(new File([blob], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg', lastModified: Date.now() }))
+      : reject(new Error('浏览器无法压缩图片，请重试。')), 'image/jpeg', .88));
+    // The library also caps output at input file size. Small lossless PNGs must not force JPEG quality below .88.
+    return encoded.size <= 1.5 * 1024 * 1024 ? encoded : compressJpeg(encoded);
+  } finally { URL.revokeObjectURL(url); }
+}
 
 export function PhotoInput({ purpose, ensureSaved, onRecognize, onUploaded, actions, aiAvailable, ref }: { purpose: ImagePurpose; ensureSaved: () => Promise<Mistake>; onRecognize: (ids: number[]) => Promise<void>; onUploaded?: (ids: number[]) => void; actions?: ReactNode; aiAvailable: boolean; ref?: Ref<PhotoInputHandle> }) {
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -58,7 +82,7 @@ export function PhotoInput({ purpose, ensureSaved, onRecognize, onUploaded, acti
       context.fillStyle = '#fff'; context.fillRect(0, 0, canvas.width, canvas.height);
       context.translate(canvas.width / 2, canvas.height / 2); context.rotate(direction * Math.PI / 2);
       context.drawImage(image, -image.naturalWidth / 2, -image.naturalHeight / 2);
-      const file = await imageCompression.canvasToFile(canvas, 'image/jpeg', current.file.name.replace(/\.[^.]+$/, '') + '.jpg', Date.now(), .98);
+      const file = await losslessFile(canvas, current.file.name.replace(/\.[^.]+$/, '') + '.png');
       const url = objectUrl(file);
       setEntries((items) => items.map((entry) => entry.key === current.key ? { ...entry, file, url, crop: { ...fullCrop }, uploaded: undefined, clientId: crypto.randomUUID() } : entry));
       URL.revokeObjectURL(current.url); urls.current.delete(current.url);
@@ -84,7 +108,8 @@ export function PhotoInput({ purpose, ensureSaved, onRecognize, onUploaded, acti
     if (!context) throw new Error('浏览器无法处理图片，请换一个浏览器重试');
     context.fillStyle = '#fff'; context.fillRect(0, 0, canvas.width, canvas.height);
     context.drawImage(image, image.naturalWidth * crop.x / 100, image.naturalHeight * crop.y / 100, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
-    return imageCompression.canvasToFile(canvas, 'image/jpeg', entry.file.name.replace(/\.[^.]+$/, '') + '-crop.jpg', Date.now(), .98);
+    // Keep crop pixels lossless until the final size-limited JPEG compression.
+    return losslessFile(canvas, entry.file.name.replace(/\.[^.]+$/, '') + '-crop.png');
   }
   async function upload(recognize: boolean) {
     if (!entries.length || busy) return;

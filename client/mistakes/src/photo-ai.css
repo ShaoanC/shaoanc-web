@@ -109,6 +109,8 @@
 .ai-original-result .markdown-content { max-height: 300px; overflow: auto; padding: 12px; background: var(--surface-1); }
 .ai-review-footer { border-top: 1px solid var(--border-medium); padding-top: 16px; margin-top: 20px; }
 .ai-candidate-excerpt { max-height: 150px; overflow: auto; }
+.ai-issue-link { display: inline; padding: 2px 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.ai-issue-link:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
 .ai-zoom-image { overflow: auto; max-height: 70dvh; }
 .ai-zoom-image img { display: block; min-width: 100%; max-width: none; height: auto; }
 .photo-rotation-actions { display: flex; gap: 8px; justify-content: center; margin: 12px 0; }

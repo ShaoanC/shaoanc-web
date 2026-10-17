@@ -21,7 +21,7 @@ export function AiSettings() {
   }
   async function test() {
     setBusy('test');
-    const toastId = toast.loading('正在测试 AI 连接，请稍候…');
+    const toastId = toast.loading('正在测试 AI 连接与图片识别，请稍候…');
     try { const result = await api<{ message: string }>('/admin/ai/test', json({})); toast.update(toastId, { render: result.message, type: 'success', isLoading: false, autoClose: 8000 }); }
     catch (err) { toast.update(toastId, { render: (err as Error).message, type: 'error', isLoading: false, autoClose: false, closeButton: true }); } finally { setBusy(''); }
   }
@@ -32,7 +32,7 @@ export function AiSettings() {
       <label className="field"><span>API 基础地址</span><input type="url" value={config.baseUrl || ''} placeholder="https://api.example.com/v1" onChange={(event) => setConfig({ ...config, baseUrl: event.target.value })} required={config.enabled} /></label>
       <label className="field"><span>多模态模型名称</span><input value={config.model || ''} placeholder="填写服务商提供的模型 ID" onChange={(event) => setConfig({ ...config, model: event.target.value })} required={config.enabled} /></label>
       <label className="field"><span>API 密钥</span><input type="password" autoComplete="new-password" value={key} onChange={(event) => setKey(event.target.value)} placeholder={config.hasApiKey ? '已保存，留空保持原密钥' : '输入 API 密钥'} required={config.enabled && !config.hasApiKey} /></label>
-      <div className="photo-actions"><button className="button primary" disabled={Boolean(busy)}>{busy === 'save' ? '保存中…' : '保存配置'}</button><button type="button" className="button secondary" disabled={Boolean(busy) || !config.configured} onClick={() => void test()}>{busy === 'test' ? '正在连接…' : '测试已保存的配置'}</button></div>
+      <div className="photo-actions"><button className="button primary" disabled={Boolean(busy)}>{busy === 'save' ? '保存中…' : '保存配置'}</button><button type="button" className="button secondary" disabled={Boolean(busy) || !config.configured} onClick={() => void test()}>{busy === 'test' ? '正在识别…' : '测试图片识别'}</button></div>
     </form>}
   </section>;
 }
