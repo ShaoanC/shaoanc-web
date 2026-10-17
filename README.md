@@ -45,7 +45,27 @@ node --check server/app.js
 npm test
 ```
 
-`npm run build` 包含前端类型检查。`npm test` 运行 `scripts/mistakes-smoke.cjs`，使用临时数据库检查邀请码、双账号隔离、错题增删改查、复习与统计，并调用搜索烟测检查中文短词、排序、摘要与索引同步；结束后清理临时数据。页面改动另做一次电脑及手机宽度的浏览器检查。
+`npm run build` 包含前端类型检查。`npm test` 运行 `scripts/mistakes-smoke.cjs`，使用临时数据库检查邀请码、双账号隔离、错题增删改查、复习与统计，并调用搜索烟测检查中文短词、排序、摘要与索引同步；随后运行 `scripts/mistakes-captcha-smoke.cjs` 检查人机核验、上游故障降级与认证限流。两者使用独立临时数据库，结束后清理临时数据。页面改动另做一次电脑及手机宽度的浏览器检查。
+
+## 登录与注册的人机验证
+
+安装的 `@friendlycaptcha/sdk` 随前端构建发布，浏览器使用 Friendly Captcha v2 Cloud 的 Global 端点和 Focus 启动模式。Smart 模式在 Friendly Captcha 控制台设置。每次登录（含管理员）和邀请码注册需要验证；已登录用户修改密码、管理员重置密码和错题操作沿用原流程。
+
+在 Friendly Captcha 控制台创建生产应用、设置实际使用域名与 Global / Smart，并创建服务器 API Key，然后在服务器 `.env` 配置：
+
+```dotenv
+FRIENDLY_CAPTCHA_ENABLED=true
+FRIENDLY_CAPTCHA_SITEKEY=你的生产Sitekey
+FRIENDLY_CAPTCHA_API_KEY=你的服务器APIKey
+```
+
+重启 Node 后生效，无需重新构建前端。API Key 仅供服务器调用官方核验接口，不能使用 `VITE_` 前缀或放入 `public/`。启用但缺少任一密钥时服务会明确报配置错误；本地开发可设 `FRIENDLY_CAPTCHA_ENABLED=false`，自动测试显式配置开关。
+
+香港服务器调用 `https://global.frcapi.com/api/v2/captcha/siteverify`，超时为 5 秒。遇到连接失败、超时、官方 429 或 5xx 时，登录继续检查密码与账号状态，注册暂停；无效、过期、重复使用的验证码或密钥配置错误不会放行。已有登录会话不受核验服务故障影响。
+
+登录每 IP 每 15 分钟最多 60 次请求；同 IP＋用户名每 15 分钟最多 5 次失败；注册每 IP 每小时最多 20 次请求。成功登录及上游 503 不计入登录失败额度。限流使用单 Node 进程内存，重启后重置。日志中的 `captcha_upstream_unavailable`、`captcha_configuration_error`、`auth_rate_limited` 分别表示上游故障、配置异常和认证限流。
+
+SDK 从自己的网站加载，浏览器仍需连接 Friendly Captcha Cloud。生产启用前，使用大陆网络检查登录、注册，并确认香港服务器能访问核验 API。生产密钥配置、控制台设置和真实网络测试属于部署验收。详细实现与本地验证记录见 [Friendly Captcha 接入](docs/mistakes-captcha.md)。
 
 ## 服务器运行
 
@@ -58,8 +78,10 @@ location /api/mistakes/ {
     proxy_pass http://127.0.0.1:3000;
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-For $remote_addr;
 }
 ```
+
+Express 仅信任回环地址的代理，以上 Nginx 配置覆盖客户端提供的转发头，用真实来源地址进行限流。此配置对应 Nginx 与 Node 同机且 Nginx 直接面向客户端；增加 CDN 或其他代理层时需同步配置真实来源 IP。
 
 生产环境配置 `NODE_ENV=production` 并使用 HTTPS；会话 Cookie 使用 HttpOnly、SameSite=Lax，生产环境启用 Secure。后端目录、`.env`、`data/` 和 `uploads/` 位于静态目录之外。数据库路径可通过 `MISTAKES_DB_PATH` 调整，默认为仓库的 `data/mistakes.sqlite`。备份时同时保留 SQLite 数据库及其 WAL 状态，或先停止服务再复制数据库。

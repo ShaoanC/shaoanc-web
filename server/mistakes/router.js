@@ -4,6 +4,8 @@ const { db } = require('./database');
 const { generateTestMistakes } = require('./test-data');
 const { searchMistakes, updateCachedMistake, invalidateUser, invalidateAll } = require('./search');
 const { cleanupExpiredTrash } = require('./trash');
+const { getPublicCaptchaConfig, verifyCaptcha } = require('./captcha');
+const { loginIpLimit, loginFailureLimit, registrationLimit } = require('./auth-limits');
 const {
     fail, validateCredentials, validatePassword, hashPassword, verifyPassword, publicUser,
     createSession, clearSession, loadSession, requireUser, requireAdmin
@@ -131,17 +133,23 @@ function serializeInvite(row) {
 
 router.use(loadSession);
 
+router.get('/auth/config', (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    success(res, getPublicCaptchaConfig());
+});
+
 router.get('/auth/me', (req, res) => {
     success(res, { user: req.user ? publicUser(req.user) : null });
 });
 
-router.post('/auth/register', (req, res) => {
+router.post('/auth/register', registrationLimit, async (req, res) => {
     const { password, inviteCode } = req.body || {};
     const username = typeof req.body?.username === 'string' ? req.body.username.trim() : '';
     validateCredentials(username, password);
     if (typeof inviteCode !== 'string' || !inviteCode.trim()) {
         fail(400, '请填写邀请码');
     }
+    await verifyCaptcha(req.body.captchaResponse, 'register');
     const passwordHash = hashPassword(password);
     const user = db.transaction(() => {
         const now = new Date().toISOString();
@@ -161,9 +169,13 @@ router.post('/auth/register', (req, res) => {
     success(res, { user: publicUser(user) }, 201);
 });
 
-router.post('/auth/login', (req, res) => {
+router.post('/auth/login', loginIpLimit, loginFailureLimit, async (req, res) => {
     const { password } = req.body || {};
     const username = typeof req.body?.username === 'string' ? req.body.username.trim() : '';
+    if (!username || username.length > 32 || typeof password !== 'string' || password.length > 128) {
+        fail(400, '请填写有效的用户名和密码');
+    }
+    await verifyCaptcha(req.body.captchaResponse, 'login');
     const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
     if (!user || !verifyPassword(password, user.password_hash)) {
         fail(401, '用户名或密码错误');

@@ -5,6 +5,7 @@ import { api, json } from './api';
 import { AppContext, sortDirectory } from './context';
 import { GlobalLoadingProgress, LoadingContent, SlidingNavigation } from './motion';
 import { LogoMark } from './Logo';
+import { FriendlyCaptcha, type CaptchaState } from './FriendlyCaptcha';
 import type { KnowledgePoint, Subject, User } from './types';
 import { MistakesPage } from './pages/MistakesPage';
 import { EditorPage } from './pages/EditorPage';
@@ -28,19 +29,51 @@ function AuthPage({ onLogin, onNotify }: { onLogin: (user: User) => void; onNoti
   const [inviteCode, setInviteCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [captchaConfig, setCaptchaConfig] = useState<{ enabled: boolean; sitekey: string } | null>(null);
+  const [configError, setConfigError] = useState('');
+  const [configAttempt, setConfigAttempt] = useState(0);
+  const [captchaState, setCaptchaState] = useState<CaptchaState>({ status: 'pending', response: '' });
+  const [captchaAttempt, setCaptchaAttempt] = useState(0);
+  const submitting = useRef(false);
+
+  useEffect(() => {
+    let active = true;
+    setCaptchaConfig(null);
+    setConfigError('');
+    api<{ enabled: boolean; sitekey: string }>('/auth/config').then((config) => {
+      if (active) setCaptchaConfig(config);
+    }).catch((err: Error) => {
+      if (active) setConfigError(err.message);
+    });
+    return () => { active = false; };
+  }, [configAttempt]);
+
+  const canSubmit = captchaConfig !== null && (!captchaConfig.enabled
+    || captchaState.status === 'complete'
+    || (!registering && captchaState.status === 'error'));
+
+  function resetCaptcha() {
+    setCaptchaState({ status: 'pending', response: '' });
+    // Replace the form too: the SDK leaves its once-focus listener on the old form.
+    setCaptchaAttempt((attempt) => attempt + 1);
+  }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+    if (submitting.current || !canSubmit) return;
+    submitting.current = true;
     setBusy(true);
     setError('');
     try {
-      const result = await api<{ user: User }>(registering ? '/auth/register' : '/auth/login', json({ username: username.trim(), password, ...(registering ? { inviteCode: inviteCode.trim() } : {}) }));
+      const result = await api<{ user: User }>(registering ? '/auth/register' : '/auth/login', json({ username: username.trim(), password, captchaResponse: captchaConfig?.enabled ? captchaState.response : '', ...(registering ? { inviteCode: inviteCode.trim() } : {}) }));
       onNotify(registering ? `欢迎，${result.user.username}！账号已创建。` : `欢迎回来，${result.user.username}！`);
       onLogin(result.user);
     } catch (err) {
       setError((err as Error).message);
       toast.error((err as Error).message);
+      resetCaptcha();
     } finally {
+      submitting.current = false;
       setBusy(false);
     }
   }
@@ -51,7 +84,20 @@ function AuthPage({ onLogin, onNotify }: { onLogin: (user: User) => void; onNoti
       <div className="auth-story-body"><span className="small-pill"><ClipboardList size={16} /> 你的个人错题本</span><h1>做错的题，<br />值得再想一遍。</h1><p>记录卡住你的那一步，梳理知识点。<br />再练一次，让「不熟」慢慢变成「掌握」。</p><div className="auth-note"><div className="auth-note-top"><span><ClipboardList size={18} /> 我的学习笔记</span><span className="note-dots">•••</span></div><div className="note-rule long" /><div className="note-rule" /><div className="auth-note-bottom"><span><CheckCircle2 size={17} /> 记录 · 整理 · 复习</span><span className="note-check"><CheckCircle2 size={25} /></span></div></div></div>
       <div className="auth-story-footer">记录问题 · 理清思路 · 回顾练习</div>
     </aside>
-    <main className="auth-form-area"><div className="auth-form-wrap"><div className="auth-icon"><GraduationCap size={30} /></div><h2>{registering ? '开始积累，遇见进步' : '欢迎回来'}</h2><p className="auth-subtitle">{registering ? '使用邀请码创建账号，开启你的错题本。' : '登录后，继续整理你的学习收获。'}</p><form onSubmit={submit}><label className="field"><span>用户名</span><input required autoComplete="username" minLength={3} maxLength={32} placeholder="输入用户名" value={username} onChange={(event) => setUsername(event.target.value)} /></label><label className="field"><span>密码</span><input required type="password" autoComplete={registering ? 'new-password' : 'current-password'} minLength={registering ? 8 : undefined} maxLength={128} placeholder={registering ? '至少 8 位密码' : '输入密码'} value={password} onChange={(event) => setPassword(event.target.value)} /></label>{registering && <label className="field"><span>邀请码</span><input required placeholder="输入管理员提供的邀请码" value={inviteCode} onChange={(event) => setInviteCode(event.target.value)} /><small>邀请码由管理员生成。</small></label>}{error && <div className="form-error" role="alert">{error}</div>}<button className="button primary auth-submit" disabled={busy}>{busy ? <LoaderCircle className="spin" size={18} /> : <>{registering ? '创建账号' : '登录'}<ArrowRight size={18} /></>}</button></form><div className="auth-switch">{registering ? '已有账号？' : '还没有账号？'}<button onClick={() => { setRegistering(!registering); setError(''); }}>{registering ? '立即登录' : '使用邀请码注册'}</button></div><div className="auth-secure"><ShieldCheck size={15} /> 你的错题与笔记，仅对你可见</div></div></main>
+    <main className="auth-form-area"><div className="auth-form-wrap"><div className="auth-icon"><GraduationCap size={30} /></div><h2>{registering ? '开始积累，遇见进步' : '欢迎回来'}</h2><p className="auth-subtitle">{registering ? '使用邀请码创建账号，开启你的错题本。' : '登录后，继续整理你的学习收获。'}</p><form key={captchaAttempt} onSubmit={submit}>
+      <label className="field"><span>用户名</span><input required autoComplete="username" minLength={3} maxLength={32} placeholder="输入用户名" value={username} onChange={(event) => setUsername(event.target.value)} /></label>
+      <label className="field"><span>密码</span><input required type="password" autoComplete={registering ? 'new-password' : 'current-password'} minLength={registering ? 8 : undefined} maxLength={128} placeholder={registering ? '至少 8 位密码' : '输入密码'} value={password} onChange={(event) => setPassword(event.target.value)} /></label>
+      {registering && <label className="field"><span>邀请码</span><input required placeholder="输入管理员提供的邀请码" value={inviteCode} onChange={(event) => setInviteCode(event.target.value)} /><small>邀请码由管理员生成。</small></label>}
+      {!captchaConfig && (configError
+        ? <div className="auth-captcha-notice is-error" role="alert"><span>安全配置加载失败：{configError}</span><button type="button" onClick={() => setConfigAttempt((attempt) => attempt + 1)}>重新加载</button></div>
+        : <div className="auth-captcha-loading" role="status"><LoaderCircle className="spin" size={16} /> 正在加载安全验证…</div>)}
+      {captchaConfig?.enabled && <div className="auth-captcha">
+        <FriendlyCaptcha sitekey={captchaConfig.sitekey} resetKey={captchaAttempt} onChange={setCaptchaState} />
+        {(captchaState.status === 'error' || captchaState.status === 'expired') && <div className="auth-captcha-notice" role="status"><span>{captchaState.status === 'expired' ? '验证已过期，请重新验证。' : registering ? '人机验证暂不可用，请重试后再注册。' : '人机验证暂不可用，你可以重试或尝试登录。'}</span><button type="button" disabled={busy} onClick={resetCaptcha}>重新验证</button></div>}
+      </div>}
+      {error && <div className="form-error" role="alert">{error}</div>}
+      <button className="button primary auth-submit" disabled={busy || !canSubmit}>{busy ? <LoaderCircle className="spin" size={18} /> : <>{registering ? '创建账号' : '登录'}<ArrowRight size={18} /></>}</button>
+    </form><div className="auth-switch">{registering ? '已有账号？' : '还没有账号？'}<button disabled={busy} onClick={() => { if (submitting.current) return; setRegistering(!registering); setError(''); resetCaptcha(); }}>{registering ? '立即登录' : '使用邀请码注册'}</button></div><div className="auth-secure"><ShieldCheck size={15} /> 你的错题与笔记，仅对你可见</div></div></main>
   </div>;
 }
 

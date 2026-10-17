@@ -16,7 +16,8 @@
 - `node server/app.js`: start the API on `127.0.0.1`, using `PORT` from `.env` or defaulting to `3000`.
 - `node --check server/app.js`: check server JavaScript syntax.
 - `curl.exe http://127.0.0.1:3000/api/hello`: smoke-test the running API on Windows; expect a JSON response with `success: true`.
-- `npm test`: run the Node assertion/fetch smoke runner in `scripts/mistakes-smoke.cjs`, checking invitation registration, two-account isolation, mistake operations, review records and statistics. Temporary data stays under ignored `data/` and is removed after the run.
+- `npm test`: run `scripts/mistakes-smoke.cjs` for invitation registration, two-account isolation, mistake operations, review records and statistics, then `scripts/mistakes-captcha-smoke.cjs` for CAPTCHA verification, outage fallback and authentication rate limits. Both use isolated temporary databases under ignored `data/` and remove them after the run.
+- `node scripts/mistakes-captcha-smoke.cjs`: run only the CAPTCHA and authentication-limit smoke checks with a mocked official API.
 
 Use the Express static server for local browser checks. Production can serve `public/` with Nginx and proxy `/api/mistakes/` to Node. No lint or format command is configured.
 
@@ -36,4 +37,4 @@ History uses short, imperative descriptions such as `Configure .env port`; follo
 
 Keep secrets in ignored `.env` files. Do not commit runtime data, uploads, logs, or `node_modules/`.
 
-Mark every task step `completed` only after its implementation and verification; leave no `pending` or `in_progress` steps at completion. Then run `git status --porcelain`. If this Git repository has changes, run `git add .` and commit with `Auto checkpoint: [timestamp] - After AI session completed`.
+Mark every task step `completed` only after its implementation and verification; leave no `pending` or `in_progress` steps at completion. Then run `git status --porcelain`. If this Git repository has changes, run `git add .` and commit.
