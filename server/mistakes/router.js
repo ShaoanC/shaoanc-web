@@ -4,6 +4,8 @@ const { db } = require('./database');
 const { generateTestMistakes } = require('./test-data');
 const { searchMistakes, updateCachedMistake, invalidateUser, invalidateAll } = require('./search');
 const { cleanupExpiredTrash } = require('./trash');
+const { enqueueAutomatic, cancelMistakeJobs } = require('./ai');
+const { deleteMistakeFiles } = require('./images');
 const { getPublicCaptchaConfig, verifyCaptcha } = require('./captcha');
 const { loginIpLimit, loginFailureLimit, registrationLimit } = require('./auth-limits');
 const {
@@ -20,7 +22,7 @@ const mistakeSelect = `
         (SELECT COUNT(*) FROM reviews WHERE mistake_id = m.id) AS reviews_count
     FROM mistakes m
 `;
-const pointSelect = 'SELECT id, subject_id AS subjectId, parent_id AS parentId, name, sort_order AS sortOrder FROM knowledge_points';
+const pointSelect = 'SELECT id, subject_id AS subjectId, parent_id AS parentId, name, sort_order AS sortOrder, owner_user_id AS ownerUserId FROM knowledge_points';
 
 function success(res, data, status = 200) {
     res.status(status).json({ success: true, data });
@@ -78,7 +80,7 @@ function validateRating(value) {
     return value;
 }
 
-function validateMistake(body, existing) {
+function validateMistake(body, existing, userId) {
     const values = { ...existing, ...body };
     validateRating(values.rating);
     if (!['draft', 'archived'].includes(values.lifecycle)) {
@@ -114,9 +116,9 @@ function validateMistake(body, existing) {
     if (values.primaryKnowledgePointId !== null) {
         pointIds.push(values.primaryKnowledgePointId);
     }
-    const pointQuery = db.prepare('SELECT subject_id FROM knowledge_points WHERE id = ?');
+    const pointQuery = db.prepare('SELECT subject_id FROM knowledge_points WHERE id = ? AND (owner_user_id IS NULL OR owner_user_id = ?)');
     for (const pointId of pointIds) {
-        const point = pointQuery.get(pointId);
+        const point = pointQuery.get(pointId, userId);
         if (!point || point.subject_id !== values.subjectId) {
             fail(400, '知识点必须属于所选学科');
         }
@@ -194,6 +196,7 @@ router.post('/auth/logout', (req, res) => {
 });
 
 router.use(requireUser);
+require('./ai-router')(router, { success, ownMistake, serializeMistake, cleanupExpiredTrash });
 
 router.patch('/auth/avatar', (req, res) => {
     const { avatar } = req.body || {};
@@ -236,12 +239,12 @@ router.get('/knowledge-points', (req, res) => {
         fail(400, '请选择有效学科');
     }
     const points = req.query.subjectId
-        ? db.prepare(`${pointSelect} WHERE subject_id = ? ORDER BY sort_order, id`).all(req.query.subjectId)
-        : db.prepare(`${pointSelect} ORDER BY subject_id, sort_order, id`).all();
+        ? db.prepare(`${pointSelect} WHERE subject_id = ? AND (owner_user_id IS NULL OR owner_user_id = ?) ORDER BY sort_order, id`).all(req.query.subjectId, req.user.id)
+        : db.prepare(`${pointSelect} WHERE owner_user_id IS NULL OR owner_user_id = ? ORDER BY subject_id, sort_order, id`).all(req.user.id);
     success(res, points);
 });
 
-function validatePoint(body, existing = {}) {
+function validatePoint(body, existing = {}, ownerUserId = null) {
     const point = { subjectId: null, parentId: null, name: '', sortOrder: 0, ...existing, ...body };
     if (!subjectExists(point.subjectId)) {
         fail(400, '请选择有效学科');
@@ -259,7 +262,7 @@ function validatePoint(body, existing = {}) {
     if (point.parentId !== null) {
         const parentId = idNumber(point.parentId);
         const parent = db.prepare(`${pointSelect} WHERE id = ?`).get(parentId);
-        if (!parent || parent.subjectId !== point.subjectId) {
+        if (!parent || parent.subjectId !== point.subjectId || (parent.ownerUserId !== null && parent.ownerUserId !== ownerUserId)) {
             fail(400, '上级知识点须属于同一学科');
         }
         point.parentId = parentId;
@@ -283,31 +286,39 @@ function validatePoint(body, existing = {}) {
     return point;
 }
 
-router.post('/knowledge-points', requireAdmin, (req, res) => {
-    const point = validatePoint(req.body || {});
-    const inserted = db.prepare('INSERT INTO knowledge_points (subject_id, parent_id, name, sort_order) VALUES (?, ?, ?, ?)')
-        .run(point.subjectId, point.parentId, point.name, point.sortOrder);
+router.post('/knowledge-points', (req, res) => {
+    const shared = req.body?.scope === 'shared' || (req.user.role === 'admin' && !req.body?.scope);
+    if (shared && req.user.role !== 'admin') fail(403, '只有管理员可以维护共享目录');
+    const ownerUserId = shared ? null : req.user.id;
+    const point = validatePoint(req.body || {}, {}, ownerUserId);
+    const existing = db.prepare('SELECT id FROM knowledge_points WHERE subject_id = ? AND parent_id IS ? AND owner_user_id IS ? AND name = ? COLLATE NOCASE')
+        .get(point.subjectId, point.parentId, ownerUserId, point.name);
+    if (existing) return success(res, db.prepare(`${pointSelect} WHERE id = ?`).get(existing.id), 201);
+    const inserted = db.prepare('INSERT INTO knowledge_points (subject_id, parent_id, name, sort_order, owner_user_id) VALUES (?, ?, ?, ?, ?)')
+        .run(point.subjectId, point.parentId, point.name, point.sortOrder, ownerUserId);
     success(res, db.prepare(`${pointSelect} WHERE id = ?`).get(inserted.lastInsertRowid), 201);
 });
 
-router.patch('/knowledge-points/:id', requireAdmin, (req, res) => {
+function editablePoint(id, user) {
+    const point = db.prepare(`${pointSelect} WHERE id = ?`).get(id);
+    if (!point || (point.ownerUserId !== null && point.ownerUserId !== user.id)) fail(404, '知识点不存在');
+    if (point.ownerUserId === null && user.role !== 'admin') fail(403, '共享知识点由管理员维护');
+    return point;
+}
+
+router.patch('/knowledge-points/:id', (req, res) => {
     const id = idNumber(req.params.id);
-    const existing = db.prepare(`${pointSelect} WHERE id = ?`).get(id);
-    if (!existing) {
-        fail(404, '知识点不存在');
-    }
-    const point = validatePoint(req.body || {}, existing);
+    const existing = editablePoint(id, req.user);
+    const point = validatePoint(req.body || {}, existing, existing.ownerUserId);
     db.prepare('UPDATE knowledge_points SET subject_id = ?, parent_id = ?, name = ?, sort_order = ? WHERE id = ?')
         .run(point.subjectId, point.parentId, point.name, point.sortOrder, id);
     invalidateAll();
     success(res, db.prepare(`${pointSelect} WHERE id = ?`).get(id));
 });
 
-router.delete('/knowledge-points/:id', requireAdmin, (req, res) => {
+router.delete('/knowledge-points/:id', (req, res) => {
     const id = idNumber(req.params.id);
-    if (!db.prepare('SELECT id FROM knowledge_points WHERE id = ?').get(id)) {
-        fail(404, '知识点不存在');
-    }
+    editablePoint(id, req.user);
     if (db.prepare('SELECT id FROM knowledge_points WHERE parent_id = ? LIMIT 1').get(id)) {
         fail(409, '请先移动或删除该知识点下的子节点');
     }
@@ -364,6 +375,7 @@ router.get('/mistakes', (req, res) => {
     }
     if (req.query.knowledgePointId) {
         const pointId = idNumber(req.query.knowledgePointId);
+        if (!db.prepare('SELECT id FROM knowledge_points WHERE id = ? AND (owner_user_id IS NULL OR owner_user_id = ?)').get(pointId, req.user.id)) fail(400, '知识点不存在');
         where.push(`EXISTS (
             WITH RECURSIVE point_tree(id) AS (
                 SELECT id FROM knowledge_points WHERE id = ?
@@ -402,7 +414,7 @@ router.post('/mistakes', (req, res) => {
     const values = validateMistake(req.body || {}, {
         subjectId: null, primaryKnowledgePointId: null, auxiliaryKnowledgePointIds: [],
         lifecycle: 'draft', rating: 0, question: '', answer: '', analysis: '', note: ''
-    });
+    }, req.user.id);
     const now = new Date().toISOString();
     const inserted = db.prepare(`
         INSERT INTO mistakes (user_id, subject_id, primary_knowledge_point_id, auxiliary_knowledge_point_ids,
@@ -412,6 +424,7 @@ router.post('/mistakes', (req, res) => {
         values.lifecycle, values.rating, values.question, values.answer, values.analysis, values.note, now, now);
     const row = db.prepare(`${mistakeSelect} WHERE m.id = ?`).get(inserted.lastInsertRowid);
     updateCachedMistake(req.user.id, row);
+    if (req.body.generateAnalysis === true) enqueueAutomatic(row);
     success(res, serializeMistake(row), 201);
 });
 
@@ -422,6 +435,7 @@ router.post('/mistakes/test-data', requireAdmin, (req, res) => {
 });
 
 router.delete('/mistakes/test-data', requireAdmin, (req, res) => {
+    cancelMistakeJobs(db.prepare('SELECT id FROM mistakes WHERE user_id = ? AND is_test = 1').all(req.user.id).map((row) => row.id));
     const deleted = db.prepare('UPDATE mistakes SET deleted_at = ? WHERE user_id = ? AND is_test = 1 AND deleted_at IS NULL')
         .run(new Date().toISOString(), req.user.id);
     invalidateUser(req.user.id);
@@ -430,6 +444,9 @@ router.delete('/mistakes/test-data', requireAdmin, (req, res) => {
 
 router.delete('/mistakes/trash', (req, res) => {
     cleanupExpiredTrash(Date.now(), req.user.id);
+    const ids = db.prepare('SELECT id FROM mistakes WHERE user_id = ? AND deleted_at IS NOT NULL').all(req.user.id).map((row) => row.id);
+    cancelMistakeJobs(ids);
+    deleteMistakeFiles(ids);
     const deleted = db.prepare('DELETE FROM mistakes WHERE user_id = ? AND deleted_at IS NOT NULL').run(req.user.id);
     invalidateUser(req.user.id);
     success(res, { count: deleted.changes });
@@ -450,6 +467,8 @@ router.delete('/mistakes/:id/permanent', (req, res) => {
     if (!row.deleted_at) {
         fail(409, '请先将这道错题移入回收站');
     }
+    cancelMistakeJobs([row.id]);
+    deleteMistakeFiles([row.id]);
     db.prepare('DELETE FROM mistakes WHERE id = ? AND user_id = ? AND deleted_at IS NOT NULL').run(row.id, req.user.id);
     invalidateUser(req.user.id);
     success(res, null);
@@ -461,7 +480,7 @@ router.get('/mistakes/:id', (req, res) => {
 
 router.patch('/mistakes/:id', (req, res) => {
     const row = ownMistake(req);
-    const values = validateMistake(req.body || {}, serializeMistake(row));
+    const values = validateMistake(req.body || {}, serializeMistake(row), req.user.id);
     db.prepare(`
         UPDATE mistakes SET subject_id = ?, primary_knowledge_point_id = ?, auxiliary_knowledge_point_ids = ?,
             lifecycle = ?, rating = ?, question = ?, answer = ?, analysis = ?, note = ?, updated_at = ?
@@ -470,11 +489,13 @@ router.patch('/mistakes/:id', (req, res) => {
         values.lifecycle, values.rating, values.question, values.answer, values.analysis, values.note, new Date().toISOString(), row.id, req.user.id);
     const updated = ownMistake(req);
     updateCachedMistake(req.user.id, updated);
+    if (req.body.generateAnalysis === true) enqueueAutomatic(updated);
     success(res, serializeMistake(updated));
 });
 
 router.delete('/mistakes/:id', (req, res) => {
     const row = ownMistake(req, true);
+    cancelMistakeJobs([row.id]);
     db.prepare('UPDATE mistakes SET deleted_at = ? WHERE id = ? AND user_id = ? AND deleted_at IS NULL')
         .run(new Date().toISOString(), row.id, req.user.id);
     invalidateUser(req.user.id);
@@ -506,7 +527,7 @@ router.get('/stats', (req, res) => {
     const trashCount = db.prepare('SELECT COUNT(*) AS count FROM mistakes WHERE user_id = ? AND deleted_at IS NOT NULL').get(req.user.id).count;
     const archived = rows.filter((row) => row.lifecycle === 'archived');
     const subjects = db.prepare('SELECT id, name FROM subjects ORDER BY sort_order, id').all();
-    const points = db.prepare('SELECT id, name FROM knowledge_points ORDER BY subject_id, sort_order, id').all();
+    const points = db.prepare('SELECT id, name FROM knowledge_points WHERE owner_user_id IS NULL OR owner_user_id = ? ORDER BY subject_id, sort_order, id').all(req.user.id);
     const byKnowledgePoint = points.map((point) => ({
         ...point, count: archived.filter((row) => row.primary_knowledge_point_id === point.id).length
     })).filter((point) => point.count > 0);

@@ -16,8 +16,9 @@
 - `node server/app.js`: start the API on `127.0.0.1`, using `PORT` from `.env` or defaulting to `3000`.
 - `node --check server/app.js`: check server JavaScript syntax.
 - `curl.exe http://127.0.0.1:3000/api/hello`: smoke-test the running API on Windows; expect a JSON response with `success: true`.
-- `npm test`: run `scripts/mistakes-smoke.cjs` for invitation registration, two-account isolation, mistake operations, review records and statistics, then `scripts/mistakes-captcha-smoke.cjs` for CAPTCHA verification, outage fallback and authentication rate limits. Both use isolated temporary databases under ignored `data/` and remove them after the run.
-- `node scripts/mistakes-captcha-smoke.cjs`: run only the CAPTCHA and authentication-limit smoke checks with a mocked official API.
+- `npm run test:ai`: run `scripts/mistakes-ai-smoke.cjs` with a local mock AI and isolated database/uploads to check photo entry, knowledge ownership, automatic analysis, retries, recovery, conflicts and cleanup.
+- `npm test`: run the core mistakes/search smoke checks and CAPTCHA authentication smoke checks with isolated temporary databases under ignored `data/`.
+- `node scripts/mistakes-captcha-smoke.cjs`: run only the CAPTCHA and authentication-limit checks using a mocked verification API.
 
 Use the Express static server for local browser checks. Production can serve `public/` with Nginx and proxy `/api/mistakes/` to Node. No lint or format command is configured.
 

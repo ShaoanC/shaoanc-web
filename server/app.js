@@ -41,6 +41,7 @@ app.use((error, req, res, next) => {
 
 if (require.main === module) {
     cleanupExpiredTrash();
+    require('./mistakes/ai').recoverJobs();
     setInterval(() => {
         try {
             cleanupExpiredTrash();

@@ -1,5 +1,7 @@
 const { db } = require('./database');
 const { invalidateUser } = require('./search');
+const { deleteMistakeFiles } = require('./images');
+const { cancelMistakeJobs } = require('./ai');
 
 const TRASH_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -9,6 +11,9 @@ function cleanupExpiredTrash(now = Date.now(), userId) {
     const parameters = userId === undefined ? [cutoff] : [cutoff, userId];
     const result = db.transaction(() => {
         const users = db.prepare(`SELECT DISTINCT user_id FROM mistakes WHERE ${where}`).all(...parameters);
+        const ids = db.prepare(`SELECT id FROM mistakes WHERE ${where}`).all(...parameters).map((row) => row.id);
+        cancelMistakeJobs(ids);
+        deleteMistakeFiles(ids);
         const deleted = db.prepare(`DELETE FROM mistakes WHERE ${where}`).run(...parameters);
         return { users, count: deleted.changes };
     })();
