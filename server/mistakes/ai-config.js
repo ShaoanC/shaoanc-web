@@ -62,6 +62,7 @@ function aiClient() {
 }
 
 function safeAiError(error) {
+    if (error.code === 'AI_REFUSAL') return 'AI 未提供识别结果，请检查图片内容后重试';
     if (error.code === 'VISION_TEST_MISMATCH') return 'AI 请求已连通，但未正确读出测试图片内容，请检查模型的图片输入能力';
     if (error.status === 401 || error.status === 403) return 'AI 服务鉴权失败，请联系管理员检查密钥和模型权限';
     if (error.status === 429) return 'AI 服务请求过多或额度不足，请稍后重试';

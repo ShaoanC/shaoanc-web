@@ -32,13 +32,29 @@ module.exports = function mountAiRoutes(router, { success, ownMistake, serialize
         res.type('jpeg').sendFile(image[`${req.params.variant}_path`], { root: uploadsDirectory });
     });
     router.get('/ai/jobs', (req, res) => {
+        const select = 'SELECT j.*, m.deleted_at AS mistake_deleted_at FROM ai_jobs j JOIN mistakes m ON m.id = j.mistake_id';
         const rows = req.query.mistakeId
-            ? db.prepare('SELECT * FROM ai_jobs WHERE user_id = ? AND mistake_id = ? ORDER BY id DESC').all(req.user.id, Number(req.query.mistakeId))
-            : db.prepare("SELECT * FROM ai_jobs WHERE user_id = ? AND (status IN ('queued','running','retrying') OR id IN (SELECT id FROM ai_jobs WHERE user_id = ? ORDER BY id DESC LIMIT 200)) ORDER BY id DESC").all(req.user.id, req.user.id);
+            ? db.prepare(`${select} WHERE j.user_id = ? AND j.mistake_id = ? ORDER BY j.id DESC`).all(req.user.id, Number(req.query.mistakeId))
+            : db.prepare(`${select} WHERE j.user_id = ? AND ((m.deleted_at IS NULL AND (j.status IN ('queued','running','retrying','failed') OR (j.status = 'succeeded' AND j.apply_status != 'applied'))) OR j.id IN (SELECT id FROM ai_jobs WHERE user_id = ? ORDER BY id DESC LIMIT 200)) ORDER BY j.id DESC`).all(req.user.id, req.user.id);
         res.set('Cache-Control', 'no-store');
         success(res, rows.map(serializeJob));
     });
     router.post('/ai/jobs', (req, res) => success(res, createJob(req.user.id, req.body || {}), 201));
+    router.post('/ai/jobs/batch', (req, res) => {
+        const { action, ids } = req.body || {};
+        if (!['retry', 'cancel'].includes(action) || !Array.isArray(ids) || !ids.length || ids.length > 50
+            || ids.some((id) => !Number.isSafeInteger(id) || id <= 0)) fail(400, '请选择 1–50 个任务及有效操作');
+        const jobs = [];
+        const errors = [];
+        for (const id of new Set(ids)) {
+            try { jobs.push(action === 'retry' ? retryJob(id, req.user.id) : cancelJob(id, req.user.id)); }
+            catch (error) {
+                if (!error.status || error.status >= 500) throw error;
+                errors.push({ id, message: error.message });
+            }
+        }
+        success(res, { jobs, errors });
+    });
     router.get('/ai/jobs/:id', (req, res) => success(res, serializeJob(ownJob(req.params.id, req.user.id))));
     router.post('/ai/jobs/:id/retry', (req, res) => success(res, retryJob(Number(req.params.id), req.user.id)));
     router.post('/ai/jobs/:id/cancel', (req, res) => success(res, cancelJob(Number(req.params.id), req.user.id)));

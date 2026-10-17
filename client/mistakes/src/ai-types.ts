@@ -29,6 +29,7 @@ export interface AiJob {
   id: number;
   mistakeId: number;
   type: AiJobType;
+  mistakeDeleted: boolean;
   status: 'queued' | 'running' | 'retrying' | 'succeeded' | 'failed' | 'cancelled';
   applyStatus: 'pending' | 'applied' | 'conflict';
   input: AiInput;

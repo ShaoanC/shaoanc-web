@@ -7,6 +7,7 @@ import { GlobalLoadingProgress, LoadingContent, SlidingNavigation } from './moti
 import { LogoMark } from './Logo';
 import { FriendlyCaptcha, type CaptchaState } from './FriendlyCaptcha';
 import { AiTasksProvider, AiTasksButton } from './AiTasks';
+import { AiTasksPage } from './AiTaskManager';
 import type { KnowledgePoint, Subject, User } from './types';
 import { MistakesPage } from './pages/MistakesPage';
 import { EditorPage } from './pages/EditorPage';
@@ -20,6 +21,7 @@ const navItems = [
   { path: '/new', label: '录入错题', icon: Plus },
   { path: '/review', label: '复习', icon: RotateCcw },
   { path: '/stats', label: '学习统计', icon: TrendingUp },
+  { path: '/ai-tasks', label: 'AI 任务', icon: Sparkles },
   { path: '/settings', label: '设置', icon: Settings },
 ];
 
@@ -168,6 +170,7 @@ export default function App() {
   else if (detailMatch) page = <DetailPage key={path} id={Number(detailMatch[1])} />;
   else if (routePath === '/review') page = <ReviewPage key={path} />;
   else if (routePath === '/stats') page = <StatsPage />;
+  else if (routePath === '/ai-tasks') page = <AiTasksPage />;
   else if (routePath === '/settings') page = <SettingsPage />;
   else page = <MistakesPage />;
 

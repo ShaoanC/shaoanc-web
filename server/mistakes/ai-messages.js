@@ -28,8 +28,8 @@ function recognitionMessages({ type, input = {}, subjects = [], directory = [], 
         '2. 区分原题与作答：图片可能复用题干图。排除原题题干、提问、空横线或括号、完整选项列表；保留已有步骤中必要的条件引用和推导。存在明确订正关系时提取蓝色等订正笔迹中的最终答案与步骤，排除被替换或划掉的作答、批改符号及分数。颜色、印刷或手写仅为辅助线索，结合位置、划改和语义判断；无订正时忠实转写，不擅自判断正误。答案冲突无法判定的局部写[待确认]，不计算补全。',
         '3. 保留图形：同一次请求转写并定位必要图形，遵守下方图形协议。'
     ];
-    const figureProtocol = '图形协议：几何图、函数图、电路图、示意图保留截图与必要标注；简单表格转 Markdown，复杂表格或数据不清时保留截图并提示校对。一图可以有多个区域。figures 每项包含唯一 id（字母数字短横线）、imageId（本次图片编号）、box:[x,y,width,height]、description。box 以实际收到的裁剪图宽高归一化到0到1，左上角0,0，宽高为正且不越界；不换算到原始照片。正文原位置写 [[figure:配图id]]，不输出 Markdown 图片链接，不追加整张照片。无配图时 figures:[]，不返回 diagramImageIds。裁剪只改变范围，不擦除笔迹；必要图形与作答重叠时保留图形并提示人工检查。';
-    const issues = 'issues 每项包含 imageId（图片编号或null）、type（如unclear/overlap/handwriting/classification/table）、description。任何模糊、遗漏、冲突或无法定位的内容都提示，不推算。';
+    const figureProtocol = '图形协议：几何图、函数图、电路图、示意图保留截图与必要标注；简单表格转 Markdown，复杂表格或数据不清时保留截图并提示校对。一图可以有多个区域。figures 每项包含唯一 id（字母数字短横线）、imageIndex（图片提交顺序，从1开始）、bounds:{left,top,right,bottom}、description。例如 {"id":"fig-1","imageIndex":1,"bounds":{"left":0.1,"top":0.2,"right":0.8,"bottom":0.7},"description":"原题示意图"}。四边坐标以实际收到的裁剪图宽高归一化到0到1，left<right、top<bottom；不是像素或0到1000坐标，不换算到原始照片。无法定位时 bounds:null 并记录 issue。正文原位置写 [[figure:配图id]]，不输出 Markdown 图片链接，不追加整张照片。无配图时 figures:[]，不返回 diagramImageIds。裁剪只改变范围，不擦除笔迹；必要图形与作答重叠时保留图形并提示人工检查。';
+    const issues = 'issues 每项包含 imageIndex（图片提交顺序，从1开始，无法确定时null）、type（如unclear/overlap/handwriting/classification/table）、description。任何模糊、遗漏、冲突或无法定位的内容都提示，不推算。';
     const instructions = type === 'analysis'
         ? '根据题干和已有答案，用中文给出清晰的解题思路和关键步骤；检查答案，如发现矛盾说明原因。返回 {"analysis":"Markdown"}。'
         : [...roles, figureProtocol, issues].join('\n');
@@ -40,9 +40,9 @@ function recognitionMessages({ type, input = {}, subjects = [], directory = [], 
     const content = [{ type: 'text', text: JSON.stringify(type === 'question' ? { subjects, directory }
         : type === 'answer' ? { instruction: '按图片提交顺序忠实转写答案，保留必要图形并记录疑点' }
             : { question: input.question, answer: input.answer }) }];
-    for (const image of images) {
+    for (const [index, image] of images.entries()) {
         const size = jpegDimensions(image.bytes);
-        content.push({ type: 'text', text: `图片编号 ${image.id}` });
+        content.push({ type: 'text', text: `图片顺序 imageIndex=${index + 1}（第${index + 1}张）` });
         if (size) content.push({ type: 'text', text: `该图片实际尺寸：宽 ${size.width} 像素，高 ${size.height} 像素。选框坐标以这张图片为基准。` });
         content.push({ type: 'image_url', image_url: { url: `data:image/jpeg;base64,${image.bytes.toString('base64')}`, detail: 'high' } });
     }

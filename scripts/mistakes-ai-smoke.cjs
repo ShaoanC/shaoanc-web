@@ -3,6 +3,29 @@ const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
 const { setTimeout: delay } = require('node:timers/promises');
+const { figureLocation, sourceImageId, parseRecognitionJson, recognitionFormat } = require('../server/mistakes/ai-output');
+
+// Cover observed invalid locations and compatibility cases with non-sequential IDs.
+const imageIds = [9, 11];
+assert.equal(sourceImageId({ imageIndex: '2' }, imageIds), 11);
+assert.equal(sourceImageId({ imageId: '9' }, imageIds), 9);
+assert.equal(sourceImageId({ imageId: 1 }, imageIds), 0, 'Do not guess that an ID means an index');
+assert.equal(sourceImageId({ imageIndex: 0 }, imageIds), 0);
+assert.equal(sourceImageId({}, imageIds), 0, 'Missing source requires human selection');
+const named = { imageIndex: 2, bounds: { left: 0.25, top: 0.125, right: 0.75, bottom: 0.875 } };
+assert.deepEqual(figureLocation(named, imageIds), { imageId: 11, box: [0.25, 0.125, 0.5, 0.75], error: null });
+assert.deepEqual(figureLocation({ imageId: '9', bbox: [0.25, 0.125, 0.5, 0.75] }, imageIds).box, [0.25, 0.125, 0.5, 0.75]);
+assert.equal(figureLocation({ imageId: 0, box: [0, 0, 1, 1] }, imageIds).error, 'source');
+assert.equal(figureLocation({ imageId: 9, box: null }, imageIds).error, 'format');
+assert.equal(figureLocation({ imageId: 9, box: [100, 200, 800, 900] }, imageIds).error, 'bounds');
+assert.equal(figureLocation({ ...named, bounds: { ...named.bounds, left: 0.9 } }, imageIds).error, 'bounds');
+assert.ok(figureLocation({ imageId: 9, box: [0.1, 0.2, 0.90000000001, 0.8] }, imageIds).box, 'Floating-point edge rounding is tolerated');
+const formula = { question: '$\\frac{1}{2}$ 与 $\\sqrt{x}$\n第二行' };
+assert.deepEqual(parseRecognitionJson('识别结果：\n```json\n' + JSON.stringify(formula) + '\n```'), formula);
+assert.throws(() => parseRecognitionJson(String.raw`{"question":"$\sqrt{x}$"}`), SyntaxError);
+assert.throws(() => parseRecognitionJson(String.raw`{"question":"$\frac{1}{2}$"}`), SyntaxError, 'Do not silently accept a form-feed in a formula');
+assert.throws(() => parseRecognitionJson('{"question":"incomplete'), SyntaxError);
+assert.equal(recognitionFormat('question').json_schema.schema.properties.figures.items.properties.imageIndex.type[0], 'integer');
 
 async function runAiSmoke() {
     const directory = fs.mkdtempSync(path.join(__dirname, '..', 'data', 'ai-smoke-'));
@@ -17,6 +40,7 @@ async function runAiSmoke() {
     let ai;
     let failures = 0;
     let failureStatus = 500;
+    let rejectFormat = '';
     let visionReply = 'READ-5827';
     let responseMode = '';
     let includeUsage = true;
@@ -41,6 +65,10 @@ async function runAiSmoke() {
             if (failures > 0) { failures -= 1; res.writeHead(failureStatus, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: { message: 'temporary', type: 'server_error' } })); return; }
             if (hold) await delay(hold);
             const request = JSON.parse(body);
+            if (request.response_format && rejectFormat) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: { message: rejectFormat } })); return;
+            }
             const usage = includeUsage ? { usage: { prompt_tokens: 11, completion_tokens: 7, total_tokens: 18 } } : {};
             if (request.messages.length === 1) {
                 assert.ok(request.messages[0].content.some((part) => part.type === 'image_url' && part.image_url.url.startsWith('data:image/jpeg;base64,')));
@@ -53,10 +81,12 @@ async function runAiSmoke() {
             const example = JSON.parse(system.split('返回结构示例：')[1].split('。仅输出')[0]);
             const type = 'question' in example ? 'question' : 'answer' in example ? 'answer' : 'analysis';
             const content = request.messages[1]?.content || [];
-            const imageIds = content.filter((part) => part.type === 'text' && part.text.startsWith('图片编号')).map((part) => Number(part.text.split(' ')[1]));
+            const imageIndices = content.filter((part) => part.type === 'text' && part.text.startsWith('图片顺序')).map((part) => Number(part.text.match(/imageIndex=(\d+)/)[1]));
             const imageUrls = content.filter((part) => part.type === 'image_url').map((part) => part.image_url.url);
-            for (const id of imageIds) assert.ok(content.some((part) => part.type === 'text' && part.text.includes('宽 640 像素，高 160 像素')), `Actual dimensions are provided for image ${id}`);
-            requests[type] = { system, imageIds, imageUrls, body };
+            for (const id of imageIndices) assert.ok(content.some((part) => part.type === 'text' && part.text.includes('宽 640 像素，高 160 像素')), `Actual dimensions are provided for image ${id}`);
+            requests[type] = { system, imageIndices, imageUrls, body };
+            if (!rejectFormat) assert.equal(request.response_format?.type, 'json_schema');
+            assert.deepEqual(imageIndices, imageUrls.map((_, index) => index + 1));
             assert.ok(system.includes(JSON.stringify({ formula: '$\\frac{1}{2}$' })));
             if (type === 'question') {
                 const supplied = JSON.parse(content[0].text);
@@ -76,19 +106,20 @@ async function runAiSmoke() {
                     : { analysis: '由 $x^2=4$ 得 $x=\\pm2$，因 $x>0$，故 $x=2$。' };
             if (type === 'question' && questionFixture === 'multiple') {
                 result = { ...result, question: '1. 已知 $x^2=4$。\n\n[[figure:geometry]]\n\n(1) 根据图形回答。\n\n[[figure:table]]', primaryPath: ['函数', '校对后才创建'], figures: [
-                    { id: 'geometry', imageId: imageIds[0], box: [0.08, 0.12, 0.4, 0.35], description: '几何图及原题标注' },
-                    { id: 'table', imageId: imageIds[0], box: [0.52, 0.48, 0.4, 0.42], description: '复杂数据表格' }
+                    { id: 'geometry', imageIndex: 1, bounds: { left: 0.125, top: 0.125, right: 0.5, bottom: 0.5 }, description: '几何图及原题标注' },
+                    { id: 'table', imageIndex: 1, bounds: { left: 0.5, top: 0.5, right: 0.875, bottom: 0.875 }, description: '复杂数据表格' }
                 ] };
             } else if (type === 'question' && questionFixture === 'invalid') {
-                result = { ...result, question: '函数图像如下。\n\n[[figure:invalid]]', figures: [{ id: 'invalid', imageId: imageIds[0], box: [0.9, 0.9, 0.2, 0.2], description: '越界区域' }] };
+                result = { ...result, question: '函数图像如下。\n\n[[figure:invalid]]', figures: [{ id: 'invalid', imageIndex: 1, box: [0.9, 0.9, 0.2, 0.2], description: '越界区域' }] };
             } else if (type === 'question' && questionFixture === 'unmatched') {
                 result = { ...result, question: '保留无法分类的原题文字。\n\n[[figure:missing]]', subjectId: null, primaryPath: [], auxiliaryPaths: [] };
             } else if (type === 'answer' && answerFixture === 'uncertain') {
-                result = { ...result, answer: '(1) $x=2$；(2) [待确认]', issues: [{ imageId: imageIds[0], type: 'uncertain', description: '订正与原作答重叠，请检查。' }] };
+                result = { ...result, answer: '(1) $x=2$；(2) [待确认]', issues: [{ imageIndex: 1, type: 'uncertain', description: '订正与原作答重叠，请检查。' }] };
             }
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            const output = responseMode === 'json' ? '{invalid' : responseMode === 'schema' ? '{"answer":12}' : JSON.stringify(result);
-            res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: output }, finish_reason: responseMode === 'truncated' ? 'length' : 'stop' }], ...usage }));
+            const output = responseMode === 'json' ? '{invalid' : responseMode === 'schema' ? '{"answer":12}' : responseMode === 'empty' ? '' : JSON.stringify(result);
+            const message = responseMode === 'parts' ? { content: [{ type: 'text', text: output }] } : responseMode === 'refusal' ? { content: '', refusal: 'declined' } : { content: output };
+            res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', ...message }, finish_reason: responseMode === 'truncated' ? 'length' : 'stop' }], ...usage }));
         }));
         app = require('../server/app');
         ai = require('../server/mistakes/ai');
@@ -194,7 +225,7 @@ async function runAiSmoke() {
         assert.equal(multipleResult.result.needsReview, true, 'The server derives review from figures even when the model says false');
         assert.notEqual(multipleResult.applyStatus, 'applied');
         assert.equal(multipleResult.result.figures.length, 2, 'One image supports multiple independent regions');
-        assert.deepEqual(multipleResult.result.figures.map((figure) => figure.box), [[0.08, 0.12, 0.4, 0.35], [0.52, 0.48, 0.4, 0.42]]);
+        assert.deepEqual(multipleResult.result.figures.map((figure) => figure.box), [[0.125, 0.125, 0.375, 0.375], [0.5, 0.5, 0.375, 0.375]]);
         assert.equal((await latest()).question, sourceSnapshot.question);
         for (const secret of ['私密题干快照不发模型', '私密答案快照不发模型', '私密解析快照不发模型']) assert.equal(requests.question.body.includes(secret), false);
         assert.equal((await alice('GET', '/knowledge-points')).some((point) => point.name === '校对后才创建'), false, 'Recognition creates no knowledge points before review is applied');
@@ -230,6 +261,8 @@ async function runAiSmoke() {
         assert.equal(invalid.result.needsReview, true);
         assert.equal(invalid.result.figures[0].box, null, 'Invalid regions are never turned into automatic crops');
         assert.ok(invalid.result.issues.some((issue) => issue.imageId === first.id));
+        assert.equal(invalid.result.figures[0].locationError, 'bounds');
+        assert.deepEqual(invalid.result.figures[0].rawLocation.box, [0.9, 0.9, 0.2, 0.2], 'Original coordinates survive normalization and repeated reads');
         await alice('POST', `/ai/jobs/${invalid.id}/apply`, { review: { question: invalid.result.question } }, 400);
         await alice('POST', `/ai/jobs/${invalid.id}/apply`, { review: { question: '明确移除无效配图后的题干。' }, force: true });
         questionFixture = 'unmatched';
@@ -258,7 +291,7 @@ async function runAiSmoke() {
         const imagesBeforeReuse = (await alice('GET', `/mistakes/${mistake.id}/images`)).length;
         const reused = await completed(await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'answer', input: input(await latest()), imageIds: [second.id, first.id] }, 201));
         assert.equal(reused.status, 'succeeded');
-        assert.deepEqual(requests.answer.imageIds, [second.id, first.id], 'Answer recognition preserves displayed image order');
+        assert.deepEqual(reused.imageIds, [second.id, first.id], 'Answer recognition preserves displayed image order');
         assert.deepEqual(requests.answer.imageUrls, [jpeg, jpeg].map((image) => `data:image/jpeg;base64,${image.toString('base64')}`), 'Reused sources send cropped bytes, not originals');
         assert.equal((await alice('GET', `/mistakes/${mistake.id}/images`)).length, imagesBeforeReuse);
         assert.equal(requests.answer.body.includes('私密答案快照不发模型'), false);
@@ -278,7 +311,7 @@ async function runAiSmoke() {
         await alice('PATCH', `/mistakes/${mistake.id}`, { question: `根据图形求解。\n\n![几何图](${geometry.cropUrl})\n\n![外部图](https://example.invalid/no-fetch.jpg)`, answer: `$x=2$\n\n![答案图](${answerImage.cropUrl})`, analysis: '', generateAnalysis: true });
         const illustrated = (await alice('GET', '/ai/jobs')).find((job) => job.type === 'analysis');
         assert.equal((await completed(illustrated)).applyStatus, 'applied');
-        assert.deepEqual(requests.analysis.imageIds, [geometry.id, answerImage.id], 'Analysis sends owned question and answer images in reference order');
+        assert.deepEqual(requests.analysis.imageIndices, [1, 2], 'Analysis labels images in submitted order');
         assert.equal(requests.analysis.imageUrls.length, 2, 'External image URLs are never fetched');
         assert.deepEqual(illustrated.imageIds, [geometry.id, answerImage.id], 'Automatic job fingerprints include the resolved image IDs');
         let illustratedCount = await jobCount('analysis');
@@ -314,7 +347,7 @@ async function runAiSmoke() {
         assert.equal((await latest()).analysis, '');
         hold = 0;
         for (const job of await alice('GET', '/ai/jobs')) if (['queued', 'running', 'retrying'].includes(job.status)) await completed(job);
-        for (const [mode, attempts, category] of [['json', 2, 'format'], ['schema', 2, 'format'], ['truncated', 1, 'truncated']]) {
+        for (const [mode, attempts, category] of [['json', 2, 'format'], ['schema', 2, 'format'], ['empty', 2, 'format'], ['truncated', 1, 'truncated'], ['refusal', 1, 'refusal']]) {
             responseMode = mode;
             const beforeCalls = calls;
             const bad = await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'answer', input: input(await latest()), imageIds: [answerImage.id] }, 201);
@@ -325,7 +358,22 @@ async function runAiSmoke() {
             assert.equal(metrics.at(-1).errorCategory, category);
             if (mode === 'truncated') assert.match(result.error, /减少单次图片数量/);
         }
+        responseMode = 'parts';
+        const multipart = await completed(await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'answer', input: input(await latest()), imageIds: [answerImage.id] }, 201));
+        assert.equal(multipart.status, 'succeeded', 'OpenAI-compatible text content parts are accepted');
         responseMode = '';
+        rejectFormat = 'response_format json_schema is not supported by this model';
+        const beforeFallback = calls;
+        const fallback = await completed(await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'answer', input: input(await latest()), imageIds: [answerImage.id] }, 201));
+        assert.equal(fallback.status, 'succeeded');
+        assert.equal(calls - beforeFallback, 2, 'Explicit unsupported-format rejection allows one fallback');
+        assert.deepEqual(metrics.slice(-2).map((item) => item.responseFormat), ['json_schema', 'text']);
+        rejectFormat = 'Invalid schema for response_format: required is missing';
+        const beforeBadSchema = calls;
+        const badSchema = await completed(await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'answer', input: input(await latest()), imageIds: [answerImage.id] }, 201));
+        assert.equal(badSchema.status, 'failed');
+        assert.equal(calls - beforeBadSchema, 1, 'Invalid schema is not treated as a capability rejection');
+        rejectFormat = '';
         failureStatus = 429; failures = 1;
         const limited = await completed(await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'answer', input: input(await latest()), imageIds: [answerImage.id] }, 201));
         assert.equal(limited.status, 'succeeded'); assert.equal(limited.attempts, 2);
@@ -369,8 +417,39 @@ async function runAiSmoke() {
         await alice('POST', `/ai/jobs/${cancelled.id}/cancel`, {});
         await delay(350);
         assert.equal((await alice('GET', `/ai/jobs/${cancelled.id}`)).status, 'cancelled');
+        const duplicate = await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'answer', input: input(await latest()), imageIds: [answerImage.id] }, 201);
+        await alice('POST', `/ai/jobs/${cancelled.id}/retry`, {}, 409);
+        const privateBatch = await bob('POST', '/ai/jobs/batch', { action: 'cancel', ids: [duplicate.id] });
+        assert.equal(privateBatch.jobs.length, 0);
+        assert.equal(privateBatch.errors[0].id, duplicate.id, 'Batch operations enforce ownership per job');
+        const cancelledBatch = await alice('POST', '/ai/jobs/batch', { action: 'cancel', ids: [duplicate.id, duplicate.id, 9999999] });
+        assert.equal(cancelledBatch.jobs.length, 1, 'Duplicate selections are processed once');
+        assert.equal(cancelledBatch.jobs[0].status, 'cancelled');
+        assert.equal(cancelledBatch.errors[0].id, 9999999, 'One missing job does not prevent other operations');
+        await alice('POST', '/ai/jobs/batch', { action: 'retry', ids: Array(51).fill(cancelled.id) }, 400);
+        require('../server/mistakes/ai-config').saveConfig({ enabled: false });
+        await alice('POST', `/ai/jobs/${cancelled.id}/retry`, {}, 400);
+        require('../server/mistakes/ai-config').saveConfig({ enabled: true });
+        await delay(350);
+        hold = 0;
+        const retriedBatch = await alice('POST', '/ai/jobs/batch', { action: 'retry', ids: [cancelled.id, question.id] });
+        assert.equal(retriedBatch.jobs[0].id, cancelled.id);
+        assert.equal(retriedBatch.errors[0].id, question.id, 'Completed jobs cannot be retried through the batch endpoint');
+        assert.equal((await completed(cancelled)).status, 'succeeded');
+
+        const history = app.db.prepare(`INSERT INTO ai_jobs (mistake_id, user_id, type, status, apply_status, input_json, result_json, fingerprint, created_at)
+            VALUES (?, ?, 'analysis', ?, ?, ?, ?, ?, ?)`);
+        const historyIds = app.db.transaction(() => Array.from({ length: 203 }, (_, index) => Number(history.run(mistake.id, users.alice,
+            index === 0 ? 'failed' : 'succeeded', index < 2 ? 'pending' : 'applied', JSON.stringify(input(mistake)),
+            index === 0 ? null : JSON.stringify({ analysis: '历史解析' }), `history-${index}`, new Date().toISOString()).lastInsertRowid)))();
+        const historyList = await alice('GET', '/ai/jobs');
+        assert.ok(historyList.some((job) => job.id === historyIds[0]), 'Old failed jobs stay visible beyond the recent history limit');
+        assert.ok(historyList.some((job) => job.id === historyIds[1]), 'Old review candidates stay visible beyond the recent history limit');
+        assert.ok(!historyList.some((job) => job.id === historyIds[2]), 'Applied history remains bounded');
         const imageRows = app.db.prepare('SELECT original_path, crop_path FROM mistake_images WHERE mistake_id = ?').all(mistake.id);
         await alice('DELETE', `/mistakes/${mistake.id}`);
+        assert.equal((await alice('GET', `/ai/jobs/${cancelled.id}`)).mistakeDeleted, true);
+        assert.ok((await alice('GET', '/ai/jobs')).filter((job) => job.mistakeId === mistake.id).every((job) => job.mistakeDeleted), 'Task lists identify records in trash');
         assert.equal((await alice('GET', `/mistakes/${mistake.id}/images`)).length, imageRows.length, 'Trash retains source and derived images');
         await alice('DELETE', `/mistakes/${mistake.id}/permanent`);
         for (const row of imageRows) for (const filename of [row.original_path, row.crop_path]) assert.equal(fs.existsSync(path.join(process.env.MISTAKES_UPLOADS_PATH, filename)), false, 'Permanent deletion removes source and derived files');

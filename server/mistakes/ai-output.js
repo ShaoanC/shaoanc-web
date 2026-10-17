@@ -1,0 +1,61 @@
+const object = (properties) => ({ type: 'object', properties, required: Object.keys(properties), additionalProperties: false });
+
+function recognitionFormat(type) {
+    const string = { type: 'string' };
+    const properties = { [type]: string };
+    if (type !== 'analysis') {
+        const coordinate = { type: 'number', minimum: 0, maximum: 1 };
+        properties.figures = { type: 'array', items: object({
+            id: string, imageIndex: { type: ['integer', 'null'], minimum: 1 },
+            bounds: { anyOf: [object({ left: coordinate, top: coordinate, right: coordinate, bottom: coordinate }), { type: 'null' }] },
+            description: string
+        }) };
+        properties.issues = { type: 'array', items: object({ imageIndex: { type: ['integer', 'null'], minimum: 1 }, type: string, description: string }) };
+    }
+    if (type === 'question') {
+        properties.subjectId = { type: ['string', 'null'] };
+        properties.primaryPath = { type: 'array', items: string };
+        properties.auxiliaryPaths = { type: 'array', items: { type: 'array', items: string } };
+    }
+    return { type: 'json_schema', json_schema: { name: `recognition_${type}`, strict: true, schema: object(properties) } };
+}
+
+function parseRecognitionJson(raw) {
+    const content = raw.trim();
+    // Accept one fenced object, including a gateway/model's introductory sentence.
+    // Never repair escapes or infer missing braces: this could silently change formulas.
+    const fenced = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    const value = JSON.parse(content.startsWith('{') ? content : fenced ? fenced[1] : content);
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw Object.assign(new Error('Invalid AI result'), { code: 'INVALID_AI_RESULT' });
+    for (const field of ['question', 'answer', 'analysis']) {
+        if (typeof value[field] === 'string' && /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(value[field])) {
+            throw new SyntaxError('Invalid control character in recognition text; check LaTeX escaping');
+        }
+    }
+    return value;
+}
+
+function sourceImageId(value, imageIds) {
+    const integer = (value) => typeof value === 'number' && Number.isSafeInteger(value) ? value
+        : typeof value === 'string' && /^\d+$/.test(value.trim()) ? Number(value) : null;
+    // Explicit indices refer to submitted order, never to database IDs.
+    if (value?.imageIndex != null) return imageIds[integer(value.imageIndex) - 1] || 0;
+    const id = integer(value?.imageId);
+    return imageIds.includes(id) ? id : 0;
+}
+
+function figureLocation(figure, imageIds) {
+    const imageId = sourceImageId(figure, imageIds);
+    const bounds = figure?.bounds;
+    const candidate = bounds && typeof bounds === 'object' && !Array.isArray(bounds)
+        ? [bounds.left, bounds.top, bounds.right - bounds.left, bounds.bottom - bounds.top]
+        : figure?.box ?? figure?.bbox;
+    const numeric = Array.isArray(candidate) && candidate.length === 4 && candidate.every(Number.isFinite)
+        && (!bounds || [bounds.left, bounds.top, bounds.right, bounds.bottom].every(Number.isFinite));
+    const valid = numeric && candidate[0] >= 0 && candidate[0] < 1 && candidate[1] >= 0 && candidate[1] < 1 && candidate[2] > 0 && candidate[3] > 0
+        && candidate[0] + candidate[2] <= 1.000001 && candidate[1] + candidate[3] <= 1.000001;
+    const error = !imageId ? 'source' : !numeric ? 'format' : !valid ? 'bounds' : null;
+    return { imageId, box: error ? null : [candidate[0], candidate[1], Math.min(candidate[2], 1 - candidate[0]), Math.min(candidate[3], 1 - candidate[1])], error };
+}
+
+module.exports = { recognitionFormat, parseRecognitionJson, sourceImageId, figureLocation };

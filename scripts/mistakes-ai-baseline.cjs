@@ -42,6 +42,7 @@ async function runBaseline(filename, label, { checkOnly = false } = {}) {
     if (checkOnly) return { source: manifest.source, images: files.size, cases: manifest.cases.length };
     const { recognitionMessages } = require('../server/mistakes/ai-messages');
     const { requestCompletion, aiErrorCategory } = require('../server/mistakes/ai-request');
+    const { recognitionFormat, parseRecognitionJson } = require('../server/mistakes/ai-output');
     const { readConfig } = require('../server/mistakes/ai-config');
     const config = readConfig();
     if (!config.enabled || !config.apiKey || !config.baseUrl || !config.model) throw new Error('请先配置并启用 AI；也可用 --check 只检查题图清单。');
@@ -51,13 +52,13 @@ async function runBaseline(filename, label, { checkOnly = false } = {}) {
         const messages = recognitionMessages({ type: item.type, subjects: manifest.subjects, directory: manifest.directory, images });
         const record = { id: item.id, type: item.type, images: images.map(({ id, width, height, sha256 }) => ({ id, width, height, sha256 })),
             promptSha256: hash(JSON.stringify(messages.filter((message) => message.role === 'system'))),
-            calls: 1, result: null, errorCategory: null, expectedFigureCount: item.expectedFigureCount ?? null,
+            calls: 0, elapsedMs: 0, result: null, errorCategory: null, expectedFigureCount: item.expectedFigureCount ?? null,
             review: { criticalContentErrors: null, figureComplete: null, handwritingLeak: null, manualEdits: null, notes: '' } };
         try {
-            record.result = await requestCompletion({ messages, context: { type: 'baseline', label, caseId: item.id, imageCount: images.length },
-                onMetrics: ({ elapsedMs, usage }) => Object.assign(record, { elapsedMs, usage }), interpret: (raw) => {
+            record.result = await requestCompletion({ messages, responseFormat: recognitionFormat(item.type), context: { type: 'baseline', label, caseId: item.id, imageCount: images.length },
+                onMetrics: ({ elapsedMs, usage }) => { record.calls += 1; record.elapsedMs += elapsedMs; record.usage = usage; }, interpret: (raw) => {
                     record.raw = raw;
-                    const value = JSON.parse(raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, ''));
+                    const value = parseRecognitionJson(raw);
                     if (!value || typeof value[item.type] !== 'string' || !value[item.type].trim()) throw Object.assign(new Error('Missing transcription'), { code: 'INVALID_AI_RESULT' });
                     return value;
                 } });

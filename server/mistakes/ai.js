@@ -6,6 +6,7 @@ const { fail } = require('./auth');
 const { publicConfig, safeAiError } = require('./ai-config');
 const { recognitionMessages } = require('./ai-messages');
 const { requestCompletion, aiErrorCategory } = require('./ai-request');
+const { recognitionFormat, parseRecognitionJson, sourceImageId, figureLocation } = require('./ai-output');
 const { imagePath, questionForMistake } = require('./images');
 const { markdownImages, legacyFigureText } = require('./question-images');
 const { plainText, updateCachedMistake } = require('./search');
@@ -28,7 +29,7 @@ function normalizeResult(job, value) {
     const imageIds = JSON.parse(job.image_ids);
     const allowed = new Set(imageIds);
     result.issues = Array.isArray(value.issues) ? value.issues.map((issue) => ({
-        imageId: allowed.has(issue?.imageId) ? issue.imageId : Number.isInteger(issue?.imageIndex) ? imageIds[issue.imageIndex - 1] || null : null,
+        imageId: sourceImageId(issue, imageIds) || null,
         type: typeof issue?.type === 'string' ? issue.type : 'uncertain',
         description: typeof issue?.description === 'string' ? issue.description : '请检查图片中的不确定内容'
     })) : [];
@@ -40,13 +41,16 @@ function normalizeResult(job, value) {
         let id = typeof figure?.id === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(figure.id) ? figure.id : `figure-${index + 1}`;
         if (usedIds.has(id)) { addIssue('duplicate_figure', `配图标识 ${id} 重复，请检查插入位置`); id = `${id}-${index + 1}`; }
         usedIds.add(id);
-        const imageId = Number.isInteger(figure?.imageId) ? figure.imageId : imageIds[Number(figure?.imageIndex) - 1] || 0;
-        const candidate = figure?.box ?? figure?.bbox;
-        const validBox = allowed.has(imageId) && Array.isArray(candidate) && candidate.length === 4 && candidate.every(Number.isFinite)
-            && candidate[0] >= 0 && candidate[1] >= 0 && candidate[2] > 0 && candidate[3] > 0
-            && candidate[0] + candidate[2] <= 1 && candidate[1] + candidate[3] <= 1;
-        if (!validBox) addIssue('invalid_figure', `配图 ${id} 的来源或坐标无效，请补画区域或移除标记`, allowed.has(imageId) ? imageId : null);
-        return { id, imageId, box: validBox ? candidate : null, description: typeof figure?.description === 'string' ? figure.description : '题目配图' };
+        const { imageId, box, error } = figureLocation(figure, imageIds);
+        const locationError = figure?.locationError || error;
+        if (error) {
+            const reason = { source: '未关联到本次图片，请选择来源图片并重新框选', format: '坐标格式不正确，请重新框选', bounds: '选框超出图片或范围为空，请重新框选' }[locationError] || '定位无效，请重新框选';
+            addIssue('invalid_figure', `配图 ${id} ${reason}`, imageId || null);
+        }
+        return { id, imageId, box, description: typeof figure?.description === 'string' ? figure.description : '题目配图',
+            ...(error ? { locationError, rawLocation: figure?.rawLocation || {
+                imageId: figure?.imageId, imageIndex: figure?.imageIndex, bounds: figure?.bounds, box: figure?.box, bbox: figure?.bbox
+            } } : {}) };
     });
     // Historical tasks used whole uploaded crops. Expose them as editable full-image regions.
     if (!Array.isArray(value.figures) && Array.isArray(value.diagramImageIds)) {
@@ -86,13 +90,13 @@ function serializeJob(row) {
     const imageIds = JSON.parse(row.image_ids);
     const result = row.result_json ? normalizeResult(row, JSON.parse(row.result_json)) : null;
     return { id: row.id, mistakeId: row.mistake_id, type: row.type, status: row.status, applyStatus: row.apply_status,
-        input: JSON.parse(row.input_json), imageIds, result,
+        input: JSON.parse(row.input_json), imageIds, result, mistakeDeleted: Boolean(row.mistake_deleted_at),
         error: row.error, attempts: row.attempts, maxAttempts: row.max_attempts, createdAt: row.created_at,
         startedAt: row.started_at, finishedAt: row.finished_at, nextAttemptAt: row.next_attempt_at };
 }
 
 function ownJob(id, userId) {
-    const row = db.prepare('SELECT * FROM ai_jobs WHERE id = ? AND user_id = ?').get(Number(id), userId);
+    const row = db.prepare('SELECT j.*, m.deleted_at AS mistake_deleted_at FROM ai_jobs j JOIN mistakes m ON m.id = j.mistake_id WHERE j.id = ? AND j.user_id = ?').get(Number(id), userId);
     if (!row) fail(404, 'AI 任务不存在');
     return row;
 }
@@ -200,9 +204,7 @@ function resolvePath(userId, subjectId, names) {
 }
 
 function parseResult(job, raw) {
-    const value = JSON.parse(raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, ''));
-    if (!value || typeof value !== 'object' || Array.isArray(value)) throw Object.assign(new Error('Invalid AI result'), { code: 'INVALID_AI_RESULT' });
-    return normalizeResult(job, value);
+    return normalizeResult(job, parseRecognitionJson(raw));
 }
 
 async function requestResult(job, signal) {
@@ -218,7 +220,7 @@ async function requestResult(job, signal) {
         if (!image.id) throw Object.assign(new Error('Missing image'), { status: 400 });
         return { id: image.id, bytes: fs.readFileSync(imagePath(image[`${image.variant}_path`])) };
     });
-    return requestCompletion({ messages: recognitionMessages({ type: job.type, input, subjects, directory, images }), signal,
+    return requestCompletion({ messages: recognitionMessages({ type: job.type, input, subjects, directory, images }), responseFormat: recognitionFormat(job.type), signal,
         context: { jobId: job.id, type: job.type, attempt: job.attempts + 1, imageCount: images.length },
         interpret: (raw) => parseResult(job, raw) });
 }
@@ -308,7 +310,7 @@ function applyJob(id, userId, options = {}) {
 
 function canRetry(error, attempts) {
     if (error.name === 'AbortError' || error.name === 'APIUserAbortError') return false;
-    if (error.code === 'INCOMPLETE_AI_RESULT') return false;
+    if (['INCOMPLETE_AI_RESULT', 'AI_REFUSAL'].includes(error.code)) return false;
     if (aiErrorCategory(error) === 'format') return attempts < 2;
     return !error.status || [408, 409, 429].includes(error.status) || error.status >= 500;
 }
@@ -393,6 +395,11 @@ function retryJob(id, userId) {
     const job = ownJob(id, userId);
     activeMistake(job.mistake_id, userId);
     if (!['failed', 'cancelled'].includes(job.status)) fail(409, '只能重试失败或已取消的任务');
+    const config = publicConfig();
+    if (!config.enabled || !config.configured) fail(400, '管理员尚未启用并配置 AI 服务');
+    const duplicate = db.prepare("SELECT id FROM ai_jobs WHERE mistake_id = ? AND type = ? AND fingerprint = ? AND status IN ('queued','running','retrying') AND id != ?")
+        .get(job.mistake_id, job.type, job.fingerprint, id);
+    if (duplicate) fail(409, '相同内容已有任务正在处理，请等待完成');
     db.prepare("UPDATE ai_jobs SET status = 'queued', attempts = 0, error = NULL, started_at = NULL, finished_at = NULL, next_attempt_at = NULL WHERE id = ?").run(id);
     // A cancelled request may still be unwinding. Queue again after its cleanup.
     const resume = () => { if (scheduled.has(id)) setTimeout(resume, 50).unref(); else schedule(id); };

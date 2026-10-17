@@ -116,6 +116,91 @@
 .photo-rotation-actions { display: flex; gap: 8px; justify-content: center; margin: 12px 0; }
 .photo-history-order { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
 .photo-history-number { color: var(--primary); font-weight: 600; margin-right: auto; }
+.task-page-description { max-width: 760px; color: var(--text-secondary); line-height: 1.8; margin: -8px 0 24px; }
+.task-manager { min-width: 0; border: 1px solid var(--border-medium); border-radius: 6px; background: var(--surface-2); }
+.task-manager-compact { border: 0; }
+.task-sync-bar, .task-sync-bar > div, .task-selection-bar, .task-selection-bar > div, .task-row-heading, .task-row-title, .task-row-actions, .task-pagination, .task-pagination > div { display: flex; align-items: center; gap: 12px; }
+.task-sync-bar, .task-selection-bar, .task-row-heading, .task-pagination { justify-content: space-between; }
+.task-sync-bar { padding: 16px 24px; font-size: 13px; color: var(--text-secondary); }
+.task-sync-bar small { display: block; font-size: 12px; margin-top: 3px; }
+.task-sync-bar .button { min-height: 34px; font-size: 13px; padding: 5px 8px; }
+.task-sync-error { color: var(--error); }
+.task-manager .inline-alert { margin: 0 24px 16px; }
+.task-service-notice { margin: 0 24px 16px; padding: 12px 16px; background: var(--warning-bg); color: var(--warning); font-size: 14px; }
+.task-service-notice a { text-decoration: underline; text-underline-offset: 3px; }
+.task-filters { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); padding: 0 24px; border-bottom: 1px solid var(--border-medium); }
+.task-filters button { display: flex; align-items: baseline; justify-content: center; flex-wrap: wrap; gap: 8px; border: 0; border-bottom: 3px solid transparent; background: transparent; padding: 16px 8px; color: var(--text-secondary); font-size: 14px; }
+.task-filters strong { font-size: 21px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.task-filters button[aria-pressed="true"] { background: var(--primary-soft); border-bottom-color: var(--primary); color: var(--primary); }
+.task-filters button:hover { background: var(--surface-1); }
+.task-search-bar { display: flex; gap: 12px; padding: 20px 24px; }
+.task-search { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; border: 1px solid var(--border-medium); border-radius: 4px; background: var(--surface-2); padding: 0 12px; color: var(--text-secondary); }
+.task-search:focus-within { border-color: var(--primary); outline: 2px solid var(--primary-soft); }
+.task-search svg { flex-shrink: 0; }
+.task-search input { width: 100%; min-width: 0; border: 0; background: transparent; color: var(--text-primary); padding: 10px 0; font-size: 14px; }
+.task-search-bar select { max-width: 150px; border: 1px solid var(--border-medium); border-radius: 4px; padding: 8px 12px; background: var(--surface-2); color: var(--text-primary); font-size: 14px; }
+.task-search-bar select:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.task-selection-bar { padding: 10px 24px; border-top: 1px solid var(--border-subtle); background: var(--surface-1); font-size: 13px; }
+.task-selection-bar label { display: flex; align-items: center; gap: 10px; }
+.task-selection-bar .table-button, .task-row-actions .table-button { display: inline-flex; align-items: center; gap: 5px; }
+.task-row { padding: 22px 24px; border-bottom: 1px solid var(--border-subtle); border-left: 3px solid transparent; }
+.task-row-active { border-left-color: var(--primary); }
+.task-row-review { border-left-color: var(--accent); }
+.task-row-failed { border-left-color: var(--error); }
+.task-row-title h3 { font-size: 16px; font-weight: 600; }
+.task-id { font-size: 12px; color: var(--text-secondary); }
+.task-status { display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px; border-radius: 3px; font-size: 12px; flex-shrink: 0; }
+.task-status-active { color: var(--primary); background: var(--primary-soft); }
+.task-status-review { color: var(--warning); background: var(--warning-bg); }
+.task-status-failed { color: var(--error); background: var(--error-bg); }
+.task-status-done { color: var(--text-secondary); background: var(--surface-1); }
+.task-excerpt { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; max-width: 80ch; font-size: 15px; line-height: 1.8; margin: 12px 0 8px; }
+.task-excerpt:hover { color: var(--primary); text-decoration: underline; text-underline-offset: 3px; }
+.task-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 16px; color: var(--text-secondary); font-size: 12px; }
+.task-meta span { display: inline-flex; align-items: center; gap: 4px; }
+.task-meta a { text-decoration: underline; text-underline-offset: 3px; }
+.task-row-notice, .task-row-error { font-size: 13px; line-height: 1.7; margin-top: 12px; overflow-wrap: anywhere; }
+.task-row-notice { color: var(--warning); }
+.task-row-error { color: var(--error); background: var(--error-bg); padding: 10px 12px; }
+.task-row-actions { justify-content: flex-end; margin-top: 14px; flex-wrap: wrap; }
+.task-row-actions .button { font-size: 13px; min-height: 34px; padding: 6px 12px; }
+.task-row-actions .text-link, .task-row-actions > span { font-size: 13px; }
+.task-row-actions > span { display: flex; align-items: center; gap: 5px; color: var(--text-secondary); }
+.task-result { margin-top: 12px; font-size: 14px; }
+.task-result summary { cursor: pointer; color: var(--primary); padding: 6px 0; }
+.task-result > div { max-height: 360px; overflow: auto; background: var(--surface-0); border: 1px solid var(--border-subtle); padding: 16px; }
+.task-result .markdown-content { font-size: 15px; }
+.task-empty { display: flex; align-items: center; flex-direction: column; gap: 14px; padding: 56px 24px; text-align: center; color: var(--text-secondary); }
+.task-empty h3 { color: var(--text-primary); font-size: 18px; }
+.task-empty p { font-size: 14px; max-width: 45ch; line-height: 1.8; }
+.task-action-errors { padding: 12px 16px; margin: 0 24px 16px; background: var(--error-bg); color: var(--error); font-size: 13px; overflow-wrap: anywhere; }
+.task-action-errors > div { display: flex; align-items: center; justify-content: space-between; }
+.task-action-errors ul { padding-left: 20px; margin: 4px 0; max-height: 160px; overflow: auto; }
+.task-pagination { padding: 14px 24px; font-size: 13px; color: var(--text-secondary); }
+.task-pagination > span button { padding: 0; margin-left: 10px; background: transparent; border: 0; color: var(--primary); text-decoration: underline; }
+.task-history-note { font-size: 12px; line-height: 1.8; color: var(--text-secondary); padding: 0 24px 18px; }
+.task-manager-compact .task-sync-bar, .task-manager-compact .task-search-bar, .task-manager-compact .task-filters { padding-left: 0; padding-right: 0; }
+@media (max-width: 640px) {
+  .task-page-description { font-size: 14px; }
+  .task-sync-bar { padding: 12px; align-items: flex-start; }
+  .task-sync-bar > div { gap: 5px; flex-wrap: wrap; justify-content: flex-end; }
+  .task-sync-bar .text-link { font-size: 12px; }
+  .task-filters { padding: 0 8px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .task-filters button { padding: 10px 4px; font-size: 13px; }
+  .task-filters strong { font-size: 18px; }
+  .task-search-bar { padding: 14px 12px; flex-wrap: wrap; gap: 8px; }
+  .task-search { flex-basis: 100%; }
+  .task-search-bar select { max-width: none; width: 100%; }
+  .task-selection-bar { padding: 10px 12px; flex-wrap: wrap; gap: 8px; }
+  .task-row { padding: 18px 12px; }
+  .task-row-heading { flex-wrap: wrap; gap: 8px; }
+  .task-row-title { gap: 8px; }
+  .task-row-title h3 { font-size: 15px; }
+  .task-excerpt { font-size: 14px; }
+  .task-pagination { padding: 12px; }
+  .task-history-note { padding: 0 12px 16px; }
+  .task-manager .inline-alert, .task-service-notice, .task-action-errors { margin-left: 12px; margin-right: 12px; }
+}
 @media (max-width: 640px) {
   .photo-dialog { width: 100vw; max-height: 94dvh; top: auto; bottom: 0; left: 0; transform: none; border-radius: 12px 12px 0 0; padding: 20px 16px max(24px, env(safe-area-inset-bottom)); }
   .photo-dialog-heading h2 { font-size: 21px; }
