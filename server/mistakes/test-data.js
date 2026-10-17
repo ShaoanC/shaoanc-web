@@ -407,7 +407,7 @@ $$
 
 const generateTestMistakes = db.transaction((userId) => {
     const now = new Date().toISOString();
-    const findPoint = db.prepare('SELECT id FROM knowledge_points WHERE subject_id = ? AND name = ? LIMIT 1');
+    const findPoint = db.prepare('SELECT id FROM knowledge_points WHERE subject_id = ? AND name = ? AND owner_user_id IS NULL LIMIT 1');
     const insertMistake = db.prepare(`
         INSERT INTO mistakes (user_id, subject_id, primary_knowledge_point_id, lifecycle, is_test,
             question, answer, analysis, note, created_at, updated_at)

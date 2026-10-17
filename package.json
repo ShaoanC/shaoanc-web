@@ -9,6 +9,7 @@
     "typecheck": "tsc --project client/mistakes/tsconfig.json --noEmit",
     "build": "npm run typecheck && vite build --config client/mistakes/vite.config.mts",
     "test": "node scripts/mistakes-smoke.cjs",
+    "test:ai": "node scripts/mistakes-ai-smoke.cjs",
     "admin:create": "node server/mistakes/create-admin.js"
   },
   "keywords": [],
@@ -17,15 +18,23 @@
   "type": "commonjs",
   "dependencies": {
     "@base-ui/react": "1.9.0",
+    "@friendlycaptcha/sdk": "1.1.1",
     "better-sqlite3": "^13.0.3",
+    "browser-image-compression": "^2.0.2",
     "dotenv": "^18.0.5",
     "express": "^5.2.1",
+    "express-rate-limit": "8.7.1",
     "katex": "^0.16.47",
     "lucide-react": "^1.52.0",
     "minisearch": "^7.2.0",
+    "multer": "^2.4.0",
+    "openai": "^7.35.0",
+    "p-queue": "^10.0.0",
+    "p-retry": "^8.0.1",
     "pinyin-match": "1.2.10",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
+    "react-image-crop": "^11.1.2",
     "react-is": "^19.3.0",
     "react-markdown": "^10.1.0",
     "react-swipeable": "7.0.2",
@@ -36,7 +45,8 @@
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
     "remark-parse": "^11.0.0",
-    "unified": "^11.0.5"
+    "unified": "^11.0.5",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/react": "^19.3.0",

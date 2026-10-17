@@ -1,6 +1,6 @@
 # ShaoanC 网站与智能错题整理系统
 
-个人主页位于 `/`，错题系统位于 `/mistakes/`。当前实现开发规划的第 1 阶段：邀请码账号、手动录题、知识点归类、筛选与复习。支持数学、物理、英语，账号之间的数据独立保存。
+个人主页位于 `/`，错题系统位于 `/mistakes/`。支持邀请码账号、拍照/手动录题、AI 识别与解析、知识点归类、筛选与复习。支持数学、物理、英语，账号之间的数据独立保存。
 
 ## 本地运行
 
@@ -23,12 +23,12 @@ npm start
 ## 使用流程
 
 1. 管理员生成邀请码，同学使用邀请码注册并登录。
-2. 在“录入错题”填写学科、题干、知识点、答案解析与个人错因。主知识点和答案可以留空；未整理完的题目可保存为草稿。
+2. 在“录入错题”拍照或选择相册图片，裁剪后识别题干和知识点；答案可直接输入，也可拍照识别。所有文本支持 Markdown 和公式。未整理完的题目可保存为草稿。
 3. 在“我的错题”按学科、知识点、掌握状态、关键词及归档状态筛选，进入详情修改或删除。关键词可搜索正文、学科和主辅知识点名称；命中关键词更多的题优先，并显示匹配摘要及高亮。清空搜索后恢复按更新时间排序。
 4. 在“复习”筛选并勾选已归档题目，先作答再展开答案，记录“不会／不熟／掌握”。掌握状态采用最近一次结果，无复习记录时显示“未复习”。
 5. 在“学习统计”查看个人记录；知识点分布按主知识点计数。管理员还可在“设置”维护账号与知识点目录。
 
-当前尚未接入图片裁剪、AI 识别与参考解析。初始知识点目录是可维护的起点，可以按实际课程调整。
+管理员先在“设置 → AI 设置”配置兼容 OpenAI Chat Completions 的接口、密钥和支持图片的模型。短答案在保存或 OCR 填入后自动生成解析，长答案默认不生成，也可手动点击“生成解析”。顶部“AI 任务”显示进度、用时、失败原因与重试入口；编辑和详情页可查看之前上传的图片。共享知识点由管理员维护，AI 新增分支为当前账号的个人知识点。完整说明见 [拍照录题与 AI 任务](docs/mistakes-photo-ai.md)。
 
 ## 目录与验证
 
@@ -36,16 +36,18 @@ npm start
 - `public/mistakes/`：Vite 构建结果，`base` 为 `/mistakes/`。
 - `server/mistakes/`：数据库、认证、错题、复习和管理 API。
 - `data/mistakes.sqlite`：运行数据库，使用 WAL，不纳入 Git。
-- `uploads/`：为后续图片功能保留，运行文件不纳入 Git。
+- `uploads/mistakes/`：压缩后的整图与裁剪图，按登录账号鉴权读取，运行文件不纳入 Git。
+- `.env.ai`：管理员保存的 AI 配置与密钥，不纳入 Git。
 - `docs/development.md`：本次任务完成状态与验证记录。
 
 ```powershell
 npm run build
 node --check server/app.js
 npm test
+npm run test:ai
 ```
 
-`npm run build` 包含前端类型检查。`npm test` 运行 `scripts/mistakes-smoke.cjs`，使用临时数据库检查邀请码、双账号隔离、错题增删改查、复习与统计，并调用搜索烟测检查中文短词、排序、摘要与索引同步；结束后清理临时数据。页面改动另做一次电脑及手机宽度的浏览器检查。
+`npm run build` 包含前端类型检查。`npm test` 运行 `scripts/mistakes-smoke.cjs`，使用临时数据库检查邀请码、双账号隔离、错题增删改查、复习与统计，并调用搜索烟测检查中文短词、排序、摘要与索引同步；结束后清理临时数据。`npm run test:ai` 使用独立临时数据库和本机模拟 AI，检查图片、识别、个人知识点、自动解析、重试与恢复、冲突及清理；不调用收费服务。页面改动另做一次电脑及手机宽度的浏览器检查。
 
 ## 服务器运行
 
@@ -55,6 +57,8 @@ npm test
 
 ```nginx
 location /api/mistakes/ {
+    client_max_body_size 10m;
+    proxy_read_timeout 120s;
     proxy_pass http://127.0.0.1:3000;
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-Proto $scheme;
@@ -62,4 +66,4 @@ location /api/mistakes/ {
 }
 ```
 
-生产环境配置 `NODE_ENV=production` 并使用 HTTPS；会话 Cookie 使用 HttpOnly、SameSite=Lax，生产环境启用 Secure。后端目录、`.env`、`data/` 和 `uploads/` 位于静态目录之外。数据库路径可通过 `MISTAKES_DB_PATH` 调整，默认为仓库的 `data/mistakes.sqlite`。备份时同时保留 SQLite 数据库及其 WAL 状态，或先停止服务再复制数据库。
+生产环境配置 `NODE_ENV=production` 并使用 HTTPS；会话 Cookie 使用 HttpOnly、SameSite=Lax，生产环境启用 Secure。后端目录、`.env`、`data/` 和 `uploads/` 位于静态目录之外。数据库路径可通过 `MISTAKES_DB_PATH` 调整，默认为仓库的 `data/mistakes.sqlite`。AI 队列也运行在这个单进程内，重启会恢复未完成任务。发布时保留 `data/`、`uploads/` 和 `.env.ai`，服务账号须有写权限。备份时同时保留数据库、图片目录和 AI 配置；SQLite 应连同 WAL 状态备份，或先停止服务再复制。应用保存的图片是本机持久存储，异机灾备仍由部署环境负责。

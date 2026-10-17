@@ -10,6 +10,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.disable('x-powered-by');
+app.set('trust proxy', 'loopback');
 app.use(express.json({ limit: '1mb' }));
 app.get('/api/hello', (req, res) => {
     res.json({
@@ -28,17 +29,19 @@ app.use((error, req, res, next) => {
         return next(error);
     }
     const status = error.status || 500;
-    if (status >= 500) {
+    if (status >= 500 && !error.expose) {
         console.error(error);
     }
     res.status(status).json({
         success: false,
-        message: status >= 500 ? '服务暂时不可用，请稍后重试' : error.message
+        message: status >= 500 && !error.expose ? '服务暂时不可用，请稍后重试' : error.message,
+        ...(error.code ? { code: error.code } : {})
     });
 });
 
 if (require.main === module) {
     cleanupExpiredTrash();
+    require('./mistakes/ai').recoverJobs();
     setInterval(() => {
         try {
             cleanupExpiredTrash();

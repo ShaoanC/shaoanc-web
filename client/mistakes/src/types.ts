@@ -17,6 +17,7 @@ export interface Subject {
 
 export interface KnowledgePoint {
   id: number;
+  ownerUserId: number | null;
   subjectId: string;
   name: string;
   parentId: number | null;

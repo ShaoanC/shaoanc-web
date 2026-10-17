@@ -25,21 +25,26 @@ function updateApiActivity(change: number): void {
   activityListeners.forEach((listener) => listener());
 }
 
-export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
-  updateApiActivity(1);
+export class ApiError extends Error {
+  constructor(message: string, public status: number) { super(message); }
+}
+
+export async function api<T>(path: string, options: RequestInit = {}, activity: { background?: boolean } = {}): Promise<T> {
+  if (!activity.background) updateApiActivity(1);
   try {
     const response = await fetch(`${API_BASE}${path}`, {
       ...options,
       credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json', ...options.headers },
+      headers: { ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }), ...options.headers },
     });
     const result = await response.json().catch(() => null);
     if (!response.ok || !result?.success) {
-      throw new Error(result?.message || '请求失败，请稍后重试。');
+      throw new ApiError(result?.message || '请求失败，请稍后重试。', response.status);
     }
+    if (options.method && options.method !== 'GET') window.dispatchEvent(new Event('mistakes:updated'));
     return result.data as T;
   } finally {
-    updateApiActivity(-1);
+    if (!activity.background) updateApiActivity(-1);
   }
 }
 

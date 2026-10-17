@@ -49,6 +49,7 @@ async function cleanup() {
 
 async function main() {
     process.env.MISTAKES_DB_PATH = databasePath;
+    process.env.FRIENDLY_CAPTCHA_ENABLED = 'false';
     for (const username of ['smoke_admin', 'smoke_second_admin']) {
         const bootstrap = spawnSync(process.execPath, ['server/mistakes/create-admin.js'], {
             cwd: projectDirectory,

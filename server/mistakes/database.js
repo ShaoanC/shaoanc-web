@@ -89,6 +89,47 @@ if (!db.prepare('PRAGMA table_info(mistakes)').all().some((column) => column.nam
     db.exec('ALTER TABLE mistakes ADD COLUMN rating REAL NOT NULL DEFAULT 0 CHECK (rating IN (0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5))');
 }
 db.exec('CREATE INDEX IF NOT EXISTS mistakes_trash ON mistakes(user_id, deleted_at)');
+if (!db.prepare('PRAGMA table_info(knowledge_points)').all().some((column) => column.name === 'owner_user_id')) {
+    db.exec('ALTER TABLE knowledge_points ADD COLUMN owner_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE');
+}
+db.exec(`
+    CREATE INDEX IF NOT EXISTS knowledge_owner ON knowledge_points(owner_user_id, subject_id, parent_id);
+    CREATE TABLE IF NOT EXISTS mistake_images (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        mistake_id INTEGER NOT NULL REFERENCES mistakes(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        purpose TEXT NOT NULL CHECK (purpose IN ('question', 'answer')),
+        client_id TEXT NOT NULL,
+        original_name TEXT NOT NULL,
+        original_path TEXT NOT NULL,
+        crop_path TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE (mistake_id, client_id)
+    );
+    CREATE TABLE IF NOT EXISTS ai_jobs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        mistake_id INTEGER NOT NULL REFERENCES mistakes(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        type TEXT NOT NULL CHECK (type IN ('question', 'answer', 'analysis')),
+        status TEXT NOT NULL DEFAULT 'queued',
+        apply_status TEXT NOT NULL DEFAULT 'pending',
+        input_json TEXT NOT NULL,
+        image_ids TEXT NOT NULL DEFAULT '[]',
+        result_json TEXT,
+        error TEXT,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        max_attempts INTEGER NOT NULL DEFAULT 3,
+        automatic INTEGER NOT NULL DEFAULT 0,
+        fingerprint TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        started_at TEXT,
+        finished_at TEXT,
+        next_attempt_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS ai_jobs_owner ON ai_jobs(user_id, id);
+    CREATE INDEX IF NOT EXISTS ai_jobs_pending ON ai_jobs(status);
+    CREATE UNIQUE INDEX IF NOT EXISTS ai_jobs_automatic_input ON ai_jobs(mistake_id, type, fingerprint) WHERE automatic = 1;
+`);
 
 const initialDirectory = [
     ['math', '数学', [

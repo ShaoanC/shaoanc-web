@@ -144,10 +144,10 @@ function indexTokens(text) {
     return tokens;
 }
 
-function loadDirectory() {
+function loadDirectory(userId) {
     return {
         subjects: new Map(db.prepare('SELECT id, name FROM subjects').all().map((row) => [row.id, row.name])),
-        points: new Map(db.prepare('SELECT id, name FROM knowledge_points').all().map((row) => [row.id, row.name]))
+        points: new Map(db.prepare('SELECT id, name FROM knowledge_points WHERE owner_user_id IS NULL OR owner_user_id = ?').all(userId).map((row) => [row.id, row.name]))
     };
 }
 
@@ -191,7 +191,7 @@ function userIndex(userId, directory) {
 function updateCachedMistake(userId, row) {
     const index = cachedIndex(userId);
     if (!index) return;
-    const document = documentFor(row, loadDirectory());
+    const document = documentFor(row, loadDirectory(userId));
     if (index.has(row.id)) index.replace(document);
     else index.add(document);
 }
@@ -351,7 +351,7 @@ function searchMetadata(row, result, terms, directory) {
 function searchMistakes(userId, rows, keyword) {
     const terms = queryTokens(keyword);
     if (!terms.length || !rows.length) return [];
-    const directory = loadDirectory();
+    const directory = loadDirectory(userId);
     const allowedRows = new Map(rows.map((row) => [row.id, row]));
     const matches = userIndex(userId, directory).search(keyword, {
         tokenize: () => terms,
@@ -370,4 +370,4 @@ function searchMistakes(userId, rows, keyword) {
     });
 }
 
-module.exports = { searchMistakes, updateCachedMistake, removeCachedMistake, invalidateUser, invalidateAll };
+module.exports = { searchMistakes, updateCachedMistake, removeCachedMistake, invalidateUser, invalidateAll, plainText };

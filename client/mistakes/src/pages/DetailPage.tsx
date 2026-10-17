@@ -3,6 +3,8 @@ import { ArrowLeft, BookOpen, CalendarDays, Clock3, FileText, Pencil, RotateCcw,
 import { api, formatDate, json, navigate } from '../api';
 import { knowledgeLabel, useApp } from '../context';
 import { MarkdownContent } from '../MarkdownContent';
+import { ImageHistory } from '../ImageHistory';
+import { useAiTasks } from '../AiTasks';
 import { DataTypeBadge, ErrorState, StatusBadge } from '../components';
 import { DeleteButton } from '../DeleteButton';
 import { LoadingContent } from '../motion';
@@ -11,6 +13,8 @@ import type { Mistake, Review } from '../types';
 
 export function DetailPage({ id }: { id: number }) {
   const { subjects, knowledgePoints, notify } = useApp();
+  const { jobs } = useAiTasks();
+  const appliedJobs = jobs.filter((job) => job.mistakeId === id && job.applyStatus === 'applied').map((job) => job.id).join(',');
   const [mistake, setMistake] = useState<Mistake | null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [error, setError] = useState('');
@@ -24,6 +28,11 @@ export function DetailPage({ id }: { id: number }) {
   useEffect(() => {
     Promise.all([api<Mistake>(`/mistakes/${id}`), api<Review[]>(`/mistakes/${id}/reviews`)]).then(([item, history]) => { setMistake(item); setReviews(history); setRatingPreview(item.rating); setRatingError(''); }).catch((err) => setError(err.message));
   }, [id]);
+
+  useEffect(() => {
+    if (!appliedJobs) return;
+    api<Mistake>(`/mistakes/${id}`, {}, { background: true }).then(setMistake).catch((err) => setError(err.message));
+  }, [id, appliedJobs]);
 
   async function remove() {
     setDeleting(true);
@@ -71,6 +80,7 @@ export function DetailPage({ id }: { id: number }) {
           </div>
         </div>
         <div className="detail-actions">
+          <ImageHistory mistakeId={id} />
           {mistake.deletedAt ? <button className="button primary" disabled={restoring} onClick={() => void restore()}><RotateCcw size={16} /> {restoring ? '正在恢复…' : '恢复错题'}</button> : <>
             {mistake.lifecycle === 'archived' && <a className="button primary" href={`#/review?mistakeId=${id}`}><RotateCcw size={16} /> 复习这道题</a>}
             <DeleteButton armed={confirmDelete} onArmedChange={setConfirmDelete} busy={deleting} onDelete={() => void remove()} className="detail-delete-button" />
