@@ -3,6 +3,7 @@ import { MarkdownContent } from './MarkdownContent';
 
 export interface MarkdownFieldHandle {
   focus: () => void;
+  showPreview: () => void;
 }
 
 interface MarkdownFieldProps {
@@ -22,6 +23,7 @@ export function MarkdownField({ ref, name, label, value, onChange, rows, placeho
   const input = useRef<HTMLTextAreaElement>(null);
 
   useImperativeHandle(ref, () => ({
+    showPreview() { setPreview(true); },
     focus() {
       setPreview(false);
       requestAnimationFrame(() => input.current?.focus({ preventScroll: true }));

@@ -48,6 +48,8 @@ export function EditorPage({ id }: { id?: number }) {
   const [localConflicts, setLocalConflicts] = useState<number[]>([]);
   const panelPrefix = useId();
   const questionField = useRef<MarkdownFieldHandle>(null);
+  const answerField = useRef<MarkdownFieldHandle>(null);
+  const analysisField = useRef<MarkdownFieldHandle>(null);
   const subjectField = useRef<HTMLSelectElement>(null);
   const questionPhotos = useRef<PhotoInputHandle>(null);
   const answerPhotos = useRef<PhotoInputHandle>(null);
@@ -131,6 +133,9 @@ export function EditorPage({ id }: { id?: number }) {
         if (baseline.current) Object.assign(baseline.current, { [field]: result.mistake[field] });
       }
       update(patch); setError('');
+      if (typeof patch[job.type] === 'string') {
+        ({ question: questionField, answer: answerField, analysis: analysisField })[job.type].current?.showPreview();
+      }
       setLocalConflicts((items) => unchanged ? items.filter((value) => value !== job.id) : [...new Set([...items, job.id])]);
       await refreshDirectory();
     } catch (err) { setError((err as Error).message); }
@@ -145,7 +150,7 @@ export function EditorPage({ id }: { id?: number }) {
       if (job.type === 'analysis' && job.applyStatus === 'applied') {
         if (!job.finishedAt || Date.parse(job.finishedAt) < openedAt.current) continue;
         const matches = ['question', 'answer', 'analysis'].every((field) => same(dataRef.current[field as keyof AiInput], job.input[field as keyof AiInput]));
-        if (matches) { update({ analysis: job.result.analysis || '' }); if (baseline.current) baseline.current.analysis = job.result.analysis || ''; }
+        if (matches) { update({ analysis: job.result.analysis || '' }); analysisField.current?.showPreview(); if (baseline.current) baseline.current.analysis = job.result.analysis || ''; }
         else if (dataRef.current.analysis !== job.result.analysis) setLocalConflicts((items) => [...items, job.id]);
       } else if (job.applyStatus === 'pending') {
         const latest = currentJobs.find((item) => item.type === job.type)?.id === job.id;
@@ -182,10 +187,10 @@ export function EditorPage({ id }: { id?: number }) {
         </section>
         <section className="editor-block editor-answers-block" {...panelProps('answers')}><div className="editor-block-heading"><FileText size={18} /><h2>答案与分析</h2></div>
           <PhotoInput ref={answerPhotos} purpose="answer" ensureSaved={ensureSaved} onRecognize={(ids) => recognize('answer', ids)} aiAvailable={aiAvailable} />{candidates('answer')}
-          <MarkdownField name="正确答案" label={<>正确答案 <span className="optional-label">选填</span></>} rows={3} value={data.answer} onChange={(answer) => update({ answer })} placeholder="直接输入答案，或拍照识别后修改…" />
+          <MarkdownField ref={answerField} name="正确答案" label={<>正确答案 <span className="optional-label">选填</span></>} rows={3} value={data.answer} onChange={(answer) => update({ answer })} placeholder="直接输入答案，或拍照识别后修改…" />
           <p className="ai-notice">手动输入的短答案会在保存时自动生成解析；图片识别的短答案会在填入后生成。</p>
           <div className="photo-actions"><button type="button" className="button secondary" disabled={!aiAvailable || !data.question.trim() || starting || currentJobs.some((job) => job.type === 'analysis' && isActiveJob(job))} onClick={() => void generate()}><Sparkles size={16} />{starting ? '正在提交…' : '生成解析'}</button></div>
-          {candidates('analysis')}<MarkdownField name="解题分析" label={<>解题分析 <span className="optional-label">选填</span></>} rows={5} value={data.analysis} onChange={(analysis) => update({ analysis })} placeholder="记录关键步骤、解题思路和需要注意的地方…" />
+          {candidates('analysis')}<MarkdownField ref={analysisField} name="解题分析" label={<>解题分析 <span className="optional-label">选填</span></>} rows={5} value={data.analysis} onChange={(analysis) => update({ analysis })} placeholder="记录关键步骤、解题思路和需要注意的地方…" />
         </section>
         <section className="editor-block editor-note-block" {...panelProps('note')}><div className="editor-block-heading"><StickyNote size={18} /><h2>我的笔记</h2></div><MarkdownField name="我的笔记" label={<>我的笔记 <span className="optional-label">选填</span></>} rows={5} value={data.note} onChange={(note) => update({ note })} placeholder="为什么会做错？下次遇到类似题目，要提醒自己什么？" /></section>
       </div><aside className="editor-aside editor-classification editor-block" {...panelProps('classification')}>
