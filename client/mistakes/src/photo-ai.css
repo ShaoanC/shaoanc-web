@@ -204,9 +204,12 @@
 @media (max-width: 640px) {
   .photo-dialog { width: 100vw; max-height: 94dvh; top: auto; bottom: 0; left: 0; transform: none; border-radius: 12px 12px 0 0; padding: 20px 16px max(24px, env(safe-area-inset-bottom)); }
   .photo-dialog-heading h2 { font-size: 21px; }
-  .photo-thumbnails { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
-  .photo-thumbnail { padding: 5px; }
+  .photo-thumbnails { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 8px 0; }
+  .photo-thumbnail { padding: 3px 5px; }
   .photo-thumbnail img { height: 62px; }
+  .photo-thumbnail-controls { margin-top: 4px; }
+  .photo-rotation-actions { margin: 8px 0; }
+  .photo-crop-stage { padding: 8px; }
   .photo-entry { padding: 12px; }
   .photo-entry .button { flex: 1; padding: 8px 10px; }
   .photo-history-pair { grid-template-columns: 1fr; }
