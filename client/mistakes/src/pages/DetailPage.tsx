@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, BookOpen, CalendarDays, Clock3, FileText, Pencil, RotateCcw, StickyNote } from 'lucide-react';
+import { ArrowLeft, BookOpen, CalendarDays, Clock3, Download, FileText, Pencil, RotateCcw, StickyNote } from 'lucide-react';
 import { api, formatDate, json, navigate } from '../api';
 import { knowledgeLabel, useApp } from '../context';
 import { MarkdownContent } from '../MarkdownContent';
@@ -9,7 +9,9 @@ import { DataTypeBadge, ErrorState, StatusBadge } from '../components';
 import { DeleteButton } from '../DeleteButton';
 import { LoadingContent } from '../motion';
 import { StarRatingPicker, StarRatingDisplay } from '../StarRating';
+import { MistakeExport } from '../MistakeExport';
 import type { Mistake, Review } from '../types';
+import '../export-selection.css';
 
 export function DetailPage({ id }: { id: number }) {
   const { subjects, knowledgePoints, notify } = useApp();
@@ -24,8 +26,10 @@ export function DetailPage({ id }: { id: number }) {
   const [ratingPreview, setRatingPreview] = useState(0);
   const [ratingError, setRatingError] = useState('');
   const [ratingSaving, setRatingSaving] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
 
   useEffect(() => {
+    setExportOpen(false);
     Promise.all([api<Mistake>(`/mistakes/${id}`), api<Review[]>(`/mistakes/${id}/reviews`)]).then(([item, history]) => { setMistake(item); setReviews(history); setRatingPreview(item.rating); setRatingError(''); }).catch((err) => setError(err.message));
   }, [id]);
 
@@ -82,6 +86,7 @@ export function DetailPage({ id }: { id: number }) {
         <div className="detail-actions">
           <ImageHistory mistakeId={id} />
           {mistake.deletedAt ? <button className="button primary" disabled={restoring} onClick={() => void restore()}><RotateCcw size={16} /> {restoring ? '正在恢复…' : '恢复错题'}</button> : <>
+            <button className="button secondary detail-export-button" disabled={deleting || ratingSaving} onClick={() => { setConfirmDelete(false); setExportOpen(true); }}><Download size={16} />导出这道题</button>
             {mistake.lifecycle === 'archived' && <a className="button primary" href={`#/review?mistakeId=${id}`}><RotateCcw size={16} /> 复习这道题</a>}
             <DeleteButton armed={confirmDelete} onArmedChange={setConfirmDelete} busy={deleting} onDelete={() => void remove()} className="detail-delete-button" />
           </>}
@@ -123,6 +128,7 @@ export function DetailPage({ id }: { id: number }) {
         <span><Clock3 size={14} /> 更新于 {formatDate(mistake.updatedAt)}</span>
       </footer>
       {!mistake.deletedAt && <a className="button primary detail-edit-button" href={`#/mistakes/${id}/edit`}><Pencil size={16} /> 编辑错题</a>}
+      {exportOpen && !mistake.deletedAt && <MistakeExport mistakes={[mistake]} single onClose={() => setExportOpen(false)} />}
     </>}
   </LoadingContent>;
 }

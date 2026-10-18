@@ -3,7 +3,7 @@ import { FileText, RotateCcw, Star, Trash2 } from 'lucide-react';
 import { useSwipeable } from 'react-swipeable';
 import { formatDate } from './api';
 import { knowledgeLabel, useApp } from './context';
-import { DataTypeBadge, StatusBadge } from './components';
+import { Checkbox, DataTypeBadge, StatusBadge } from './components';
 import { DeleteButton } from './DeleteButton';
 import { MarkdownContent } from './MarkdownContent';
 import { SearchSummary } from './SearchSummary';
@@ -21,6 +21,9 @@ interface MistakeRowProps {
   ratingOpen: boolean;
   ratingSaving: boolean;
   ratingError: string;
+  selectionMode?: boolean;
+  selected?: boolean;
+  onSelectedChange?: () => void;
   onOpenChange: (open: boolean) => void;
   onArmedChange: (armed: boolean) => void;
   onDelete: () => void;
@@ -41,7 +44,7 @@ function rubberBand(distance: number, width = DELETE_WIDTH) {
   return width * (1 - 1 / (distance * 0.55 / width + 1));
 }
 
-export function MistakeRow({ mistake, grid, opened, armed, disabled, deleting, restoring, ratingOpen, ratingSaving, ratingError, onOpenChange, onArmedChange, onDelete, onRestore, onPermanentDelete, onRatingOpenChange, onRatingChange }: MistakeRowProps) {
+export function MistakeRow({ mistake, grid, opened, armed, disabled, deleting, restoring, ratingOpen, ratingSaving, ratingError, selectionMode = false, selected = false, onSelectedChange = () => {}, onOpenChange, onArmedChange, onDelete, onRestore, onPermanentDelete, onRatingOpenChange, onRatingChange }: MistakeRowProps) {
   const { subjects, knowledgePoints } = useApp();
   const [mobile, setMobile] = useState(() => window.matchMedia('(max-width: 640px)').matches);
   const [dragOffset, setDragOffset] = useState<number | null>(null);
@@ -129,14 +132,24 @@ export function MistakeRow({ mistake, grid, opened, armed, disabled, deleting, r
     return clearRatingMotion;
   }, [ratingOpen]);
 
+  useEffect(() => {
+    if (!selectionMode) return;
+    clearRatingMotion();
+    awaitingRatingOpen.current = false;
+    ignoreSwipe.current = true;
+    suppressClickUntil.current = 0;
+    changeRatingPhase('idle');
+    setDragOffset(null);
+  }, [selectionMode]);
+
   const handlers = useSwipeable({
-    trackTouch: mobile && !trashed && !disabled && (ratingPhase === 'idle' || ratingPhase === 'dragging'),
-    trackMouse: mobile && !trashed && !disabled && (ratingPhase === 'idle' || ratingPhase === 'dragging'),
+    trackTouch: mobile && !trashed && !selectionMode && !disabled && (ratingPhase === 'idle' || ratingPhase === 'dragging'),
+    trackMouse: mobile && !trashed && !selectionMode && !disabled && (ratingPhase === 'idle' || ratingPhase === 'dragging'),
     preventScrollOnSwipe: false,
     delta: 10,
     onTouchStartOrOnMouseDown: ({ event }) => {
       const target = event.target as Element | null;
-      ignoreSwipe.current = disabled || phaseRef.current !== 'idle' || Boolean(target?.closest('.mistake-rating-layer, .mistake-actions, .swipe-delete-action'));
+      ignoreSwipe.current = selectionMode || disabled || phaseRef.current !== 'idle' || Boolean(target?.closest('.mistake-rating-layer, .mistake-actions, .swipe-delete-action'));
       startedOpen.current = opened;
       direction.current = null;
       awaitingRatingOpen.current = false;
@@ -189,17 +202,22 @@ export function MistakeRow({ mistake, grid, opened, armed, disabled, deleting, r
     rowRef.current = element;
     handlers.ref(element);
   }, [handlers.ref]);
-  const ratingActive = mobile && !trashed && ratingPhase !== 'idle';
+  const ratingActive = mobile && !trashed && !selectionMode && ratingPhase !== 'idle';
   const expanded = ratingPhase === 'opening' || ratingPhase === 'open';
-  const offset = mobile && !trashed ? expanded ? ratingSize.width : ratingPhase === 'closing' || ratingPhase === 'retracting' ? 0 : dragOffset ?? (opened ? -DELETE_WIDTH : 0) : 0;
+  const offset = mobile && !trashed && !selectionMode ? expanded ? ratingSize.width : ratingPhase === 'closing' || ratingPhase === 'retracting' ? 0 : dragOffset ?? (opened ? -DELETE_WIDTH : 0) : 0;
   const actionWidth = Math.max(DELETE_WIDTH, -offset);
   const ratingDistance = ratingPhase === 'dragging' ? Math.max(0, dragOffset || 0) : 0;
   const ratingMorph = Math.max(0, Math.min(1, (ratingDistance - RATING_CIRCLE_WIDTH) / (RATING_SWIPE_THRESHOLD - RATING_CIRCLE_WIDTH)));
   const rowHeight = Math.max(ratingSize.height, ratingError ? 190 : 156);
   const layerHeight = expanded ? rowHeight : ratingPhase === 'dragging' ? ratingDistance <= RATING_CIRCLE_WIDTH ? ratingDistance : RATING_CIRCLE_WIDTH + (rowHeight - RATING_CIRCLE_WIDTH) * ratingMorph : 0;
   const remainingDays = mistake.deletedAt ? Math.max(0, Math.ceil((Date.parse(mistake.deletedAt) + 30 * 86400000 - Date.now()) / 86400000)) : 0;
+  const main = <div className="mistake-main">{selectionMode && <Checkbox checked={selected} disabled={disabled} onChange={onSelectedChange} aria-label={`选择错题 #${mistake.id}`} />}<span className={`subject-icon subject-${mistake.subjectId}`}>{subjectName?.slice(0, 1) || <FileText size={20} />}</span><div className="mistake-copy">
+    <h3><MarkdownContent variant="compact" emptyText="尚未填写题干">{mistake.question}</MarkdownContent></h3>
+    <div className="mistake-meta"><DataTypeBadge isTest={mistake.isTest} /><span className={`subject-tag subject-${mistake.subjectId}`}>{subjectName || mistake.subjectId || <span className="text-muted">未选学科</span>}</span><span className={`knowledge-tag ${knowledgePoints.some((point) => point.id === mistake.primaryKnowledgePointId) ? '' : 'text-muted'}`}>{knowledgeLabel(knowledgePoints, mistake.primaryKnowledgePointId)}</span>{mistake.lifecycle === 'draft' && <span className="draft-tag">草稿</span>}</div>
+    <SearchSummary search={mistake.search} />
+  </div></div>;
 
-  return <div {...handlers} ref={attachRow} className={`mistake-row ${grid ? 'is-grid' : ''} ${trashed ? 'is-trash' : ''} ${opened ? 'is-open' : ''} ${dragOffset !== null && ratingPhase === 'idle' ? 'is-dragging' : ''} ${ratingActive ? 'is-rating-active' : ''}`} data-mistake-id={mistake.id} data-rating-phase={ratingPhase} style={{ minHeight: ratingActive ? rowHeight : undefined }} onTouchCancel={() => {
+  return <div {...handlers} ref={attachRow} className={`mistake-row ${grid ? 'is-grid' : ''} ${trashed ? 'is-trash' : ''} ${opened ? 'is-open' : ''} ${dragOffset !== null && ratingPhase === 'idle' ? 'is-dragging' : ''} ${ratingActive ? 'is-rating-active' : ''} ${selectionMode ? 'is-selecting' : ''} ${selectionMode && selected ? 'is-selected' : ''}`} data-mistake-id={mistake.id} data-rating-phase={ratingPhase} style={{ minHeight: ratingActive ? rowHeight : undefined }} onTouchCancel={() => {
     ignoreSwipe.current = true;
     if (phaseRef.current === 'dragging') retractRating();
     else setDragOffset(null);
@@ -207,26 +225,20 @@ export function MistakeRow({ mistake, grid, opened, armed, disabled, deleting, r
     onClickCapture={(event) => {
       if (Date.now() < suppressClickUntil.current && (event.target as Element).closest('.mistake-detail-link')) { event.preventDefault(); event.stopPropagation(); }
     }}>
-    {!trashed && mobile && <div className="mistake-rating-layer" style={{ width: expanded ? ratingSize.width : ratingDistance, height: layerHeight, borderRadius: expanded ? 0 : ratingPhase === 'dragging' ? ratingDistance <= RATING_CIRCLE_WIDTH ? ratingDistance / 2 : 32 * (1 - ratingMorph) : 32 }}>
+    {!trashed && !selectionMode && mobile && <div className="mistake-rating-layer" style={{ width: expanded ? ratingSize.width : ratingDistance, height: layerHeight, borderRadius: expanded ? 0 : ratingPhase === 'dragging' ? ratingDistance <= RATING_CIRCLE_WIDTH ? ratingDistance / 2 : 32 * (1 - ratingMorph) : 32 }}>
       <div className="mistake-rating-peek" aria-hidden="true"><Star size={24} style={{ transform: `scale(${Math.min(1, ratingDistance / 44)})` }} />{ratingDistance >= RATING_CIRCLE_WIDTH && <span>{ratingDistance >= RATING_SWIPE_THRESHOLD ? '松手选星' : '右滑选星'}</span>}</div>
       <div ref={ratingContent} className="mistake-rating-content" style={{ width: ratingSize.width, height: rowHeight }} role="region" aria-label="修改错题星级" aria-hidden={ratingPhase !== 'open'} inert={ratingPhase !== 'open'} aria-busy={ratingSaving} onKeyDown={(event) => {
         if (event.key === 'Escape' && !ratingSaving) { event.preventDefault(); event.stopPropagation(); onRatingOpenChange(false); }
       }}><StarRatingPicker value={draftRating} onChange={setDraftRating} onCommit={onRatingChange} disabled={ratingSaving} error={ratingError} onClose={() => onRatingOpenChange(false)} /></div>
     </div>}
-    {!trashed && <button type="button" className="swipe-delete-action" style={{ width: actionWidth }} hidden={ratingActive} disabled={!opened || disabled} tabIndex={opened ? 0 : -1} aria-hidden={!opened || ratingActive} onClick={onDelete}><Trash2 size={20} /><span>{deleting ? '删除中…' : '删除'}</span></button>}
-    <div className={`mistake-item mistake-row-surface ${grid ? 'mistake-card' : ''} ${dragOffset !== null && ratingPhase === 'idle' ? 'is-dragging' : ''}`} inert={ratingPhase === 'opening' || ratingPhase === 'open' || ratingPhase === 'closing'} style={{ transform: offset ? `translateX(${offset}px)` : undefined }}
+    {!trashed && !selectionMode && <button type="button" className="swipe-delete-action" style={{ width: actionWidth }} hidden={ratingActive} disabled={!opened || disabled} tabIndex={opened ? 0 : -1} aria-hidden={!opened || ratingActive} onClick={onDelete}><Trash2 size={20} /><span>{deleting ? '删除中…' : '删除'}</span></button>}
+    <div className={`mistake-item mistake-row-surface ${grid ? 'mistake-card' : ''} ${dragOffset !== null && ratingPhase === 'idle' ? 'is-dragging' : ''}`} inert={!selectionMode && (ratingPhase === 'opening' || ratingPhase === 'open' || ratingPhase === 'closing')} style={{ transform: offset ? `translateX(${offset}px)` : undefined }}
       onKeyDown={(event) => {
-        if (mobile && !trashed && !disabled && event.key === 'Delete') { event.preventDefault(); onOpenChange(true); }
+        if (mobile && !trashed && !selectionMode && !disabled && event.key === 'Delete') { event.preventDefault(); onOpenChange(true); }
       }}>
-      <a className="mistake-detail-link" href={`#/mistakes/${mistake.id}`} onDragStart={(event) => { if (mobile) event.preventDefault(); }}>
-        <div className="mistake-main"><span className={`subject-icon subject-${mistake.subjectId}`}>{subjectName?.slice(0, 1) || <FileText size={20} />}</span><div className="mistake-copy">
-          <h3><MarkdownContent variant="compact" emptyText="尚未填写题干">{mistake.question}</MarkdownContent></h3>
-          <div className="mistake-meta"><DataTypeBadge isTest={mistake.isTest} /><span className={`subject-tag subject-${mistake.subjectId}`}>{subjectName || mistake.subjectId || <span className="text-muted">未选学科</span>}</span><span className={`knowledge-tag ${knowledgePoints.some((point) => point.id === mistake.primaryKnowledgePointId) ? '' : 'text-muted'}`}>{knowledgeLabel(knowledgePoints, mistake.primaryKnowledgePointId)}</span>{mistake.lifecycle === 'draft' && <span className="draft-tag">草稿</span>}</div>
-          <SearchSummary search={mistake.search} />
-        </div></div>
-      </a>
+      {selectionMode ? <label className="mistake-detail-link mistake-selection-label">{main}</label> : <a className="mistake-detail-link" href={`#/mistakes/${mistake.id}`} onDragStart={(event) => { if (mobile) event.preventDefault(); }}>{main}</a>}
       <div className="mistake-footer"><StatusBadge status={mistake.latestReviewResult || 'unreviewed'} /><span className="mistake-date"><span className="mistake-date-line"><StarRatingDisplay value={mistake.rating} compact /><time dateTime={mistake.deletedAt || mistake.updatedAt}>{formatDate(mistake.deletedAt || mistake.updatedAt)}</time></span>{trashed && <small>还剩 {remainingDays} 天</small>}</span></div>
-      <div className="mistake-actions">{trashed ? <><button type="button" className="button ghost restore-mistake-button" disabled={disabled} onClick={onRestore}><RotateCcw size={15} />{restoring ? '恢复中…' : '恢复'}</button><button type="button" className="button ghost danger-text permanent-delete-button" disabled={disabled} onClick={onPermanentDelete}><Trash2 size={15} />彻底删除</button></> : <><button type="button" className="mistake-rating-trigger" aria-haspopup="dialog" disabled={disabled || ratingSaving} onClick={() => onRatingOpenChange(true)}><Star size={17} /><span>调整星级</span></button><DeleteButton armed={armed} busy={deleting} disabled={disabled} onArmedChange={onArmedChange} onDelete={onDelete} /></>}</div>
+      {selectionMode ? <span className="mistake-selection-state">{selected ? '已选择' : '未选择'}</span> : <div className="mistake-actions">{trashed ? <><button type="button" className="button ghost restore-mistake-button" disabled={disabled} onClick={onRestore}><RotateCcw size={15} />{restoring ? '恢复中…' : '恢复'}</button><button type="button" className="button ghost danger-text permanent-delete-button" disabled={disabled} onClick={onPermanentDelete}><Trash2 size={15} />彻底删除</button></> : <><button type="button" className="mistake-rating-trigger" aria-haspopup="dialog" disabled={disabled || ratingSaving} onClick={() => onRatingOpenChange(true)}><Star size={17} /><span>调整星级</span></button><DeleteButton armed={armed} busy={deleting} disabled={disabled} onArmedChange={onArmedChange} onDelete={onDelete} /></>}</div>}
     </div>
   </div>;
 }

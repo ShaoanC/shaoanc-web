@@ -1,0 +1,94 @@
+.library-header-actions,
+.library-toolbar-actions,
+.library-selection-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.library-select-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.library-select-trigger:hover:not(:disabled) {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.library-selection-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  padding: 12px 24px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--primary-soft);
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.library-select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 32px;
+  cursor: pointer;
+}
+
+.library-selection-count strong { color: var(--primary); }
+.library-selection-actions { margin-left: auto; gap: 16px; }
+.library-selection-actions button {
+  min-height: 32px;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: var(--primary);
+  font-size: 14px;
+}
+
+.library-select-trigger:focus-visible,
+.library-selection-actions button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+}
+
+.mistake-row.is-selecting .mistake-selection-label { cursor: pointer; }
+.mistake-row.is-selecting .mistake-main > .checkbox-control { flex-shrink: 0; }
+.mistake-row.is-selecting.is-selected > .mistake-row-surface { background: var(--primary-soft); }
+.mistake-row.is-selecting:has(.checkbox-input:focus-visible) > .mistake-row-surface {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+.mistake-selection-state {
+  justify-self: end;
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+.mistake-row.is-selected .mistake-selection-state { color: var(--primary); }
+.mistake-row.is-grid .mistake-selection-state { align-self: flex-end; margin-top: auto; }
+.detail-actions .detail-export-button { white-space: nowrap; }
+
+@media (max-width: 640px) {
+  .library-header-actions { width: 100%; }
+  .page-header .library-header-actions > .button { width: auto; flex: 1; }
+  .library-panel .results-toolbar { flex-wrap: wrap; }
+  .library-toolbar-actions { margin-left: auto; gap: 8px; }
+  .library-selection-toolbar { gap: 8px 14px; padding: 10px 16px; font-size: 13px; }
+  .library-selection-actions { gap: 14px; }
+  .library-selection-actions button { font-size: 13px; }
+  .mistake-row.is-selecting .mistake-main { gap: 10px; }
+  .mistake-row.is-selecting .mistake-main > .subject-icon { display: none; }
+  .mistake-row.is-selecting .mistake-selection-state { display: none; }
+}
