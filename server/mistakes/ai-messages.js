@@ -24,7 +24,7 @@ function recognitionMessages({ type, input = {}, subjects = [], directory = [], 
         '3. 保留图形：同一次请求完成转写与配图定位，遵守下方图形协议；转写文字的完整性优先。',
         '4. 建议归类：优先复用目录的完整知识点名称路径，缺少时建议准确简短的新分支。subjectId 必须原样使用 subjects 中某项的 id 字符串，不能填中文名称；不确定时 subjectId:null、primaryPath:[] 并记录 issue，不丢弃文字。primaryPath 是名称字符串数组，auxiliaryPaths 是路径数组。'
     ] : [
-        '1. 忠实转写：按图片提交顺序提取最终答案和对应的已有解题步骤，保留题号、公式和标注，重叠部分去重，不自行解题，不丢弃长解析。选择题保留最终选择，填空题保留所填答案，多小题保留对应题号。',
+        '1. 忠实转写：按图片提交顺序提取最终答案和对应的已有解题步骤，保留公式和必要标注，重叠部分去重，不自行解题，不丢弃长解析。选择题保留最终选择，填空题保留所填答案。答案正文不得添加、保留或补写题号（如“第3题”“3.”“（1）”等题目编号）；多小题按原顺序分段呈现，不添加题号，保留解题步骤中的必要数值、公式编号和图形标注。',
         '2. 区分原题与作答：图片可能复用题干图。排除原题题干、提问、空横线或括号、完整选项列表；保留已有步骤中必要的条件引用和推导。存在明确订正关系时提取蓝色等订正笔迹中的最终答案与步骤，排除被替换或划掉的作答、批改符号及分数。颜色、印刷或手写仅为辅助线索，结合位置、划改和语义判断；无订正时忠实转写，不擅自判断正误。答案冲突无法判定的局部写[待确认]，不计算补全。',
         '3. 保留图形：同一次请求转写并定位必要图形，遵守下方图形协议。'
     ];
@@ -38,7 +38,7 @@ function recognitionMessages({ type, input = {}, subjects = [], directory = [], 
         : { [type]: 'Markdown 内容', issues: [], figures: [] };
     // Saved OCR text is only a conflict snapshot; do not send it back to the recognition model.
     const content = [{ type: 'text', text: JSON.stringify(type === 'question' ? { subjects, directory }
-        : type === 'answer' ? { instruction: '按图片提交顺序忠实转写答案，保留必要图形并记录疑点' }
+        : type === 'answer' ? { instruction: '按图片提交顺序忠实转写答案，答案正文不添加或保留题号，多小题按原顺序分段呈现，保留必要图形并记录疑点' }
             : { question: input.question, answer: input.answer }) }];
     for (const [index, image] of images.entries()) {
         const size = jpegDimensions(image.bytes);

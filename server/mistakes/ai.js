@@ -158,7 +158,7 @@ function analysisNoticeFor(row) {
 function createJob(userId, body) {
     if (!['question', 'answer', 'analysis'].includes(body.type)) fail(400, '无效的 AI 任务类型');
     const clientId = body.clientId === undefined ? null : body.clientId;
-    if (clientId !== null && (typeof clientId !== 'string' || !clientId.trim() || clientId.length > 100)) fail(400, '请提供有效的 AI 提交编号');
+    if (body.clientId !== undefined && (typeof clientId !== 'string' || !clientId.trim() || clientId.length > 100)) fail(400, '请提供有效的 AI 提交编号');
     const row = activeMistake(Number(body.mistakeId), userId);
     const parsed = inputSchema.safeParse(body.input);
     if (!parsed.success) fail(400, '请保存有效的题目内容后再识别');

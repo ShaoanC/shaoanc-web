@@ -4,13 +4,14 @@ import imageCompression from 'browser-image-compression';
 import compressionWorkerUrl from 'browser-image-compression/dist/browser-image-compression.js?url';
 import { ArrowLeft, ArrowRight, Camera, Crop, ImagePlus, RotateCcw, RotateCw, Trash2 } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { api } from './api';
 import { AiDialog } from './AiDialog';
+import { usePhotoUploads } from './PhotoUploads';
+import type { PreparedPhoto } from './photo-upload-queue';
 import type { ImagePurpose, MistakeImage } from './ai-types';
 import type { Mistake } from './types';
 import 'react-image-crop/dist/ReactCrop.css';
 
-type Entry = { key: string; clientId: string; file: File; url: string; crop: PercentCrop; uploaded?: MistakeImage };
+type Entry = { key: string; clientId: string; file: File; url: string; crop: PercentCrop };
 export interface PhotoInputHandle { reuse: (image: MistakeImage) => Promise<void> }
 const fullCrop: PercentCrop = { unit: '%', x: 0, y: 0, width: 100, height: 100 };
 const compressJpeg = (file: File) => imageCompression(file, { maxSizeMB: 1.5, maxWidthOrHeight: 2560, fileType: 'image/jpeg', initialQuality: .88, useWebWorker: true, libURL: compressionWorkerUrl });
@@ -39,7 +40,9 @@ async function jpeg(file: File) {
   } finally { URL.revokeObjectURL(url); }
 }
 
-export function PhotoInput({ purpose, ensureSaved, onRecognize, onUploaded, actions, aiAvailable, ref }: { purpose: ImagePurpose; ensureSaved: () => Promise<Mistake>; onRecognize: (ids: number[]) => Promise<void>; onUploaded?: (ids: number[]) => void; actions?: ReactNode; aiAvailable: boolean; ref?: Ref<PhotoInputHandle> }) {
+export function PhotoInput({ purpose, recordId, ensureSaved, actions, aiAvailable, ref }: { purpose: ImagePurpose; recordId?: number; ensureSaved: () => Promise<Mistake>; actions?: ReactNode; aiAvailable: boolean; ref?: Ref<PhotoInputHandle> }) {
+  const { queue, batches } = usePhotoUploads();
+  const uploads = batches.filter((batch) => batch.mistakeId === recordId && batch.purpose === purpose && batch.status !== 'completed');
   const [entries, setEntries] = useState<Entry[]>([]);
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState(0);
@@ -70,7 +73,7 @@ export function PhotoInput({ purpose, ensureSaved, onRecognize, onUploaded, acti
       add([new File([await response.blob()], image.originalName, { type: 'image/jpeg' })]);
     } catch (err) { toast.error((err as Error).message); }
   } }));
-  function changeCrop(crop: PercentCrop) { setEntries((items) => items.map((entry, index) => index === selected ? { ...entry, crop, uploaded: undefined, clientId: crypto.randomUUID() } : entry)); }
+  function changeCrop(crop: PercentCrop) { setEntries((items) => items.map((entry, index) => index === selected ? { ...entry, crop, clientId: crypto.randomUUID() } : entry)); }
   async function rotate(direction: -1 | 1) {
     if (!current || busy) return;
     setBusy(true); setImageReady(false);
@@ -84,7 +87,7 @@ export function PhotoInput({ purpose, ensureSaved, onRecognize, onUploaded, acti
       context.drawImage(image, -image.naturalWidth / 2, -image.naturalHeight / 2);
       const file = await losslessFile(canvas, current.file.name.replace(/\.[^.]+$/, '') + '.png');
       const url = objectUrl(file);
-      setEntries((items) => items.map((entry) => entry.key === current.key ? { ...entry, file, url, crop: { ...fullCrop }, uploaded: undefined, clientId: crypto.randomUUID() } : entry));
+      setEntries((items) => items.map((entry) => entry.key === current.key ? { ...entry, file, url, crop: { ...fullCrop }, clientId: crypto.randomUUID() } : entry));
       URL.revokeObjectURL(current.url); urls.current.delete(current.url);
     } catch (err) { setImageReady(true); toast.error((err as Error).message); }
     finally { setBusy(false); }
@@ -114,30 +117,22 @@ export function PhotoInput({ purpose, ensureSaved, onRecognize, onUploaded, acti
   async function upload(recognize: boolean) {
     if (!entries.length || busy) return;
     setBusy(true);
-    const toastId = toast.loading(`正在保存${label}图片…`);
     const snapshot = [...entries];
     try {
+      setStage('正在保存草稿…');
       const item = await ensureSaved();
-      const ids: number[] = [];
+      const files: PreparedPhoto[] = [];
       for (const [index, entry] of snapshot.entries()) {
-        if (entry.uploaded) { ids.push(entry.uploaded.id); continue; }
-        const report = (value: string) => { setStage(value); toast.update(toastId, { render: value }); };
-        report(`正在压缩第 ${index + 1}/${snapshot.length} 张图片…`);
+        setStage(`正在压缩第 ${index + 1}/${snapshot.length} 张图片…`);
         const original = await jpeg(entry.file);
         const crop = await jpeg(await croppedFile(entry));
-        const form = new FormData();
-        form.append('original', original, entry.file.name.replace(/\.[^.]+$/, '') + '.jpg');
-        form.append('crop', crop, 'crop.jpg'); form.append('purpose', purpose); form.append('clientId', entry.clientId);
-        report(`正在上传第 ${index + 1}/${snapshot.length} 张图片…`);
-        const uploaded = await api<MistakeImage>(`/mistakes/${item.id}/images`, { method: 'POST', body: form });
-        ids.push(uploaded.id);
-        setEntries((items) => items.map((value) => value.key === entry.key ? { ...value, uploaded } : value));
+        files.push({ clientId: entry.clientId, original, crop, originalName: entry.file.name.replace(/\.[^.]+$/, '') + '.jpg' });
       }
-      toast.update(toastId, { render: `${snapshot.length} 张${label}图片已备份。`, type: 'success', isLoading: false, autoClose: 4500 });
-      onUploaded?.(ids);
-      if (recognize) await onRecognize(ids);
+      queue.enqueue({ mistakeId: item.id, purpose, input: { question: item.question, answer: item.answer, analysis: item.analysis, subjectId: item.subjectId, primaryKnowledgePointId: item.primaryKnowledgePointId, auxiliaryKnowledgePointIds: item.auxiliaryKnowledgePointIds }, files, recognize });
       setOpen(false);
-    } catch (err) { toast.update(toastId, { render: (err as Error).message, type: 'error', isLoading: false, autoClose: false, closeButton: true }); }
+      setEntries([]); setSelected(0);
+      snapshot.forEach((entry) => { URL.revokeObjectURL(entry.url); urls.current.delete(entry.url); });
+    } catch (err) { toast.error((err as Error).message); }
     finally { setBusy(false); setStage(''); }
   }
   function fileInput(event: React.ChangeEvent<HTMLInputElement>) { add(Array.from(event.target.files || [])); event.target.value = ''; }
@@ -147,6 +142,7 @@ export function PhotoInput({ purpose, ensureSaved, onRecognize, onUploaded, acti
     <input ref={camera} type="file" accept="image/jpeg,image/png,image/webp" capture="environment" hidden onChange={fileInput} disabled={busy} />
     <input ref={album} type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onChange={fileInput} disabled={busy} />
     <div className="photo-actions"><button type="button" className="button secondary" disabled={busy} onClick={() => camera.current?.click()}><Camera size={16} />拍照{purpose === 'answer' ? '识别答案' : ''}</button><button type="button" className="button secondary" disabled={busy} onClick={() => album.current?.click()}><ImagePlus size={16} />选择图片</button>{actions}{entries.length > 0 && <button type="button" className="table-button" onClick={() => setOpen(true)}><Crop size={15} />{entries.length} 张待选图片</button>}</div>
+    {uploads.map((batch) => <div className="photo-upload-status" role="status" key={batch.id}><span>{batch.message}</span>{batch.status === 'failed' && <button type="button" className="table-button" onClick={() => queue.retry(batch.id)}>重试</button>}</div>)}
     <AiDialog open={open} onClose={() => { if (!busy) setOpen(false); }} title={`裁剪${label}图片`} wide>
       <div className="photo-thumbnails">{entries.map((entry, index) => <div className={`photo-thumbnail${selected === index ? ' active' : ''}`} key={entry.key}>
         <button type="button" disabled={busy} onClick={() => setSelected(index)} aria-label={`选择第 ${index + 1} 张图片`}><img src={entry.url} alt={`${label}图片 ${index + 1}`} /><small>{index + 1}. {entry.file.name}</small></button>

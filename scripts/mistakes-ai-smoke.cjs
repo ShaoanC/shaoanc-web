@@ -179,9 +179,9 @@ async function runAiSmoke() {
         assert.deepEqual(await alice('GET', first.cropUrl.replace('/api/mistakes', '')), jpeg);
         await bob('GET', first.cropUrl.replace('/api/mistakes', ''), null, 404);
         await anonymous('GET', first.cropUrl.replace('/api/mistakes', ''), null, 401);
-        async function completed(job) {
+        async function completed(job, request = alice) {
             for (let index = 0; index < 250; index += 1) {
-                const current = await alice('GET', `/ai/jobs/${job.id}`);
+                const current = await request('GET', `/ai/jobs/${job.id}`);
                 if (!['queued', 'running', 'retrying'].includes(current.status)) return current;
                 await delay(50);
             }
@@ -191,8 +191,19 @@ async function runAiSmoke() {
         const jobCount = async (type) => (await alice('GET', '/ai/jobs')).filter((job) => job.type === type).length;
 
         failures = 1;
-        const question = await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'question', input: input(mistake), imageIds: [first.id, second.id] }, 201);
+        const questionRequest = { clientId: 'background-question', mistakeId: mistake.id, type: 'question', input: input(mistake), imageIds: [first.id, second.id] };
+        const question = await alice('POST', '/ai/jobs', questionRequest, 201);
+        assert.equal((await alice('POST', '/ai/jobs', questionRequest, 201)).id, question.id, 'Background request retries reuse an active job');
+        const sameQuestionRequest = { ...questionRequest, clientId: 'background-question-second' };
+        assert.equal((await alice('POST', '/ai/jobs', sameQuestionRequest, 201)).id, question.id, 'Different request IDs preserve active fingerprint deduplication');
         const recognized = await completed(question);
+        for (const request of [questionRequest, sameQuestionRequest]) {
+            assert.equal((await alice('POST', '/ai/jobs', request, 201)).id, question.id, 'A lost creation response never creates another job after completion');
+        }
+        await alice('POST', '/ai/jobs', { ...questionRequest, input: { ...questionRequest.input, question: 'changed' } }, 409);
+        await alice('POST', '/ai/jobs', { ...questionRequest, imageIds: [second.id, first.id] }, 409);
+        await alice('POST', '/ai/jobs', { ...questionRequest, automatic: true }, 409);
+        await alice('POST', '/ai/jobs', { ...questionRequest, clientId: '' }, 400);
         assert.equal(recognized.status, 'succeeded', `${recognized.error} (mock calls: ${calls})`);
         assert.equal(recognized.attempts, 2);
         assert.equal(recognized.applyStatus, 'applied', 'Ordinary OCR fills an empty question automatically');
@@ -240,6 +251,11 @@ async function runAiSmoke() {
         const otherImage = await upload('question', 'other', undefined, alice, otherMistake.id);
         const bobMistake = await bob('POST', '/mistakes', {}, 201);
         const bobImage = await upload('question', 'bob', undefined, bob, bobMistake.id);
+        await alice('POST', '/ai/jobs', { ...questionRequest, mistakeId: otherMistake.id, imageIds: [otherImage.id] }, 409);
+        const bobRequest = { ...questionRequest, mistakeId: bobMistake.id, input: input(bobMistake), imageIds: [bobImage.id] };
+        const bobJob = await completed(await bob('POST', '/ai/jobs', bobRequest, 201), bob);
+        assert.notEqual(bobJob.id, question.id, 'Request IDs are scoped to their owner');
+        assert.equal((await bob('POST', '/ai/jobs', bobRequest, 201)).id, bobJob.id);
         const unrelated = await upload('question', 'unrelated');
         await upload('question', 'invalid-derived-owner', bobImage.id, alice, mistake.id, 400);
         await upload('question', 'invalid-derived-mistake', otherImage.id, alice, mistake.id, 400);
@@ -452,6 +468,7 @@ async function runAiSmoke() {
         assert.ok((await alice('GET', '/ai/jobs')).filter((job) => job.mistakeId === mistake.id).every((job) => job.mistakeDeleted), 'Task lists identify records in trash');
         assert.equal((await alice('GET', `/mistakes/${mistake.id}/images`)).length, imageRows.length, 'Trash retains source and derived images');
         await alice('DELETE', `/mistakes/${mistake.id}/permanent`);
+        assert.equal(app.db.prepare('SELECT COUNT(*) AS total FROM ai_job_requests WHERE user_id = ?').get(users.alice).total, 0, 'Permanent deletion removes the request mappings');
         for (const row of imageRows) for (const filename of [row.original_path, row.crop_path]) assert.equal(fs.existsSync(path.join(process.env.MISTAKES_UPLOADS_PATH, filename)), false, 'Permanent deletion removes source and derived files');
         await alice('GET', first.cropUrl.replace('/api/mistakes', ''), null, 404);
         assert.ok(calls > 0);
