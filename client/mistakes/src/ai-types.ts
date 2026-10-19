@@ -44,6 +44,7 @@ export interface AiJob {
   nextAttemptAt: string | null;
 }
 export interface AiJobRequest {
+  clientId?: string;
   mistakeId: number;
   type: AiJobType;
   imageIds?: number[];

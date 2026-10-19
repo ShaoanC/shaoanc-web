@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowRight, BookOpen, CheckCircle2, Download, LayoutGrid, List, ListChecks, Plus, Search, SlidersHorizontal, Target, Trash2, X } from 'lucide-react';
+import { Archive, ArrowRight, BookOpen, CheckCircle2, Download, LayoutGrid, List, ListChecks, LoaderCircle, Plus, Search, SlidersHorizontal, Target, Trash2, X } from 'lucide-react';
 import { api, json } from '../api';
 import { knowledgeLabel, useApp } from '../context';
 import { Checkbox, EmptyState, ErrorState, Modal, PageHeader } from '../components';
@@ -14,7 +14,7 @@ import '../export-selection.css';
 
 type LibraryTab = 'archived' | 'draft' | 'trash';
 type ActionState = { id: number; mode: 'confirm' | 'swipe' | 'rating' } | null;
-type BusyState = { id?: number; kind: 'delete' | 'restore' | 'permanent' | 'clear' | 'rating' } | null;
+type BusyState = { id?: number; kind: 'delete' | 'restore' | 'permanent' | 'clear' | 'rating' | 'archive' } | null;
 type LibraryFilters = { subjectId: string; knowledgePointId: string; status: string; rating: string };
 const EMPTY_FILTERS: LibraryFilters = { subjectId: '', knowledgePointId: '', status: '', rating: '' };
 
@@ -67,6 +67,7 @@ export function MistakesPage() {
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [exportOpen, setExportOpen] = useState(false);
+  const [archiveError, setArchiveError] = useState('');
   const [action, setAction] = useState<ActionState>(null);
   const [busy, setBusy] = useState<BusyState>(null);
   const [permanentTarget, setPermanentTarget] = useState<Mistake | 'all' | null>(null);
@@ -130,6 +131,7 @@ export function MistakesPage() {
   useEffect(() => { setAction(null); }, [lifecycle, subjectId, knowledgePointId, status, rating, keyword, view]);
   useEffect(() => {
     setSelectedIds([]);
+    setArchiveError('');
     setExportOpen(false);
     if (lifecycle === 'trash') setSelectionMode(false);
   }, [lifecycle, subjectId, knowledgePointId, status, rating, keyword]);
@@ -228,6 +230,31 @@ export function MistakesPage() {
     finally { setBusy(null); }
   }
 
+  async function archiveSelected() {
+    if (busy || exportDisabled || lifecycle !== 'draft' || !selectedIds.length) return;
+    const ids = selectedIds.filter((id) => mistakes.some((item) => item.id === id));
+    setBusy({ kind: 'archive' });
+    setArchiveError('');
+    const archivedIds = new Set<number>();
+    let failure = '';
+    try {
+      for (const id of ids) {
+        try {
+          await api(`/mistakes/${id}`, json({ lifecycle: 'archived' }, 'PATCH'));
+          archivedIds.add(id);
+        } catch (err) { failure = (err as Error).message; }
+      }
+      setSelectedIds((current) => current.filter((id) => !archivedIds.has(id)));
+      if (archivedIds.size) notify(`已归档 ${archivedIds.size} 道错题。`);
+      if (failure) {
+        const message = `${ids.length - archivedIds.size} 道未归档：${failure}。未成功的题目已保留选择，可完善后重试。`;
+        setArchiveError(message);
+        notify(message, 'error');
+      }
+      await reload.current(false);
+    } finally { setBusy(null); }
+  }
+
   const hasFilters = Boolean(subjectId || knowledgePointId || status || rating !== '' || keyword.trim());
   const searching = Boolean(search.trim());
   const exportDisabled = trashed || loading || Boolean(error) || Boolean(busy) || keyword !== search || mistakes.length === 0;
@@ -263,11 +290,19 @@ export function MistakesPage() {
         {mobile ? <button ref={filterTrigger} type="button" className="library-filter-trigger" data-active={filterCount > 0} aria-haspopup="dialog" aria-expanded={filterOpen} aria-label={`筛选错题${filterCount ? `，已选 ${filterCount} 项条件` : ''}`} onClick={openFilters}><SlidersHorizontal size={17} /><span>筛选</span>{filterCount > 0 && <span className="library-filter-count">{filterCount}</span>}</button> : <LibraryFilterFields filters={appliedFilters} onChange={updateFilters} />}
       </div>
       <div className="results-toolbar"><span><SlidersHorizontal size={14} /> {searching ? '搜索结果' : hasFilters ? '筛选结果' : trashed ? '暂存的错题' : lifecycle === 'draft' ? '继续完善你的草稿' : '你的学习积累'}<strong>{loading ? '…' : mistakes.length}</strong> 道{hasFilters && <button className="reset-filter" onClick={clearFilters}>清除筛选</button>}</span><div className="library-toolbar-actions">{!trashed && !selectionMode && <button className="library-select-trigger" disabled={exportDisabled} onClick={startSelection}><ListChecks size={16} />选择题目</button>}<div className="view-switch" aria-label="展示方式"><button className={view === 'list' ? 'active' : ''} onClick={() => setView('list')} aria-label="列表视图" aria-pressed={view === 'list'}><List size={17} /></button><button className={view === 'grid' ? 'active' : ''} onClick={() => setView('grid')} aria-label="卡片视图" aria-pressed={view === 'grid'}><LayoutGrid size={16} /></button></div></div></div>
-      {!trashed && selectionMode && <div className="library-selection-toolbar" aria-label="选择导出的题目">
+      {!trashed && selectionMode && <div className="library-selection-toolbar" aria-label="批量选择题目">
         <label className="library-select-all"><Checkbox checked={allSelected} indeterminate={selectedIds.length > 0 && !allSelected} disabled={exportDisabled} onChange={() => setSelectedIds(allSelected ? [] : mistakes.map((mistake) => mistake.id))} /><span>全选当前结果</span></label>
         <span className="library-selection-count" role="status">已选 <strong>{selectedIds.length}</strong> 道</span>
-        <div className="library-selection-actions"><button disabled={!selectedIds.length} onClick={() => setSelectedIds([])}>清空</button><button onClick={exitSelection}>退出选择</button></div>
+        <div className="library-selection-actions"><button disabled={!selectedIds.length || Boolean(busy)} onClick={() => setSelectedIds([])}>清空</button><button disabled={Boolean(busy)} onClick={exitSelection}>退出选择</button></div>
+        {lifecycle === 'draft' && <div className="library-archive-dock">
+          {mobile && <span>已选 <strong>{selectedIds.length}</strong> 道</span>}
+          <button className="button primary" disabled={exportDisabled || !selectedIds.length} onClick={() => void archiveSelected()}>
+            {busy?.kind === 'archive' ? <LoaderCircle size={17} className="spin" /> : <Archive size={17} />}
+            {busy?.kind === 'archive' ? '正在归档…' : `归档所选${selectedIds.length ? `（${selectedIds.length}）` : ''}`}
+          </button>
+        </div>}
       </div>}
+      {lifecycle === 'draft' && archiveError && <p className="library-archive-error" role="alert">{archiveError}</p>}
       <LoadingContent loading={loading} kind="rows">{error ? <ErrorState message={error} retry={() => void load()} /> : mistakes.length === 0 ? <EmptyState filtered={hasFilters}
         title={searching ? '没有找到相关错题' : hasFilters ? '没有找到符合条件的错题' : trashed ? '回收站是空的' : lifecycle === 'draft' ? '草稿箱还是空的' : '你的第一道错题，从这里开始'}
         description={hasFilters ? '试试其他关键词，或调整筛选条件。' : trashed ? '删除的错题会在这里保留 30 天。' : lifecycle === 'draft' ? '录入时可以先存为草稿，之后再慢慢完善。' : undefined}
@@ -283,6 +318,7 @@ export function MistakesPage() {
             onDelete={() => void moveOrRestore(mistake, 'delete')} onRestore={() => void moveOrRestore(mistake, 'restore')} onPermanentDelete={() => setPermanentTarget(mistake)} />)}
         </div>}</LoadingContent>
     </div>
+    {mobile && lifecycle === 'draft' && selectionMode && <div className="library-archive-spacer" aria-hidden="true" />}
     {mobile && <MobileFiltersDrawer open={filterOpen} onOpenChange={(open) => open ? openFilters() : setFilterOpen(false)} onApply={applyFilters} onReset={() => setDraftFilters(EMPTY_FILTERS)} triggerRef={filterTrigger}>
       {(portalContainer) => <LibraryFilterFields filters={draftFilters} onChange={setDraftFilters} portalContainer={portalContainer} withLabels />}
     </MobileFiltersDrawer>}

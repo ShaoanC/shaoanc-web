@@ -129,6 +129,12 @@ db.exec(`
     CREATE INDEX IF NOT EXISTS ai_jobs_owner ON ai_jobs(user_id, id);
     CREATE INDEX IF NOT EXISTS ai_jobs_pending ON ai_jobs(status);
     CREATE UNIQUE INDEX IF NOT EXISTS ai_jobs_automatic_input ON ai_jobs(mistake_id, type, fingerprint) WHERE automatic = 1;
+    CREATE TABLE IF NOT EXISTS ai_job_requests (
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        client_id TEXT NOT NULL,
+        job_id INTEGER NOT NULL REFERENCES ai_jobs(id) ON DELETE CASCADE,
+        PRIMARY KEY (user_id, client_id)
+    );
 `);
 if (!db.prepare('PRAGMA table_info(mistake_images)').all().some((column) => column.name === 'source_image_id')) {
     db.exec('ALTER TABLE mistake_images ADD COLUMN source_image_id INTEGER REFERENCES mistake_images(id) ON DELETE SET NULL');

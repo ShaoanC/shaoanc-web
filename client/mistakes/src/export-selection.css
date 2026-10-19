@@ -80,6 +80,10 @@
 .mistake-row.is-grid .mistake-selection-state { align-self: flex-end; margin-top: auto; }
 .detail-actions .detail-export-button { white-space: nowrap; }
 
+.library-archive-dock { display: flex; align-items: center; gap: 16px; }
+.library-archive-dock .button { white-space: nowrap; }
+.library-archive-error { padding: 12px 24px; color: var(--error); font-size: 14px; line-height: 1.6; }
+
 @media (max-width: 640px) {
   .library-header-actions { width: 100%; }
   .page-header .library-header-actions > .button { width: auto; flex: 1; }
@@ -91,4 +95,21 @@
   .mistake-row.is-selecting .mistake-main { gap: 10px; }
   .mistake-row.is-selecting .mistake-main > .subject-icon { display: none; }
   .mistake-row.is-selecting .mistake-selection-state { display: none; }
+  .library-archive-dock {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 40;
+    justify-content: space-between;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid var(--border-medium);
+    background: var(--surface-2);
+    box-shadow: 0 -4px 16px #0000000a;
+  }
+  .library-archive-dock .button { min-height: 44px; flex: 1; max-width: 240px; }
+  .library-archive-dock strong { color: var(--primary); }
+  .library-archive-spacer { height: calc(80px + env(safe-area-inset-bottom, 0px)); }
+  .library-archive-error { padding: 12px 16px; }
+  .library-selection-actions button, .library-select-all { min-height: 44px; }
 }

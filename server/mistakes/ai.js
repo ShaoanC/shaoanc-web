@@ -157,12 +157,12 @@ function analysisNoticeFor(row) {
 
 function createJob(userId, body) {
     if (!['question', 'answer', 'analysis'].includes(body.type)) fail(400, '无效的 AI 任务类型');
+    const clientId = body.clientId === undefined ? null : body.clientId;
+    if (clientId !== null && (typeof clientId !== 'string' || !clientId.trim() || clientId.length > 100)) fail(400, '请提供有效的 AI 提交编号');
     const row = activeMistake(Number(body.mistakeId), userId);
     const parsed = inputSchema.safeParse(body.input);
     if (!parsed.success) fail(400, '请保存有效的题目内容后再识别');
     const input = parsed.data;
-    const config = publicConfig();
-    if (!config.enabled || !config.configured) fail(400, '管理员尚未启用并配置 AI 服务');
     let imageIds = Array.isArray(body.imageIds) ? [...new Set(body.imageIds)] : [];
     if (body.type !== 'analysis' && (!imageIds.length || imageIds.length > 12)) fail(400, '每次请选择 1–12 张裁剪图');
     if (body.type !== 'analysis' && imageIds.some((id) => !Number.isSafeInteger(id) || id <= 0)) fail(400, '图片编号无效');
@@ -180,13 +180,32 @@ function createJob(userId, body) {
     }
     const fingerprint = crypto.createHash('sha256').update(JSON.stringify([body.type, input, imageIds,
         references.map((image) => [image.id, image.variant, image[`${image.variant}_path`]])])).digest('hex');
+    if (clientId) {
+        const requested = db.prepare(`SELECT j.* FROM ai_job_requests r JOIN ai_jobs j ON j.id = r.job_id
+            WHERE r.user_id = ? AND r.client_id = ?`).get(userId, clientId);
+        if (requested) {
+            if (requested.mistake_id !== row.id || requested.fingerprint !== fingerprint || requested.automatic !== (body.automatic ? 1 : 0)) {
+                fail(409, 'AI 提交编号已用于其他内容，请重新提交');
+            }
+            return serializeJob(requested);
+        }
+    }
+    const config = publicConfig();
+    if (!config.enabled || !config.configured) fail(400, '管理员尚未启用并配置 AI 服务');
     const previous = db.prepare(`SELECT * FROM ai_jobs WHERE mistake_id = ? AND type = ? AND fingerprint = ?
         AND (status IN ('queued', 'running', 'retrying') OR (? = 1 AND automatic = 1)) ORDER BY id DESC LIMIT 1`)
         .get(row.id, body.type, fingerprint, body.automatic ? 1 : 0);
-    if (previous) return serializeJob(previous);
-    const inserted = db.prepare(`INSERT INTO ai_jobs (mistake_id, user_id, type, input_json, image_ids, automatic, fingerprint, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(row.id, userId, body.type, JSON.stringify(input), JSON.stringify(imageIds), body.automatic ? 1 : 0, fingerprint, now());
-    const job = db.prepare('SELECT * FROM ai_jobs WHERE id = ?').get(inserted.lastInsertRowid);
+    const job = db.transaction(() => {
+        let result = previous;
+        if (!result) {
+            const inserted = db.prepare(`INSERT INTO ai_jobs (mistake_id, user_id, type, input_json, image_ids, automatic, fingerprint, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(row.id, userId, body.type, JSON.stringify(input), JSON.stringify(imageIds), body.automatic ? 1 : 0, fingerprint, now());
+            result = db.prepare('SELECT * FROM ai_jobs WHERE id = ?').get(inserted.lastInsertRowid);
+        }
+        if (clientId) db.prepare('INSERT INTO ai_job_requests (user_id, client_id, job_id) VALUES (?, ?, ?)').run(userId, clientId, result.id);
+        return result;
+    })();
+    if (previous) return serializeJob(job);
     schedule(job.id);
     return serializeJob(job);
 }
