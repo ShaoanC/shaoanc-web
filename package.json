@@ -43,7 +43,6 @@
     "unified": "^11.0.5",
     "browser-image-compression": "^2.0.2",
     "multer": "^2.4.0",
-    "openai": "^7.35.0",
     "p-queue": "^10.0.0",
     "p-retry": "^8.0.1",
     "react-image-crop": "^11.1.2",

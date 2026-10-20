@@ -1,7 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const dotenv = require('dotenv');
-const OpenAI = require('openai');
 const { fail } = require('./auth');
 
 const configPath = path.resolve(process.env.MISTAKES_AI_CONFIG_PATH || path.join(__dirname, '..', '..', '.env.ai'));
@@ -55,10 +54,10 @@ function saveConfig(body) {
     return publicConfig(true);
 }
 
-function aiClient() {
+function requireAiConfig() {
     const config = readConfig();
     if (!config.enabled || !config.baseUrl || !config.model || !config.apiKey) fail(503, '管理员尚未启用并配置 AI 服务');
-    return { config, client: new OpenAI({ apiKey: config.apiKey, baseURL: config.baseUrl, maxRetries: 0, timeout: 90000 }) };
+    return config;
 }
 
 function safeAiError(error) {
@@ -67,7 +66,7 @@ function safeAiError(error) {
     if (error.status === 401 || error.status === 403) return 'AI 服务鉴权失败，请联系管理员检查密钥和模型权限';
     if (error.status === 429) return 'AI 服务请求过多或额度不足，请稍后重试';
     if (error.status === 400 || error.status === 404 || error.status === 422) return 'AI 接口或模型不支持此请求，请联系管理员检查配置';
-    if (error.name === 'APIConnectionTimeoutError' || error.name === 'TimeoutError') return 'AI 响应超时，请重试';
+    if (error.name === 'TimeoutError') return 'AI 响应超时，请重试';
     if (error.code === 'INCOMPLETE_AI_RESULT') return 'AI 返回内容被截断，请减少单次图片数量后重新识别';
     if (error.code === 'INVALID_AI_SUBJECT') return 'AI 返回的学科编号无效，请重新识别';
     if (error instanceof SyntaxError) return 'AI 返回的 JSON 无法解析，请重新识别';
@@ -75,4 +74,4 @@ function safeAiError(error) {
     return error.status === 503 && error.message === '管理员尚未启用并配置 AI 服务' ? error.message : 'AI 服务暂时不可用，请稍后重试';
 }
 
-module.exports = { readConfig, publicConfig, saveConfig, aiClient, safeAiError };
+module.exports = { readConfig, publicConfig, saveConfig, requireAiConfig, safeAiError };

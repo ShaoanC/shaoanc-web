@@ -14,6 +14,7 @@ assert.equal(sourceImageId({ imageIndex: 0 }, imageIds), 0);
 assert.equal(sourceImageId({}, imageIds), 0, 'Missing source requires human selection');
 const named = { imageIndex: 2, bounds: { left: 0.25, top: 0.125, right: 0.75, bottom: 0.875 } };
 assert.deepEqual(figureLocation(named, imageIds), { imageId: 11, box: [0.25, 0.125, 0.5, 0.75], error: null });
+assert.deepEqual(figureLocation({ imageIndex: 2, box_2d: [125, 250, 875, 750] }, imageIds), { imageId: 11, box: [0.25, 0.125, 0.5, 0.75], error: null }, 'Gemini y/x corner coordinates on a 0–1000 scale become normalized x/y/width/height');
 assert.deepEqual(figureLocation({ imageId: '9', bbox: [0.25, 0.125, 0.5, 0.75] }, imageIds).box, [0.25, 0.125, 0.5, 0.75]);
 assert.equal(figureLocation({ imageId: 0, box: [0, 0, 1, 1] }, imageIds).error, 'source');
 assert.equal(figureLocation({ imageId: 9, box: null }, imageIds).error, 'format');
@@ -25,7 +26,8 @@ assert.deepEqual(parseRecognitionJson('识别结果：\n```json\n' + JSON.string
 assert.throws(() => parseRecognitionJson(String.raw`{"question":"$\sqrt{x}$"}`), SyntaxError);
 assert.throws(() => parseRecognitionJson(String.raw`{"question":"$\frac{1}{2}$"}`), SyntaxError, 'Do not silently accept a form-feed in a formula');
 assert.throws(() => parseRecognitionJson('{"question":"incomplete'), SyntaxError);
-assert.equal(recognitionFormat('question').json_schema.schema.properties.figures.items.properties.imageIndex.type[0], 'integer');
+assert.equal(recognitionFormat('question').responseJsonSchema.properties.figures.items.properties.imageIndex.type[0], 'integer');
+assert.equal(recognitionFormat('question').responseJsonSchema.properties.figures.items.properties.box_2d.minItems, 4);
 
 async function runAiSmoke() {
     const directory = fs.mkdtempSync(path.join(__dirname, '..', 'data', 'ai-smoke-'));
@@ -62,30 +64,38 @@ async function runAiSmoke() {
             let body = '';
             for await (const part of req) body += part;
             calls += 1;
+            assert.equal(req.method, 'POST');
+            assert.equal(req.url, '/v1beta/models/mock-vision:generateContent');
+            assert.equal(req.headers['x-goog-api-key'], 'test-secret');
+            const request = JSON.parse(body);
+            assert.equal(request.contents.length, 1);
+            assert.equal(request.contents[0].role, 'user');
             if (failures > 0) { failures -= 1; res.writeHead(failureStatus, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: { message: 'temporary', type: 'server_error' } })); return; }
             if (hold) await delay(hold);
-            const request = JSON.parse(body);
-            if (request.response_format && rejectFormat) {
+            if (request.generationConfig?.responseJsonSchema && rejectFormat) {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ error: { message: rejectFormat } })); return;
             }
-            const usage = includeUsage ? { usage: { prompt_tokens: 11, completion_tokens: 7, total_tokens: 18 } } : {};
-            if (request.messages.length === 1) {
-                assert.ok(request.messages[0].content.some((part) => part.type === 'image_url' && part.image_url.url.startsWith('data:image/jpeg;base64,')));
-                assert.equal(JSON.stringify(request.messages).includes('READ-5827'), false, 'The expected text is only in the image, not leaked in the prompt');
+            const usage = includeUsage ? { usageMetadata: { promptTokenCount: 11, candidatesTokenCount: 7, totalTokenCount: 18 } } : {};
+            if (!request.systemInstruction) {
+                assert.ok(request.contents[0].parts.some((part) => part.inlineData?.mimeType === 'image/jpeg' && part.inlineData.data));
+                assert.equal(JSON.stringify(request.contents).includes('READ-5827'), false, 'The expected text is only in the image, not leaked in the prompt');
                 res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ choices: [{ message: { content: visionReply }, finish_reason: 'stop' }], ...usage }));
+                res.end(JSON.stringify({ candidates: [{ content: { role: 'model', parts: [{ text: visionReply }] }, finishReason: 'STOP' }], ...usage }));
                 return;
             }
-            const system = request.messages[0].content;
+            const system = request.systemInstruction.parts.map((part) => part.text).join('');
             const example = JSON.parse(system.split('返回结构示例：')[1].split('。仅输出')[0]);
             const type = 'question' in example ? 'question' : 'answer' in example ? 'answer' : 'analysis';
-            const content = request.messages[1]?.content || [];
-            const imageIndices = content.filter((part) => part.type === 'text' && part.text.startsWith('图片顺序')).map((part) => Number(part.text.match(/imageIndex=(\d+)/)[1]));
-            const imageUrls = content.filter((part) => part.type === 'image_url').map((part) => part.image_url.url);
-            for (const id of imageIndices) assert.ok(content.some((part) => part.type === 'text' && part.text.includes('宽 640 像素，高 160 像素')), `Actual dimensions are provided for image ${id}`);
+            const content = request.contents[0].parts;
+            const imageIndices = content.filter((part) => part.text?.startsWith('图片顺序')).map((part) => Number(part.text.match(/imageIndex=(\d+)/)[1]));
+            const imageUrls = content.filter((part) => part.inlineData).map((part) => `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`);
+            for (const id of imageIndices) assert.ok(content.some((part) => part.text?.includes('宽 640 像素，高 160 像素')), `Actual dimensions are provided for image ${id}`);
             requests[type] = { system, imageIndices, imageUrls, body };
-            if (!rejectFormat) assert.equal(request.response_format?.type, 'json_schema');
+            if (!rejectFormat) {
+                assert.equal(request.generationConfig.responseMimeType, 'application/json');
+                assert.equal(request.generationConfig.responseJsonSchema.type, 'object');
+            }
             assert.deepEqual(imageIndices, imageUrls.map((_, index) => index + 1));
             assert.ok(system.includes(JSON.stringify({ formula: '$\\frac{1}{2}$' })));
             if (type === 'question') {
@@ -106,11 +116,11 @@ async function runAiSmoke() {
                     : { analysis: '由 $x^2=4$ 得 $x=\\pm2$，因 $x>0$，故 $x=2$。' };
             if (type === 'question' && questionFixture === 'multiple') {
                 result = { ...result, question: '1. 已知 $x^2=4$。\n\n[[figure:geometry]]\n\n(1) 根据图形回答。\n\n[[figure:table]]', primaryPath: ['函数', '校对后才创建'], figures: [
-                    { id: 'geometry', imageIndex: 1, bounds: { left: 0.125, top: 0.125, right: 0.5, bottom: 0.5 }, description: '几何图及原题标注' },
-                    { id: 'table', imageIndex: 1, bounds: { left: 0.5, top: 0.5, right: 0.875, bottom: 0.875 }, description: '复杂数据表格' }
+                    { id: 'geometry', imageIndex: 1, box_2d: [125, 125, 500, 500], description: '几何图及原题标注' },
+                    { id: 'table', imageIndex: 1, box_2d: [500, 500, 875, 875], description: '复杂数据表格' }
                 ] };
             } else if (type === 'question' && questionFixture === 'invalid') {
-                result = { ...result, question: '函数图像如下。\n\n[[figure:invalid]]', figures: [{ id: 'invalid', imageIndex: 1, box: [0.9, 0.9, 0.2, 0.2], description: '越界区域' }] };
+                result = { ...result, question: '函数图像如下。\n\n[[figure:invalid]]', figures: [{ id: 'invalid', imageIndex: 1, box_2d: [900, 900, 1100, 1100], description: '越界区域' }] };
             } else if (type === 'question' && questionFixture === 'unmatched') {
                 result = { ...result, question: '保留无法分类的原题文字。\n\n[[figure:missing]]', subjectId: null, primaryPath: [], auxiliaryPaths: [] };
             } else if (type === 'answer' && answerFixture === 'multiple') {
@@ -122,8 +132,8 @@ async function runAiSmoke() {
             }
             res.writeHead(200, { 'Content-Type': 'application/json' });
             const output = responseMode === 'json' ? '{invalid' : responseMode === 'schema' ? '{"answer":12}' : responseMode === 'empty' ? '' : JSON.stringify(result);
-            const message = responseMode === 'parts' ? { content: [{ type: 'text', text: output }] } : responseMode === 'refusal' ? { content: '', refusal: 'declined' } : { content: output };
-            res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', ...message }, finish_reason: responseMode === 'truncated' ? 'length' : 'stop' }], ...usage }));
+            const parts = responseMode === 'parts' ? [{ thought: true, text: 'internal reasoning' }, { text: output.slice(0, 12) }, { text: output.slice(12) }] : responseMode === 'refusal' ? [] : [{ text: output }];
+            res.end(JSON.stringify({ candidates: [{ content: { role: 'model', parts }, finishReason: responseMode === 'truncated' ? 'MAX_TOKENS' : responseMode === 'refusal' ? 'SAFETY' : 'STOP' }], ...usage }));
         }));
         app = require('../server/app');
         ai = require('../server/mistakes/ai');
@@ -151,7 +161,7 @@ async function runAiSmoke() {
         await alice('POST', '/auth/login', { username: 'alice', password });
         await bob('POST', '/auth/login', { username: 'bobby', password });
         await alice('GET', '/admin/ai/config', null, 403);
-        const configured = await admin('PATCH', '/admin/ai/config', { enabled: true, baseUrl: `http://127.0.0.1:${mock.address().port}/v1`, apiKey: 'test-secret', model: 'mock-vision' });
+        const configured = await admin('PATCH', '/admin/ai/config', { enabled: true, baseUrl: `http://127.0.0.1:${mock.address().port}/v1beta`, apiKey: 'test-secret', model: 'mock-vision' });
         assert.equal(configured.hasApiKey, true);
         assert.equal(JSON.stringify(configured).includes('test-secret'), false);
         assert.deepEqual(await alice('GET', '/ai/config'), { enabled: true, configured: true });
@@ -316,7 +326,7 @@ async function runAiSmoke() {
         assert.equal(invalid.result.figures[0].box, null, 'Invalid regions are never turned into automatic crops');
         assert.ok(invalid.result.issues.some((issue) => issue.imageId === first.id));
         assert.equal(invalid.result.figures[0].locationError, 'bounds');
-        assert.deepEqual(invalid.result.figures[0].rawLocation.box, [0.9, 0.9, 0.2, 0.2], 'Original coordinates survive normalization and repeated reads');
+        assert.deepEqual(invalid.result.figures[0].rawLocation.box_2d, [900, 900, 1100, 1100], 'Original Gemini coordinates survive normalization and repeated reads');
         await alice('POST', `/ai/jobs/${invalid.id}/apply`, { review: { question: invalid.result.question } }, 400);
         await alice('POST', `/ai/jobs/${invalid.id}/apply`, { review: { question: '明确移除无效配图后的题干。' }, force: true });
         questionFixture = 'unmatched';
@@ -414,15 +424,15 @@ async function runAiSmoke() {
         }
         responseMode = 'parts';
         const multipart = await completed(await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'answer', input: input(await latest()), imageIds: [answerImage.id] }, 201));
-        assert.equal(multipart.status, 'succeeded', 'OpenAI-compatible text content parts are accepted');
+        assert.equal(multipart.status, 'succeeded', 'Gemini text parts are joined before JSON parsing');
         responseMode = '';
-        rejectFormat = 'response_format json_schema is not supported by this model';
+        rejectFormat = 'responseJsonSchema is not supported by this model';
         const beforeFallback = calls;
         const fallback = await completed(await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'answer', input: input(await latest()), imageIds: [answerImage.id] }, 201));
         assert.equal(fallback.status, 'succeeded');
         assert.equal(calls - beforeFallback, 2, 'Explicit unsupported-format rejection allows one fallback');
         assert.deepEqual(metrics.slice(-2).map((item) => item.responseFormat), ['json_schema', 'text']);
-        rejectFormat = 'Invalid schema for response_format: required is missing';
+        rejectFormat = 'Invalid schema for responseJsonSchema: required is missing';
         const beforeBadSchema = calls;
         const badSchema = await completed(await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'answer', input: input(await latest()), imageIds: [answerImage.id] }, 201));
         assert.equal(badSchema.status, 'failed');
