@@ -1,5 +1,16 @@
 # 拍照录题与 AI 任务
 
+## 弱网上传恢复（2026-10-20）
+
+- completed：图片就绪状态绑定预览 URL，兼容缓存加载并忽略旧图片事件；旋转失败保留原图和选框。
+- completed：编辑器保存请求设置 30 秒超时，失败释放等待状态并保留图片、顺序和裁剪；压缩 Worker 超过 30 秒中止，使用无中止信号的主线程压缩继续处理。
+- completed：保留成功响应读取期间的网络和中止异常，恢复既有自动重试；上传与识别提交继续复用原编号，手动续传使用新请求信号并跳过已完成图片。
+- completed：上传烟测、压缩准备烟测和 `npm run build` 通过；隔离的 Express 静态站点验证连续旋转、切图、弹窗重开及保存超时后原地重试成功。
+
+验证命令：`node scripts/mistakes-upload-smoke.cjs`、`node scripts/mistakes-photo-preparation-smoke.cjs`、`npm run build`。浏览器用两张合成图片模拟第一次草稿保存挂起，超时后照片 URL、顺序和选框均不变，两个上传按钮恢复；再次点击“仅保存图片”成功保存两图。旋转后的整图为 `200×320`、选中裁剪图为 `180×300`，与历史预览一致。恢复状态截图保存在忽略 Git 的 `data/photo-recovery-ui/recovered-buttons.png`。
+
+本次恢复范围为当前应用会话。后台图片上传仍按 1、2、4 秒间隔自动重试，耗尽后可点“重试”；上传前保存或压缩失败可在原裁剪弹窗直接重试。刷新页面前仍需完成上传，未增加离线图片持久化。
+
 ## Gemini 原生 API（2026-10-20）
 
 题干识别、答案识别、自动解析与图片测试统一使用 Gemini 原生 `generateContent` REST 接口，由 Node.js 内建 `fetch` 发送，不再依赖 OpenAI SDK。基础地址填写 `https://generativelanguage.googleapis.com/v1beta` 或兼容 Gemini 原生协议的代理；服务端自动拼接 `/models/{model}:generateContent`，通过 `x-goog-api-key` 请求头发送密钥。请求使用 Gemini 的 `systemInstruction`、`contents` / `parts`、内嵌图片与 JSON 生成配置，响应读取 `candidates` 和 `usageMetadata`。

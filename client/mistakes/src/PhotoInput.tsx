@@ -1,11 +1,11 @@
-import { useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from 'react';
+import { useCallback, useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from 'react';
 import ReactCrop, { type PercentCrop } from 'react-image-crop';
 import imageCompression from 'browser-image-compression';
-import compressionWorkerUrl from 'browser-image-compression/dist/browser-image-compression.js?url';
 import { ArrowLeft, ArrowRight, Camera, Crop, ImagePlus, RotateCcw, RotateCw, Trash2 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { AiDialog } from './AiDialog';
 import { usePhotoUploads } from './PhotoUploads';
+import { compressJpeg } from './photo-compression';
 import type { PreparedPhoto } from './photo-upload-queue';
 import type { ImagePurpose, MistakeImage } from './ai-types';
 import type { Mistake } from './types';
@@ -14,7 +14,6 @@ import 'react-image-crop/dist/ReactCrop.css';
 type Entry = { key: string; clientId: string; file: File; url: string; crop: PercentCrop };
 export interface PhotoInputHandle { reuse: (image: MistakeImage) => Promise<void> }
 const fullCrop: PercentCrop = { unit: '%', x: 0, y: 0, width: 100, height: 100 };
-const compressJpeg = (file: File) => imageCompression(file, { maxSizeMB: 1.5, maxWidthOrHeight: 2560, fileType: 'image/jpeg', initialQuality: .88, useWebWorker: true, libURL: compressionWorkerUrl });
 // The compression library's PNG helper quantizes colors; native PNG preserves the canvas pixels.
 const losslessFile = (canvas: HTMLCanvasElement, name: string) => new Promise<File>((resolve, reject) => {
   canvas.toBlob((blob) => blob ? resolve(new File([blob], name, { type: 'image/png', lastModified: Date.now() })) : reject(new Error('浏览器无法生成裁剪图片，请重试。')), 'image/png');
@@ -48,15 +47,20 @@ export function PhotoInput({ purpose, recordId, ensureSaved, actions, aiAvailabl
   const [selected, setSelected] = useState(0);
   const [busy, setBusy] = useState(false);
   const [stage, setStage] = useState('');
-  const [imageReady, setImageReady] = useState(false);
+  const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
   const camera = useRef<HTMLInputElement>(null);
   const album = useRef<HTMLInputElement>(null);
   const urls = useRef(new Set<string>());
   const photo = useRef<HTMLImageElement>(null);
   const current = entries[selected];
+  const imageReady = Boolean(current && loadedUrl === current.url);
+  const previewRef = useCallback((image: HTMLImageElement | null) => {
+    photo.current = image;
+    // A cached blob can finish loading before React attaches its load handler.
+    if (image?.complete && image.naturalWidth > 0) setLoadedUrl(image.src);
+  }, []);
   const label = purpose === 'question' ? '题目' : '答案';
   useEffect(() => () => { urls.current.forEach(URL.revokeObjectURL); }, []);
-  useEffect(() => setImageReady(false), [current?.key, current?.url]);
   function objectUrl(file: Blob) { const url = URL.createObjectURL(file); urls.current.add(url); return url; }
   function add(files: File[]) {
     const valid = files.filter((file) => ['image/jpeg', 'image/png', 'image/webp'].includes(file.type));
@@ -76,7 +80,7 @@ export function PhotoInput({ purpose, recordId, ensureSaved, actions, aiAvailabl
   function changeCrop(crop: PercentCrop) { setEntries((items) => items.map((entry, index) => index === selected ? { ...entry, crop, clientId: crypto.randomUUID() } : entry)); }
   async function rotate(direction: -1 | 1) {
     if (!current || busy) return;
-    setBusy(true); setImageReady(false);
+    setBusy(true);
     try {
       const image = await imageCompression.loadImage(current.url);
       const canvas = document.createElement('canvas'); canvas.width = image.naturalHeight; canvas.height = image.naturalWidth;
@@ -89,7 +93,7 @@ export function PhotoInput({ purpose, recordId, ensureSaved, actions, aiAvailabl
       const url = objectUrl(file);
       setEntries((items) => items.map((entry) => entry.key === current.key ? { ...entry, file, url, crop: { ...fullCrop }, clientId: crypto.randomUUID() } : entry));
       URL.revokeObjectURL(current.url); urls.current.delete(current.url);
-    } catch (err) { setImageReady(true); toast.error((err as Error).message); }
+    } catch (err) { toast.error((err as Error).message); }
     finally { setBusy(false); }
   }
   function move(index: number, offset: number) {
@@ -150,7 +154,7 @@ export function PhotoInput({ purpose, recordId, ensureSaved, actions, aiAvailabl
       </div>)}</div>
       {current && <div className="photo-rotation-actions"><button type="button" className="button secondary" disabled={busy || !imageReady} onClick={() => void rotate(-1)}><RotateCcw size={16} />左转 90°</button><button type="button" className="button secondary" disabled={busy || !imageReady} onClick={() => void rotate(1)}><RotateCw size={16} />右转 90°</button></div>}
       {current ? <div className="photo-crop-stage"><ReactCrop crop={current.crop} onChange={(_, percent) => changeCrop(percent)} minWidth={20} minHeight={20} disabled={busy}>
-        <img ref={photo} src={current.url} onLoad={() => setImageReady(true)} onError={() => { setImageReady(false); toast.error('图片无法读取，请移除后重新选择。'); }} alt={`裁剪第 ${selected + 1} 张${label}图片`} />
+        <img key={current.url} ref={previewRef} src={current.url} onLoad={(event) => { if (photo.current === event.currentTarget) setLoadedUrl(event.currentTarget.src); }} onError={(event) => { if (photo.current === event.currentTarget) { setLoadedUrl(null); toast.error('图片无法读取，请移除后重新选择。'); } }} alt={`裁剪第 ${selected + 1} 张${label}图片`} />
       </ReactCrop></div> : <p className="ai-empty">添加图片开始裁剪。</p>}
       <div className="photo-crop-footer"><button type="button" className="button ghost" disabled={busy} onClick={() => album.current?.click()}><ImagePlus size={16} />追加图片</button><p>{stage || '旋转会重置选框。按显示方向备份整图与裁剪图，保留彩色笔迹。'}</p></div>
       {!aiAvailable && <p className="ai-notice">AI 尚未启用，可以先保存图片。</p>}
