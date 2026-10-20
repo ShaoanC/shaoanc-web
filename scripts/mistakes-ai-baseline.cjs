@@ -51,7 +51,7 @@ async function runBaseline(filename, label, { checkOnly = false } = {}) {
         const images = item.images.map((name, index) => ({ id: index + 1, ...files.get(path.resolve(path.dirname(filename), name)) }));
         const messages = recognitionMessages({ type: item.type, subjects: manifest.subjects, directory: manifest.directory, images });
         const record = { id: item.id, type: item.type, images: images.map(({ id, width, height, sha256 }) => ({ id, width, height, sha256 })),
-            promptSha256: hash(JSON.stringify(messages.filter((message) => message.role === 'system'))),
+            promptSha256: hash(JSON.stringify(messages.systemInstruction)),
             calls: 0, elapsedMs: 0, result: null, errorCategory: null, expectedFigureCount: item.expectedFigureCount ?? null,
             review: { criticalContentErrors: null, figureComplete: null, handwritingLeak: null, manualEdits: null, notes: '' } };
         try {

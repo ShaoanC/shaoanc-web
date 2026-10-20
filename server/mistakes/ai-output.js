@@ -4,10 +4,11 @@ function recognitionFormat(type) {
     const string = { type: 'string' };
     const properties = { [type]: string };
     if (type !== 'analysis') {
-        const coordinate = { type: 'number', minimum: 0, maximum: 1 };
+        const coordinate = { type: 'integer', minimum: 0, maximum: 1000 };
         properties.figures = { type: 'array', items: object({
             id: string, imageIndex: { type: ['integer', 'null'], minimum: 1 },
-            bounds: { anyOf: [object({ left: coordinate, top: coordinate, right: coordinate, bottom: coordinate }), { type: 'null' }] },
+            box_2d: { type: ['array', 'null'], items: coordinate, minItems: 4, maxItems: 4,
+                description: 'Bounding box [ymin, xmin, ymax, xmax], normalized to 0–1000 relative to the submitted image.' },
             description: string
         }) };
         properties.issues = { type: 'array', items: object({ imageIndex: { type: ['integer', 'null'], minimum: 1 }, type: string, description: string }) };
@@ -17,7 +18,7 @@ function recognitionFormat(type) {
         properties.primaryPath = { type: 'array', items: string };
         properties.auxiliaryPaths = { type: 'array', items: { type: 'array', items: string } };
     }
-    return { type: 'json_schema', json_schema: { name: `recognition_${type}`, strict: true, schema: object(properties) } };
+    return { responseMimeType: 'application/json', responseJsonSchema: object(properties) };
 }
 
 function parseRecognitionJson(raw) {
@@ -47,11 +48,16 @@ function sourceImageId(value, imageIds) {
 function figureLocation(figure, imageIds) {
     const imageId = sourceImageId(figure, imageIds);
     const bounds = figure?.bounds;
-    const candidate = bounds && typeof bounds === 'object' && !Array.isArray(bounds)
-        ? [bounds.left, bounds.top, bounds.right - bounds.left, bounds.bottom - bounds.top]
-        : figure?.box ?? figure?.bbox;
+    const nativeBox = figure?.box_2d;
+    // Gemini uses y/x corner coordinates; stored/client boxes use x/y/width/height.
+    const candidate = nativeBox !== undefined
+        ? Array.isArray(nativeBox) && nativeBox.length === 4 && nativeBox.every(Number.isFinite)
+            ? [nativeBox[1] / 1000, nativeBox[0] / 1000, (nativeBox[3] - nativeBox[1]) / 1000, (nativeBox[2] - nativeBox[0]) / 1000] : null
+        : bounds && typeof bounds === 'object' && !Array.isArray(bounds)
+            ? [bounds.left, bounds.top, bounds.right - bounds.left, bounds.bottom - bounds.top]
+            : figure?.box ?? figure?.bbox;
     const numeric = Array.isArray(candidate) && candidate.length === 4 && candidate.every(Number.isFinite)
-        && (!bounds || [bounds.left, bounds.top, bounds.right, bounds.bottom].every(Number.isFinite));
+        && (nativeBox !== undefined || !bounds || [bounds.left, bounds.top, bounds.right, bounds.bottom].every(Number.isFinite));
     const valid = numeric && candidate[0] >= 0 && candidate[0] < 1 && candidate[1] >= 0 && candidate[1] < 1 && candidate[2] > 0 && candidate[3] > 0
         && candidate[0] + candidate[2] <= 1.000001 && candidate[1] + candidate[3] <= 1.000001;
     const error = !imageId ? 'source' : !numeric ? 'format' : !valid ? 'bounds' : null;

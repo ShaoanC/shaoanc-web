@@ -1,5 +1,17 @@
 # 拍照录题与 AI 任务
 
+## Gemini 原生 API（2026-10-20）
+
+题干识别、答案识别、自动解析与图片测试统一使用 Gemini 原生 `generateContent` REST 接口，由 Node.js 内建 `fetch` 发送，不再依赖 OpenAI SDK。基础地址填写 `https://generativelanguage.googleapis.com/v1beta` 或兼容 Gemini 原生协议的代理；服务端自动拼接 `/models/{model}:generateContent`，通过 `x-goog-api-key` 请求头发送密钥。请求使用 Gemini 的 `systemInstruction`、`contents` / `parts`、内嵌图片与 JSON 生成配置，响应读取 `candidates` 和 `usageMetadata`。
+
+管理员需将旧版 OpenAI 兼容 `/v1` 基础地址改为 Gemini 原生地址，并确认模型和密钥支持该接口，再点击“测试图片识别”。`.env.ai` 及 `MISTAKES_AI_ENABLED`、`MISTAKES_AI_BASE_URL`、`MISTAKES_AI_MODEL`、`MISTAKES_AI_API_KEY` 配置键保持不变；不会自动改写已有配置。
+
+配图定位采用 [Gemini 图像理解文档的对象检测约定](https://ai.google.dev/gemini-api/docs/image-understanding#object-detection)：模型输出 `box_2d: [ymin, xmin, ymax, xmax]`，每一维按实际发送裁剪图归一化到 0–1000。服务端转换为客户端既有的 0–1 `box: [left, top, width, height]`，即 `[xmin/1000, ymin/1000, (xmax-xmin)/1000, (ymax-ymin)/1000]`；图片来源仍使用从 1 开始的 `imageIndex`，由服务端映射到 `imageId`。旧任务和旧格式定位结果继续兼容读取。
+
+- completed：迁移 Gemini 原生请求、图片输入、结构化输出、错误与用量解析；同步图片测试、基线评测、配置提示和依赖。
+- completed：提示词与 JSON Schema 使用 `box_2d`，转换为现有裁图坐标并保留历史格式和无效原始坐标。
+- completed：AI 模拟烟测、核心错题烟测、前端构建与修改后服务端语法检查通过；本地 Express 静态站点确认设置导航与 Gemini 配置表单正常。未调用真实 Gemini 模型。
+
 ## 手机裁剪页间距（2026-10-17）
 
 - completed：去除裁剪弹层的“拖动选框……”说明；手机缩略图上下外边距改为 8px、上下内边距改为 3px、控制按钮上间距改为 4px，旋转区上下间距改为 8px，裁剪区内边距改为 8px。
@@ -86,7 +98,7 @@ npm run baseline:ai -- --compare data/ai-baseline-before-时间戳.json data/ai-
 
 ## 使用
 
-1. 管理员进入“设置 → AI 设置”，填写兼容 OpenAI Chat Completions 的 API 基础地址（通常以 `/v1` 结尾）、API 密钥和支持图片输入的模型名称，启用并保存。密钥不回传浏览器，留空可保留已有密钥。“测试图片识别”发送固定测试图并核对图中文字；请求失败与请求连通但未正确读取会分别提示。
+1. 管理员进入“设置 → AI 设置”，填写 Gemini 原生 API 基础地址（官方为 `https://generativelanguage.googleapis.com/v1beta`，也可用兼容原生协议的代理）、API 密钥和支持图片输入的 Gemini 模型名称，启用并保存；不要填写完整 `generateContent` 路径。旧版 OpenAI 兼容地址需按本页迁移说明更新。密钥不回传浏览器，留空可保留已有密钥。“测试图片识别”发送固定测试图并核对图中文字；请求失败与请求连通但未正确读取会分别提示。
 2. 进入“录入错题”，拍照或选择 JPG、PNG、WebP 图片。同一道题每次可选 1–12 张，逐张调整矩形选区，可追加、移除、调整顺序，上传前可左右旋转 90°。旋转会重置当前选框并清除该图上传缓存，显示方向与上传方向一致；不去除彩色笔迹。
 3. 点击“上传并识别题目”。上传前自动创建/保存草稿，旋转及裁剪使用无损 PNG 中间图，最终整图与裁剪图均在客户端压缩为 JPEG（最长边 2560，目标不超过 1.5 MB），再备份到服务器；模型只接收选中的裁剪图。
 4. 无疑点、无配图、目标为空且内容仍匹配提交快照时，自动填入识别文字与归类。存在疑点、配图或冲突时，点击“校对并填入”：桌面并排查看来源裁剪图和可编辑结果，手机切换“图片／结果”；可预览公式和表格、调整学科及知识点。归类无法确定时允许暂缺，不丢弃转写文字。
@@ -100,7 +112,7 @@ npm run baseline:ai -- --compare data/ai-baseline-before-时间戳.json data/ai-
 
 题干识别只发送裁剪图、学科列表及当前用户可见知识点目录；答案识别只发送图片与转写要求。已有内容快照保留在任务中用于冲突检查，不发送给识别模型。多图按提交顺序读取，重复部分去重，保留题号、条件、选项、公式和原题标注，排除学生作答和订正；模糊内容用 `[待确认]`／`[待补充]` 表示，不猜测补全。
 
-识别结果包含 `issues: [{ imageId, type, description }]` 和 `figures: [{ id, imageId, box, description }]`。`imageId` 是本次提交的图片数据库编号；`id` 是任务内唯一配图标识，正文使用 `[[figure:标识]]` 放置。`box` 为 `[x,y,width,height]`，以实际发送裁剪图的宽高归一化到 0–1，无效时保留为校对提示。几何图、函数图、电路图和示意图保留截图与必要标注；简单表格转 Markdown，复杂或数据不清的表格返回截图区域并提示校对。
+模型识别结果的配图使用 `imageIndex` 和 Gemini `box_2d: [ymin, xmin, ymax, xmax]`（0–1000），服务端归一化后返回 `issues: [{ imageId, type, description }]` 和 `figures: [{ id, imageId, box, description }]`。`imageId` 是本次提交的图片数据库编号；`id` 是任务内唯一配图标识，正文使用 `[[figure:标识]]` 放置。客户端 `box` 为 `[left,top,width,height]`，以实际发送裁剪图的宽高归一化到 0–1，无效时保留为校对提示。几何图、函数图、电路图和示意图保留截图与必要标注；简单表格转 Markdown，复杂或数据不清的表格返回截图区域并提示校对。
 
 `needsReview` 由服务端依据问题列表、待确认／待补充标记、配图区域和未匹配标记推导。新结果不会自动追加整张识别图片。旧任务的 `diagramImageIds` 仍可读取，对应裁剪图作为全图选框进入校对，可重新调整；原始结果单独保留供查看。
 
@@ -132,8 +144,8 @@ npm run baseline:ai -- --compare data/ai-baseline-before-时间戳.json data/ai-
 
 - 裁剪使用 `react-image-crop`；压缩使用 `browser-image-compression`，Worker 资源随构建本地发布。
 - 上传使用 `multer`，每份整图/裁剪图上限 4 MB；上传编号支持失败重试去重。
-- AI 请求使用 OpenAI SDK，数据结构使用 `zod`，队列与重试使用 `p-queue` / `p-retry`。现有 `react-markdown`、KaTeX、Base UI 与 `react-toastify` 用于富文本、弹窗和反馈。
-- 单个 Node 进程内并发 2 个 AI 任务；每次请求超时 90 秒。网络等可恢复失败最多尝试 3 次，按 2 秒、4 秒退避，兼顾服务商 `Retry-After`（上限 120 秒）；格式错误最多尝试 2 次，输出截断及鉴权/不支持请求等错误直接失败。禁用 SDK 内置重试，避免次数叠加。
+- AI 请求使用 Node.js 内建 `fetch` 调用 Gemini 原生 REST 接口，数据结构使用 `zod`，队列与重试使用 `p-queue` / `p-retry`。现有 `react-markdown`、KaTeX、Base UI 与 `react-toastify` 用于富文本、弹窗和反馈。
+- 单个 Node 进程内并发 2 个 AI 任务；每次请求超时 90 秒。网络等可恢复失败最多尝试 3 次，按 2 秒、4 秒退避，兼顾服务商 `Retry-After`（上限 120 秒）；格式错误最多尝试 2 次，输出截断及鉴权/不支持请求等错误直接失败。HTTP 请求不额外重试，避免次数叠加。
 - SQLite 持久化任务、输入快照、结果、时间和尝试次数；重启后恢复未完成任务并保留已消耗次数。
 - 上传和 AI 处理使用长驻 toast；完成提示保留 8 秒，失败提示保留到关闭，任务中心可再次查看与操作。
 - 默认图片目录 `uploads/mistakes/`，可通过 `MISTAKES_UPLOADS_PATH` 调整。管理员配置存入忽略 Git 的 `.env.ai`，可通过 `MISTAKES_AI_CONFIG_PATH` 调整。数据库沿用 `MISTAKES_DB_PATH`。

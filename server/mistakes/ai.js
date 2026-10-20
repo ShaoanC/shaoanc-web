@@ -49,7 +49,7 @@ function normalizeResult(job, value) {
         }
         return { id, imageId, box, description: typeof figure?.description === 'string' ? figure.description : '题目配图',
             ...(error ? { locationError, rawLocation: figure?.rawLocation || {
-                imageId: figure?.imageId, imageIndex: figure?.imageIndex, bounds: figure?.bounds, box: figure?.box, bbox: figure?.bbox
+                imageId: figure?.imageId, imageIndex: figure?.imageIndex, box_2d: figure?.box_2d, bounds: figure?.bounds, box: figure?.box, bbox: figure?.bbox
             } } : {}) };
     });
     // Historical tasks used whole uploaded crops. Expose them as editable full-image regions.
@@ -329,7 +329,7 @@ function applyJob(id, userId, options = {}) {
 }
 
 function canRetry(error, attempts) {
-    if (error.name === 'AbortError' || error.name === 'APIUserAbortError') return false;
+    if (error.name === 'AbortError') return false;
     if (['INCOMPLETE_AI_RESULT', 'AI_REFUSAL'].includes(error.code)) return false;
     if (aiErrorCategory(error) === 'format') return attempts < 2;
     return !error.status || [408, 409, 429].includes(error.status) || error.status >= 500;
