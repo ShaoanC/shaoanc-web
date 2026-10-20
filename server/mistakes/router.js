@@ -9,7 +9,7 @@ const { deleteMistakeFiles, questionForMistake } = require('./images');
 const { getPublicCaptchaConfig, verifyCaptcha } = require('./captcha');
 const { loginIpLimit, loginFailureLimit, registrationLimit } = require('./auth-limits');
 const {
-    fail, validateCredentials, validatePassword, hashPassword, verifyPassword, publicUser,
+    fail, validateCredentials, validateUsername, validatePassword, hashPassword, verifyPassword, publicUser,
     createSession, clearSession, loadSession, requireUser, requireAdmin
 } = require('./auth');
 
@@ -198,6 +198,16 @@ router.post('/auth/logout', (req, res) => {
 
 router.use(requireUser);
 require('./ai-router')(router, { success, ownMistake, serializeMistake, cleanupExpiredTrash });
+
+router.patch('/auth/profile', (req, res) => {
+    const username = typeof req.body?.username === 'string' ? req.body.username.trim() : '';
+    validateUsername(username);
+    if (db.prepare('SELECT id FROM users WHERE username = ? AND id != ?').get(username, req.user.id)) {
+        fail(409, '用户名已被使用');
+    }
+    db.prepare('UPDATE users SET username = ? WHERE id = ?').run(username, req.user.id);
+    success(res, { user: publicUser({ ...req.user, username }) });
+});
 
 router.patch('/auth/avatar', (req, res) => {
     const { avatar } = req.body || {};

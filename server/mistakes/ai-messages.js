@@ -31,11 +31,16 @@ function recognitionMessages({ type, input = {}, subjects = [], directory = [], 
     const figureProtocol = '图形协议：几何图、函数图、电路图、示意图保留截图与必要标注；简单表格转 Markdown，复杂表格或数据不清时保留截图并提示校对。框选范围必须包含完整图形及其原题图号、图名和图注；若图旁或图下有“图3-2”“图1”“甲”“乙”等与该图对应的文字，应一并框入截图，不要只在 description 中提及而裁掉这些文字。原图没有图号或图注时不要补造。一图可以有多个区域。figures 每项包含唯一 id（字母数字短横线）、imageIndex（图片提交顺序，从1开始）、box_2d、description。box_2d 遵循 Gemini 对象检测格式，依次为 [ymin,xmin,ymax,xmax]，以实际收到的整张裁剪图宽高为基准归一化到0到1000，使用整数，ymin<ymax、xmin<xmax。例如 {"id":"fig-1","imageIndex":1,"box_2d":[200,100,700,800],"description":"原题示意图"}。坐标不是像素，不换算到裁剪前的原始照片。无法定位时 box_2d:null 并记录 issue。正文原位置写 [[figure:配图id]]，不输出 Markdown 图片链接，不追加整张照片。无配图时 figures:[]，不返回 diagramImageIds。裁剪只改变范围，不擦除笔迹；必要图形与作答重叠时保留图形并提示人工检查。';
     const issues = 'issues 每项包含 imageIndex（图片提交顺序，从1开始，无法确定时null）、type（如unclear/overlap/handwriting/classification/table）、description。任何模糊、遗漏、冲突或无法定位的内容都提示，不推算。';
     const instructions = type === 'analysis'
-        ? '根据题干和已有答案，用中文给出清晰的解题思路和关键步骤；检查答案，如发现矛盾说明原因。返回 {"analysis":"Markdown"}。'
+        ? [
+            '任务是生成解析。answer 是用户已经给定的最终答案，应以它为既定结论，结合 question 题干，用中文讲清解题思路、关键步骤及所用知识，说明如何得到该答案。',
+            '不要校对、评判或质疑给定答案，不要重新作答、纠错、替换答案或给出与给定答案不同的结论。选择题围绕给定选项解释，填空题或多小题按给定答案的顺序逐项展开。',
+            '已有步骤可用于组织解析，但不要只重复答案。若某一步缺少必要条件或配图信息，只简要指出该步所缺信息，不编造条件或推导，也不据此改判给定答案。',
+            '仅返回 {"analysis":"Markdown"}，不返回或改写 question、answer。'
+        ].join('\n')
         : [...roles, figureProtocol, issues].join('\n');
     const example = type === 'question'
         ? { question: '题干 Markdown', subjectId: subjects[0]?.id ?? null, primaryPath: ['知识点名称'], auxiliaryPaths: [], issues: [], figures: [] }
-        : { [type]: 'Markdown 内容', issues: [], figures: [] };
+        : type === 'analysis' ? { analysis: '解题解析 Markdown' } : { [type]: 'Markdown 内容', issues: [], figures: [] };
     // Saved OCR text is only a conflict snapshot; do not send it back to the recognition model.
     const parts = [{ text: JSON.stringify(type === 'question' ? { subjects, directory }
         : type === 'answer' ? { instruction: '按图片提交顺序忠实转写答案，答案正文不添加或保留题号，多小题按原顺序分段呈现，保留必要图形并记录疑点' }

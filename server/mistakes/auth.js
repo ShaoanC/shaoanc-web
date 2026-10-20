@@ -16,10 +16,14 @@ function fail(status, message) {
     throw error;
 }
 
-function validateCredentials(username, password) {
+function validateUsername(username) {
     if (typeof username !== 'string' || !/^[^\s\u0000-\u001f]{3,32}$/.test(username)) {
         fail(400, '用户名须为 3–32 个字符，不能包含空格');
     }
+}
+
+function validateCredentials(username, password) {
+    validateUsername(username);
     validatePassword(password);
 }
 
@@ -104,6 +108,6 @@ function requireAdmin(req, res, next) {
 }
 
 module.exports = {
-    fail, validateCredentials, validatePassword, hashPassword, verifyPassword, publicUser,
+    fail, validateCredentials, validateUsername, validatePassword, hashPassword, verifyPassword, publicUser,
     createSession, clearSession, loadSession, requireUser, requireAdmin
 };

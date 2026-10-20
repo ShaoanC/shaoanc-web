@@ -2238,10 +2238,10 @@ input:focus, textarea:focus, select:focus { outline: 2px solid rgba(23,100,72,.1
 
 /* Detail is a reading document; editing is a responsive writing workspace. */
 .detail-reading { max-width: 920px; margin: 0 auto; }
-.detail-reading-header { gap: 20px; margin-bottom: 22px; }
+.detail-reading-header { gap: 20px; margin-bottom: 22px; flex-wrap: wrap; }
 .detail-reading-header h1 { font-size: 32px; }
 .detail-reading-header .eyebrow { font-size: 13px; margin-bottom: 6px; color: var(--text-tertiary); }
-.detail-reading-header .detail-actions { padding-top: 28px; }
+.detail-reading-header .detail-actions { padding-top: 28px; flex-wrap: wrap; max-width: 100%; }
 .detail-reading-meta { display: flex; flex-wrap: wrap; gap: 14px 28px; padding-bottom: 18px; border-bottom: 1px solid var(--border-medium); }
 .detail-reading-meta > div { flex-direction: row; align-items: baseline; gap: 10px; padding: 0; border: 0; }
 .detail-reading-meta dt { flex-shrink: 0; font-weight: 400; }
@@ -2340,7 +2340,9 @@ input:focus, textarea:focus, select:focus { outline: 2px solid rgba(23,100,72,.1
 @media (max-width: 640px) {
   .detail-reading-header { gap: 16px; margin-bottom: 18px; }
   .detail-reading-header h1 { font-size: 28px; }
-  .detail-reading-header .detail-actions { padding-top: 0; justify-content: flex-start; gap: 14px; }
+  .detail-reading-header .detail-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); padding-top: 0; gap: 8px; }
+  .detail-reading-header .detail-actions > .button,
+  .detail-reading-header .detail-actions > .quick-delete-button { width: 100%; min-width: 0; }
   .detail-reading-header .detail-actions .button { min-height: 40px; padding: 8px 12px; font-size: 14px; }
   .detail-reading-meta { gap: 10px; }
   .detail-reading-meta > div { width: 100%; gap: 8px; }

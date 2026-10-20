@@ -10,6 +10,7 @@ import type { AiApplyOptions, AiApplyResult, AiConfig, AiJob, AiJobRequest } fro
 export const AI_LABELS = { question: '题干识别', answer: '答案识别', analysis: '生成解析' };
 export const isActiveJob = (job: AiJob) => ['queued', 'running', 'retrying'].includes(job.status);
 export const needsReview = (job: AiJob) => !job.mistakeDeleted && job.status === 'succeeded' && job.applyStatus !== 'applied';
+export const canCancelJob = (job: AiJob) => isActiveJob(job) || job.status === 'failed' || (job.status === 'succeeded' && job.applyStatus !== 'applied');
 export type JobAction = 'retry' | 'cancel';
 export interface BatchResult { jobs: AiJob[]; errors: { id: number; message: string }[] }
 interface TasksState {
@@ -155,7 +156,7 @@ export function AiTasksProvider({ children }: { children: ReactNode }) {
     try {
       const result = await api<BatchResult>('/ai/jobs/batch', json({ ids: targets, action }));
       mergeJobs(result.jobs);
-      if (result.jobs.length) toast.success(action === 'retry' ? `已将 ${result.jobs.length} 项任务重新加入队列。` : `已处理 ${result.jobs.length} 项取消请求。`);
+      if (result.jobs.length) toast.success(action === 'retry' ? `已将 ${result.jobs.length} 项任务重新加入队列。` : `已取消 ${result.jobs.length} 项任务。`);
       return result;
     } finally {
       targets.forEach((id) => busy.current.delete(id));
