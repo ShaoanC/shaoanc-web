@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { toast } from 'react-toastify';
 import { PhotoUploadQueue, type PhotoUploadBatch } from './photo-upload-queue';
 
@@ -12,6 +12,7 @@ export function usePhotoUploads() {
 
 export function PhotoUploadsProvider({ children }: { children: ReactNode }) {
   const [queue] = useState(() => new PhotoUploadQueue());
+  const shown = useRef(new Map<string, PhotoUploadBatch>());
   const batches = useSyncExternalStore(queue.subscribe, queue.getSnapshot);
   useEffect(() => () => {
     queue.getSnapshot().forEach((batch) => toast.dismiss(`photo-upload-${batch.id}`));
@@ -19,6 +20,8 @@ export function PhotoUploadsProvider({ children }: { children: ReactNode }) {
   }, [queue]);
   useEffect(() => {
     for (const batch of batches) {
+      if (shown.current.get(batch.id) === batch) continue;
+      shown.current.set(batch.id, batch);
       const toastId = `photo-upload-${batch.id}`;
       const finished = batch.status === 'completed' || batch.status === 'failed';
       const content = <div className="ai-toast-copy"><span>记录 #{batch.mistakeId} · {batch.message}</span>{batch.status === 'failed' && <button type="button" onClick={() => queue.retry(batch.id)}>重试</button>}</div>;

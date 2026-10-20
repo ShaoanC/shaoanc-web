@@ -133,6 +133,7 @@ db.exec(`
         user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         client_id TEXT NOT NULL,
         job_id INTEGER NOT NULL REFERENCES ai_jobs(id) ON DELETE CASCADE,
+        fingerprint TEXT NOT NULL,
         PRIMARY KEY (user_id, client_id)
     );
 `);

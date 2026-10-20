@@ -26,6 +26,7 @@
 .photo-entry-title { font-weight: 600; display: flex; align-items: center; gap: 8px; }
 .photo-entry .photo-actions { margin-bottom: 0; }
 .photo-entry p { font-size: 14px; color: var(--text-secondary); margin: 6px 0 0; }
+.photo-upload-status { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 10px; color: var(--text-secondary); font-size: 14px; }
 .photo-thumbnails { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; margin: 14px 0; }
 .photo-thumbnail { border: 1px solid var(--border-medium); background: white; padding: 8px; min-width: 0; }
 .photo-thumbnail.active { outline: 2px solid var(--primary); }

@@ -9,6 +9,7 @@ import { SaveDock } from '../SaveDock';
 import { ScrollArea } from '../ScrollArea';
 import { StarRatingPicker } from '../StarRating';
 import { PhotoInput, type PhotoInputHandle } from '../PhotoInput';
+import { usePhotoUploads } from '../PhotoUploads';
 import { ImageHistory } from '../ImageHistory';
 import { AiReview } from '../AiReview';
 import { isActiveJob, useAiTasks } from '../AiTasks';
@@ -26,6 +27,7 @@ const resultFields = (job: AiJob): (keyof Form)[] => job.type === 'question' ? [
 export function EditorPage({ id }: { id?: number }) {
   const { subjects, knowledgePoints, refreshDirectory, notify, user } = useApp();
   const { jobs, config, createJob, applyJob, refresh, openTasks } = useAiTasks();
+  const { queue: photoQueue, batches: photoBatches } = usePhotoUploads();
   const [recordId, setRecordId] = useState(id);
   const recordRef = useRef(id);
   const [data, setData] = useState<Form>({ ...empty });
@@ -43,7 +45,6 @@ export function EditorPage({ id }: { id?: number }) {
   const [mobile, setMobile] = useState(() => window.matchMedia('(max-width: 640px)').matches);
   const [applying, setApplying] = useState<number | null>(null);
   const [starting, setStarting] = useState(false);
-  const [uploadedQuestionIds, setUploadedQuestionIds] = useState<number[] | null>(null);
   const [reusingQuestionPhotos, setReusingQuestionPhotos] = useState(false);
   const processed = useRef(new Set<number>());
   const openedAt = useRef(Date.now());
@@ -57,7 +58,10 @@ export function EditorPage({ id }: { id?: number }) {
   const questionPhotos = useRef<PhotoInputHandle>(null);
   const answerPhotos = useRef<PhotoInputHandle>(null);
   const currentJobs = jobs.filter((job) => job.mistakeId === recordId);
-  const questionImageIds = uploadedQuestionIds ?? currentJobs.find((job) => job.type === 'question')?.imageIds ?? [];
+  const questionBatch = photoBatches.find((batch) => batch.mistakeId === recordId && batch.purpose === 'question');
+  const questionImageIds = questionBatch?.imageIds ?? currentJobs.find((job) => job.type === 'question')?.imageIds ?? [];
+  const questionPhotoCount = questionBatch?.total ?? questionImageIds.length;
+  const reuseQueued = questionBatch?.reuseStatus === 'waiting' || questionBatch?.reuseStatus === 'submitting';
   const aiAvailable = Boolean(config?.enabled && config.configured);
 
   function update(patch: Partial<Form>) { dataRef.current = { ...dataRef.current, ...patch }; setData(dataRef.current); }
@@ -120,6 +124,10 @@ export function EditorPage({ id }: { id?: number }) {
     catch (err) { setError((err as Error).message); throw err; }
   }
   async function reuseQuestionPhotos() {
+    if (questionBatch) {
+      if (photoQueue.reuse(questionBatch.id, inputOf(dataRef.current))) notify('已记录复用请求，图片上传完成后会自动识别答案。');
+      return;
+    }
     setReusingQuestionPhotos(true);
     try { await recognize('answer', questionImageIds); }
     catch (err) { notify((err as Error).message, 'error'); }
@@ -198,11 +206,12 @@ export function EditorPage({ id }: { id?: number }) {
       <div className="editor-mobile-tabs"><SlidingTabs tabs={tabs} value={tab} onChange={(value) => setTab(value as EditorTab)} ariaLabel="编辑内容" /></div>
       <div className="editor-layout"><div className="editor-main">
         <section className="editor-block editor-question-block" {...panelProps('question')}><div className="editor-block-heading"><FileText size={18} /><h2>题目</h2><span>必填</span></div>
-          <PhotoInput ref={questionPhotos} purpose="question" ensureSaved={ensureSaved} onUploaded={setUploadedQuestionIds} onRecognize={(ids) => recognize('question', ids)} aiAvailable={aiAvailable} />{candidates('question')}
+          <PhotoInput ref={questionPhotos} purpose="question" recordId={recordId} ensureSaved={ensureSaved} aiAvailable={aiAvailable} />{candidates('question')}
           <MarkdownField ref={questionField} name="题干" label={<>题干 <em>*</em></>} textareaClassName="question-editor" value={data.question} onChange={(question) => update({ question })} placeholder="输入题目内容，包括题目条件、问题和选项…" />
         </section>
         <section className="editor-block editor-answers-block" {...panelProps('answers')}><div className="editor-block-heading"><FileText size={18} /><h2>答案与分析</h2></div>
-          <PhotoInput ref={answerPhotos} purpose="answer" ensureSaved={ensureSaved} onRecognize={(ids) => recognize('answer', ids)} aiAvailable={aiAvailable} actions={<button type="button" className="button secondary" disabled={!questionImageIds.length || !aiAvailable || reusingQuestionPhotos || Boolean(saving) || Boolean(applying) || currentJobs.some((job) => job.type === 'answer' && isActiveJob(job))} title={questionImageIds.length ? '按原顺序使用题干裁剪图识别答案，无需重新上传' : '先在题干中上传图片'} onClick={() => void reuseQuestionPhotos()}><Copy size={16} />{reusingQuestionPhotos ? '正在提交…' : `复用题干图片${questionImageIds.length ? `（${questionImageIds.length} 张）` : ''}`}</button>} />{candidates('answer')}
+          <PhotoInput ref={answerPhotos} purpose="answer" recordId={recordId} ensureSaved={ensureSaved} aiAvailable={aiAvailable} actions={<button type="button" className="button secondary" disabled={!questionPhotoCount || !aiAvailable || reusingQuestionPhotos || Boolean(questionBatch?.reuseRequested) || (!questionBatch && (Boolean(saving) || Boolean(applying) || currentJobs.some((job) => job.type === 'answer' && isActiveJob(job))))} title={questionPhotoCount ? '按原顺序复用题干图片；上传中会先记录请求，完成后自动识别答案' : '先在题干中添加并提交图片'} onClick={() => void reuseQuestionPhotos()}><Copy size={16} />{reuseQueued ? '已记录，后台处理中…' : questionBatch?.reuseStatus === 'failed' ? '复用待重试' : questionBatch?.reuseRequested ? '已提交答案识别' : reusingQuestionPhotos ? '正在提交…' : `复用题干图片${questionPhotoCount ? `（${questionPhotoCount} 张）` : ''}`}</button>} />{candidates('answer')}
+          {reuseQueued && <p className="ai-notice" role="status">复用请求已记录，将在题干图片全部上传后自动识别答案。</p>}
           <MarkdownField ref={answerField} name="正确答案" label={<>正确答案 <span className="optional-label">选填</span></>} rows={3} value={data.answer} onChange={(answer) => update({ answer })} placeholder="直接输入答案，或拍照识别后修改…" />
           <p className="ai-notice">手动输入的短答案会在保存时自动生成解析；图片识别的短答案会在填入后生成。</p>
           {analysisNotice && <p className="ai-review-issues" role="status">{analysisNotice}</p>}

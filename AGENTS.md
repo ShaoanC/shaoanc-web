@@ -17,6 +17,7 @@
 - `node --check server/app.js`: check server JavaScript syntax.
 - `curl.exe http://127.0.0.1:3000/api/hello`: smoke-test the running API on Windows; expect a JSON response with `success: true`.
 - `npm run test:ai`: run `scripts/mistakes-ai-smoke.cjs` with a local mock AI and isolated database/uploads to check photo entry, knowledge ownership, automatic analysis, retries, recovery, conflicts and cleanup.
+- `node scripts/mistakes-upload-smoke.cjs`: check background photo uploads, deferred answer reuse, automatic retries and resume using mocked requests.
 - `npm test`: run the core mistakes/search smoke checks and CAPTCHA authentication smoke checks with isolated temporary databases under ignored `data/`.
 - `node scripts/mistakes-captcha-smoke.cjs`: run only the CAPTCHA and authentication-limit checks using a mocked verification API.
 

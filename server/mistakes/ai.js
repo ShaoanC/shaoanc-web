@@ -180,11 +180,12 @@ function createJob(userId, body) {
     }
     const fingerprint = crypto.createHash('sha256').update(JSON.stringify([body.type, input, imageIds,
         references.map((image) => [image.id, image.variant, image[`${image.variant}_path`]])])).digest('hex');
+    const requestFingerprint = `${row.id}:${body.automatic ? 1 : 0}:${fingerprint}`;
     if (clientId) {
-        const requested = db.prepare(`SELECT j.* FROM ai_job_requests r JOIN ai_jobs j ON j.id = r.job_id
+        const requested = db.prepare(`SELECT j.*, r.fingerprint AS request_fingerprint FROM ai_job_requests r JOIN ai_jobs j ON j.id = r.job_id
             WHERE r.user_id = ? AND r.client_id = ?`).get(userId, clientId);
         if (requested) {
-            if (requested.mistake_id !== row.id || requested.fingerprint !== fingerprint || requested.automatic !== (body.automatic ? 1 : 0)) {
+            if (requested.request_fingerprint !== requestFingerprint) {
                 fail(409, 'AI 提交编号已用于其他内容，请重新提交');
             }
             return serializeJob(requested);
@@ -202,7 +203,7 @@ function createJob(userId, body) {
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(row.id, userId, body.type, JSON.stringify(input), JSON.stringify(imageIds), body.automatic ? 1 : 0, fingerprint, now());
             result = db.prepare('SELECT * FROM ai_jobs WHERE id = ?').get(inserted.lastInsertRowid);
         }
-        if (clientId) db.prepare('INSERT INTO ai_job_requests (user_id, client_id, job_id) VALUES (?, ?, ?)').run(userId, clientId, result.id);
+        if (clientId) db.prepare('INSERT INTO ai_job_requests (user_id, client_id, job_id, fingerprint) VALUES (?, ?, ?, ?)').run(userId, clientId, result.id, requestFingerprint);
         return result;
     })();
     if (previous) return serializeJob(job);
