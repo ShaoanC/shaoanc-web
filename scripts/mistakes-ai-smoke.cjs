@@ -113,6 +113,10 @@ async function runAiSmoke() {
                 result = { ...result, question: '函数图像如下。\n\n[[figure:invalid]]', figures: [{ id: 'invalid', imageIndex: 1, box: [0.9, 0.9, 0.2, 0.2], description: '越界区域' }] };
             } else if (type === 'question' && questionFixture === 'unmatched') {
                 result = { ...result, question: '保留无法分类的原题文字。\n\n[[figure:missing]]', subjectId: null, primaryPath: [], auxiliaryPaths: [] };
+            } else if (type === 'answer' && answerFixture === 'multiple') {
+                result = { ...result, answer: '根据图表可得 $x=2$。\n\n[[figure:answer-chart]]', figures: [
+                    { id: 'answer-chart', imageIndex: 1, bounds: { left: 0.25, top: 0.625, right: 0.625, bottom: 0.875 }, description: '答案中的图表' }
+                ] };
             } else if (type === 'answer' && answerFixture === 'uncertain') {
                 result = { ...result, answer: '(1) $x=2$；(2) [待确认]', issues: [{ imageIndex: 1, type: 'uncertain', description: '订正与原作答重叠，请检查。' }] };
             }
@@ -229,24 +233,47 @@ async function runAiSmoke() {
 
         await alice('PATCH', `/mistakes/${mistake.id}`, { question: '私密题干快照不发模型', answer: '私密答案快照不发模型', analysis: '私密解析快照不发模型' });
         questionFixture = 'multiple';
+        answerFixture = 'multiple';
         const sourceSnapshot = await latest();
-        const multiple = await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'question', input: input(sourceSnapshot), imageIds: [first.id, second.id] }, 201);
-        const multipleResult = await completed(multiple);
+        const multipleRequest = { clientId: 'background-figures-question', mistakeId: mistake.id, type: 'question', input: input(sourceSnapshot), imageIds: [first.id, second.id] };
+        const reuseFiguresRequest = { ...multipleRequest, clientId: 'background-figures-answer', type: 'answer' };
+        const [multiple, reuseFigures] = await Promise.all([
+            alice('POST', '/ai/jobs', multipleRequest, 201),
+            alice('POST', '/ai/jobs', reuseFiguresRequest, 201)
+        ]);
+        const [multipleResult, reuseFiguresResult] = await Promise.all([completed(multiple), completed(reuseFigures)]);
+        answerFixture = 'plain';
         assert.equal(multipleResult.status, 'succeeded');
         assert.equal(multipleResult.result.needsReview, true, 'The server derives review from figures even when the model says false');
-        assert.notEqual(multipleResult.applyStatus, 'applied');
+        for (const job of [multipleResult, reuseFiguresResult]) {
+            assert.equal(job.status, 'succeeded');
+            assert.equal(job.applyStatus, 'pending', 'Concurrent photo recognition waits for manual figure confirmation');
+            assert.equal(job.result.needsReview, true);
+            assert.deepEqual(job.imageIds, [first.id, second.id], 'Question and answer reuse retain the same ordered source crops');
+            assert.ok(job.result[job.type].includes('[[figure:'));
+            await alice('POST', `/ai/jobs/${job.id}/apply`, {}, 409);
+            await alice('POST', `/ai/jobs/${job.id}/apply`, { force: true }, 409);
+        }
+        assert.equal((await alice('POST', '/ai/jobs', multipleRequest, 201)).id, multiple.id, 'A creation retry returns the pending question review');
+        assert.equal((await alice('POST', '/ai/jobs', reuseFiguresRequest, 201)).id, reuseFigures.id, 'A creation retry returns the pending answer review');
         assert.equal(multipleResult.result.figures.length, 2, 'One image supports multiple independent regions');
         assert.deepEqual(multipleResult.result.figures.map((figure) => figure.box), [[0.125, 0.125, 0.375, 0.375], [0.5, 0.5, 0.375, 0.375]]);
+        assert.deepEqual(reuseFiguresResult.result.figures[0].box, [0.25, 0.625, 0.375, 0.25]);
         assert.equal((await latest()).question, sourceSnapshot.question);
+        assert.equal((await latest()).answer, sourceSnapshot.answer, 'Background answer reuse does not fill unconfirmed figures');
         for (const secret of ['私密题干快照不发模型', '私密答案快照不发模型', '私密解析快照不发模型']) assert.equal(requests.question.body.includes(secret), false);
         assert.equal((await alice('GET', '/knowledge-points')).some((point) => point.name === '校对后才创建'), false, 'Recognition creates no knowledge points before review is applied');
-        await alice('POST', `/ai/jobs/${multiple.id}/apply`, {}, 409);
         await alice('POST', `/ai/jobs/${multiple.id}/apply`, { review: { question: multipleResult.result.question } }, 400);
         const geometry = await upload('question', 'figure-geometry', first.id);
         const table = await upload('question', 'figure-table', first.id);
         assert.equal(geometry.sourceImageId, first.id);
         assert.equal((await upload('question', 'figure-geometry', first.id)).id, geometry.id, 'A retried figure upload reuses the same image ID');
-        await upload('answer', 'invalid-derived-purpose', first.id, alice, mistake.id, 400);
+        const answerFigure = await upload('answer', 'figure-answer-chart', first.id);
+        assert.equal(answerFigure.purpose, 'answer', 'A confirmed answer figure retains its answer purpose');
+        assert.equal(answerFigure.sourceImageId, first.id);
+        const figureHistory = await alice('GET', `/mistakes/${mistake.id}/images`);
+        assert.ok(figureHistory.filter((image) => image.purpose === 'answer').some((image) => image.id === answerFigure.id), 'Confirmed answer figures appear in answer image history');
+        assert.equal(figureHistory.filter((image) => image.purpose === 'question').some((image) => image.id === answerFigure.id), false, 'Answer figures never enter question image history');
         const otherMistake = await alice('POST', '/mistakes', {}, 201);
         const otherImage = await upload('question', 'other', undefined, alice, otherMistake.id);
         const bobMistake = await bob('POST', '/mistakes', {}, 201);
@@ -270,6 +297,17 @@ async function runAiSmoke() {
         assert.equal(applied.mistake.question, finalQuestion, 'The final text and diagram order are applied exactly as reviewed');
         assert.equal(applied.job.result.question, multipleResult.result.question, 'Review does not overwrite the original recognition result');
         assert.equal((await alice('GET', '/knowledge-points')).some((point) => point.name === '校对后才创建'), true);
+        const answerAfterQuestionReview = await alice('GET', `/ai/jobs/${reuseFigures.id}`);
+        assert.equal(answerAfterQuestionReview.applyStatus, 'pending', 'Confirming the question leaves the answer review pending');
+        assert.deepEqual(answerAfterQuestionReview.imageIds, reuseFiguresResult.imageIds);
+        assert.deepEqual(answerAfterQuestionReview.result.figures, reuseFiguresResult.result.figures, 'Confirming question crops never changes answer source coordinates');
+        const finalAnswer = `根据图表校对后的答案 $x=2$。\n\n![答案图表](${answerFigure.cropUrl})`;
+        const reviewedAnswer = await alice('POST', `/ai/jobs/${reuseFigures.id}/apply`, { review: { answer: finalAnswer }, force: true });
+        assert.equal(reviewedAnswer.mistake.answer, finalAnswer);
+        assert.equal(reviewedAnswer.mistake.question, finalQuestion, 'Confirming the answer preserves the reviewed question');
+        assert.deepEqual(await alice('GET', first.cropUrl.replace('/api/mistakes', '')), jpeg, 'Manual figure confirmation leaves the reused source crop unchanged');
+        assert.equal((await alice('POST', '/ai/jobs', reuseFiguresRequest, 201)).id, reuseFigures.id, 'A lost creation response still returns the original job after manual confirmation');
+        assert.deepEqual((await alice('GET', `/ai/jobs/${reuseFigures.id}`)).result.figures, reuseFiguresResult.result.figures);
 
         questionFixture = 'invalid';
         const invalid = await completed(await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'question', input: input(await latest()), imageIds: [first.id] }, 201));

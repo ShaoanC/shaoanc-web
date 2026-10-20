@@ -51,8 +51,8 @@ function saveImages(req, mistake) {
     }
     const sourceImageId = req.body.sourceImageId === undefined || req.body.sourceImageId === '' ? null : Number(req.body.sourceImageId);
     if (sourceImageId !== null) {
-        if (!Number.isSafeInteger(sourceImageId) || purpose !== 'question' || !db.prepare('SELECT id FROM mistake_images WHERE id = ? AND mistake_id = ? AND user_id = ?')
-            .get(sourceImageId, mistake.id, req.user.id)) fail(400, '配图来源必须是当前错题的图片，派生配图须用于题干');
+        if (!Number.isSafeInteger(sourceImageId) || !db.prepare('SELECT id FROM mistake_images WHERE id = ? AND mistake_id = ? AND user_id = ?')
+            .get(sourceImageId, mistake.id, req.user.id)) fail(400, '配图来源必须是当前用户、当前错题的图片');
     }
     const previous = db.prepare('SELECT * FROM mistake_images WHERE mistake_id = ? AND client_id = ? AND user_id = ?').get(mistake.id, clientId, req.user.id);
     if (previous) {

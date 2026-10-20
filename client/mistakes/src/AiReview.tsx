@@ -54,7 +54,8 @@ export function AiReview({ job, input, busy, onApply, onDismiss }: { job: AiJob;
     : issue.type === 'invalid_figure' ? draft.figures.some((figure) => !validBox(figure.box) || !job.imageIds.includes(figure.imageId)) : true);
   const unplaced = draft.figures.filter((figure) => figure.selected && validBox(figure.box) && !referenced.includes(figure.id));
   const points = knowledgePoints.filter((point) => point.subjectId === draft.subjectId);
-  const changedDuringReview = JSON.stringify(input) !== JSON.stringify(draft.expectedInput);
+  const reviewFields: (keyof AiInput)[] = job.type === 'question' ? ['question', 'subjectId', 'primaryKnowledgePointId', 'auxiliaryKnowledgePointIds'] : job.type === 'answer' ? ['answer'] : ['question', 'answer', 'analysis'];
+  const changedDuringReview = reviewFields.some((field) => JSON.stringify(input[field]) !== JSON.stringify(draft.expectedInput[field]));
   function update(patch: Partial<ReviewDraft>) { draftRef.current = { ...draftRef.current, ...patch }; setDraft(draftRef.current); }
   useEffect(() => {
     try { sessionStorage.setItem(storeKey(job), JSON.stringify(draft)); } catch { /* The open review still retains its draft. */ }
@@ -131,7 +132,7 @@ export function AiReview({ job, input, busy, onApply, onDismiss }: { job: AiJob;
         setStage(`正在上传配图 ${index + 1}/${ordered.length}…`);
         const blob = await cropFigure(image.cropUrl, figure.box);
         const form = new FormData();
-        form.append('original', blob, `${figure.id}.jpg`); form.append('crop', blob, `${figure.id}.jpg`); form.append('purpose', 'question'); form.append('sourceImageId', String(figure.imageId)); form.append('clientId', figure.clientId);
+        form.append('original', blob, `${figure.id}.jpg`); form.append('crop', blob, `${figure.id}.jpg`); form.append('purpose', job.type === 'answer' ? 'answer' : 'question'); form.append('sourceImageId', String(figure.imageId)); form.append('clientId', figure.clientId);
         const uploaded = await api<MistakeImage>(`/mistakes/${job.mistakeId}/images`, { method: 'POST', body: form });
         uploads.set(figure.id, uploaded.cropUrl);
         update({ figures: draftRef.current.figures.map((item) => item.id === figure.id ? { ...item, uploadedId: uploaded.id, uploadedUrl: uploaded.cropUrl } : item) });
@@ -167,7 +168,7 @@ export function AiReview({ job, input, busy, onApply, onDismiss }: { job: AiJob;
         <section ref={sourcePanel} className={`ai-review-source${mobileView === 'image' ? ' is-mobile-active' : ''}`}>
           <h3>来源图片</h3><div className="ai-source-tabs">{job.imageIds.map((id, index) => <button type="button" key={id} className={id === imageId ? 'is-active' : ''} onClick={() => { setImageId(id); setRedrawId(null); }}>图片 {index + 1}</button>)}</div>
           {source ? <ImageRegions url={source.cropUrl} figures={draft.figures.map((figure, index) => ({ ...figure, number: index + 1 })).filter((figure) => figure.imageId === imageId)} activeId={activeId} onActive={setActiveId} onChange={changeBox} onAdd={add} disabled={locked} onZoom={() => setFull(source.cropUrl)} redrawId={redrawId} onRedrawDone={() => setRedrawId(null)} /> : <p className="ai-empty">{job.imageIds.length ? '正在加载来源图片…' : '这项任务没有来源图片。'}</p>}
-          <p className="ai-notice">配图与题干使用同一张裁剪图。图形与作答重叠时，请检查截图内容；不会自动擦除彩色笔迹。</p>
+          <p className="ai-notice">配图框选基于本次识别的裁剪图。图形与作答重叠时，请检查截图内容；不会自动擦除彩色笔迹。</p>
           <div className="ai-figure-list">{draft.figures.map((figure, index) => <article key={figure.id} className={`ai-figure-item${activeId === figure.id ? ' is-active' : ''}`}>
             <div className="ai-figure-heading"><label><input type="checkbox" disabled={locked || !validBox(figure.box)} checked={figure.selected} onChange={(event) => { const selected = event.target.checked; update({ text: selected ? draftRef.current.text : draftRef.current.text.split(figureMarker(figure.id)).join(''), figures: draftRef.current.figures.map((item) => item.id === figure.id ? { ...item, selected } : item) }); }} />配图 {index + 1} <small>{job.imageIds.includes(figure.imageId) ? `来源图片 ${job.imageIds.indexOf(figure.imageId) + 1}` : '来源未确定'}</small></label><button type="button" className="icon-button" disabled={locked} aria-label={`删除配图 ${index + 1}`} onClick={() => remove(figure.id)}><Trash2 size={15} /></button></div>
             {previews[figure.id] && <button type="button" className="ai-figure-preview" aria-label={`放大配图 ${index + 1}`} onClick={() => { setImageId(figure.imageId); setActiveId(figure.id); setFull(previews[figure.id]); }}><img src={previews[figure.id]} alt={figure.description || `配图 ${index + 1}`} /><ZoomIn size={15} /></button>}
