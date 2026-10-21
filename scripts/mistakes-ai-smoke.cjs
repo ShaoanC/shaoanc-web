@@ -77,7 +77,8 @@ async function runAiSmoke() {
                 assert.equal(req.headers['x-goog-api-key'], undefined, 'Analysis uses only its own OpenAI credentials');
                 assert.equal(request.model, 'mock-analysis');
                 assert.equal(request.reasoning_effort, 'medium', 'Analysis explicitly enables medium reasoning');
-                assert.equal(request.messages[0].role, 'system');
+                assert.equal(request.max_completion_tokens, 8192, 'Analysis reserves completion tokens beyond reasoning');
+                assert.equal(request.messages[0].role, 'developer');
                 assert.ok(request.messages[0].content.includes('不要校对、评判或质疑给定答案'), 'The independent analysis API retains the latest answer-explanation instructions');
                 assert.equal(request.messages[1].role, 'user');
                 const content = request.messages[1].content;

@@ -42,7 +42,7 @@ function recognitionMessages({ type, mode = 'single', target, input = {}, subjec
         ? { question: '题干 Markdown', subjectId: subjects[0]?.id ?? null, primaryPath: ['知识点名称'], auxiliaryPaths: [], issues: [], figures: [] }
         : type === 'analysis' ? { analysis: '解题解析 Markdown' } : { [type]: 'Markdown 内容', issues: [], figures: [] };
     if (mode === 'page-entry') {
-        instructions += '\n本次为按页录题，每个独立大题及其所属小问合并成一道题。图片1是用户选择的完整题目裁图，图片2是同页上下文。只识别指定题号和图片1中的目标题，不混入邻题。使用图片2补足该题公共题干及匹配写在别处的蓝笔答案。题干中的填空与选择保持空白，答案另存 answer。answer 只提取属于该题的蓝笔最终正确答案，排除被划掉的旧答案、黑笔作答、蓝色印刷文字及批改符号；不自行解题或推算补全。没有可匹配蓝笔答案时 answer:"" 并记录 issue。多小问答案按顺序分段，不添加题号。题干和答案同一次返回，不遗漏题干。必要配图用 figures 定位并增加 field:"question" 或 "answer"，在对应正文插入标记；配图坐标基于其 imageIndex 对应图片。文字或分类疑点保留提示但不要求人工校对，只有必要配图需要校对。';
+        instructions += '\n本次为按页录题。一道题对应一个阿拉伯数字题号（如“1.”“2.”），同一题号下的再分小问（如“1(1)”“1(2)”）属于这一道题，要一起转写；“一、填空题”这类中文数字分组标题不是题目。图片1是用户选择的完整题目裁图，图片2是同页上下文。只识别指定题号和图片1中的目标题，不混入邻题，也不把同组的其他阿拉伯数字题并进来。使用图片2补足该题共用材料及匹配写在别处的蓝笔答案。题干中的填空与选择保持空白，答案另存 answer。answer 只提取属于该题的蓝笔最终正确答案，排除被划掉的旧答案、黑笔作答、蓝色印刷文字及批改符号；不自行解题或推算补全。没有可匹配蓝笔答案时 answer:"" 并记录 issue。同一题内的再分小问答案按顺序分段，不添加题号。题干和答案同一次返回，不遗漏题干。必要配图用 figures 定位并增加 field:"question" 或 "answer"，在对应正文插入标记；配图坐标基于其 imageIndex 对应图片。文字或分类疑点保留提示但不要求人工校对，只有必要配图需要校对。';
         example.answer = '蓝笔正确答案，没有时为空字符串';
     }
     // Saved OCR text is only a conflict snapshot; do not send it back to the recognition model.

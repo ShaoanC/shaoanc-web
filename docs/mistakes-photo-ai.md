@@ -1,5 +1,10 @@
 # 拍照录题与 AI 任务
 
+## 生成解析 Chat Completions 兼容（2026-10-21）
+
+- completed：解析请求改用 `developer` 角色，保留 `reasoning_effort: 'medium'`，并设置 `max_completion_tokens: 8192`，避免 `gpt-6-luna` 拒绝 `system` 角色或把完成额度耗在推理上。
+- completed：读取 `choices[0].message.content` 时同时接受字符串和 `text`／`output_text` 内容数组，数组中的正文拼接为解析；空结果仍判为无效。
+
 ## 生成解析 thinking（2026-10-21）
 
 - completed：生成解析的 Chat Completions 请求显式传入 `reasoning_effort: 'medium'`，适用于当前使用的 `gpt-6-luna`；模型仍使用独立解析配置，通用识别与页面分题请求保持原样。
@@ -26,7 +31,7 @@
 
 1. 管理员在“设置 → AI 设置”分别配置三套服务。通用识别与页面分题使用 Gemini 原生基础地址（例如 `https://generativelanguage.googleapis.com/v1beta`），生成解析使用 OpenAI Chat Completions 基础地址（例如 `https://api.openai.com/v1`）。系统分别追加 `/models/{model}:generateContent` 和 `/chat/completions`，不要填写完整请求路径。三套模型、密钥及启用状态各自保存；留空密钥保持原值。新分题与解析服务默认未启用，不从通用配置自动复制密钥，也不回退到通用服务。
 2. 在“录入错题 → 按页批量录入”选择或拍摄整页，每次最多 12 张 JPG、PNG、WebP，可调整顺序和左右旋转。图片按显示方向压缩为最长边 3200 像素、目标 3.8MB 内的 JPEG，服务器单页上限仍为 4MB。整页上传完成后分题在后台继续。
-3. 每页调用专用 Gemini Segmentation，保存题号、`box_2d` 和原始 `mask`。矩形框默认不选中，点选或全选需要录入的错题；“调整题框”可移动/缩放，也支持方向键移动、Shift 加方向键缩放，“补画题框”可添加遗漏题目。题号可以修改。每个独立大题及其所属小问、公共题干和选项一起录入；题框不依据 mask 擦除文字或笔迹。
+3. 每页调用专用 Gemini Segmentation，保存题号、`box_2d` 和原始 `mask`。矩形框默认不选中，点选或全选需要录入的错题；“调整题框”可移动/缩放，也支持方向键移动、Shift 加方向键缩放，“补画题框”可添加遗漏题目。题号可以修改。分题以阿拉伯数字题号为准，例如 `1.`、`2.` 各是一道题；“一、填空题”这类中文数字分组标题不单独成题，也不把整组合成一框。同一阿拉伯数字题号下的再分小问留在同一框，例如 `1(1)` 与 `1(2)` 都属于第 1 题。每题连同选项、图形及该题共用材料一起录入；题框不依据 mask 擦除文字或笔迹。
 4. 点击“批量录入所选题目”，立即建立草稿并持久保存选题，后台准备每题裁图，然后每题调用通用 Gemini 一次，同时转写题干、匹配蓝笔正确答案并建议归类。请求携带题目裁图及来源整页，能按题号寻找页面其他位置的蓝笔答案。蓝笔答案忠实转写，不重新计算；没找到时留空并提示。识别来源保存在草稿图片历史中。
 5. 无图题直接填入草稿，文字和归类疑点不阻止填入，可在 AI 任务查看提示。有必要配图时保留联合识别结果，进入题干、答案与配图校对；可选择每张配图属于题干还是答案。成功填入后，短答案沿用自动生成解析规则，使用独立解析 API。缺答案、待确认或待补充文字暂不自动解析；解析未启用不影响录题。
 6. 可以离开录入页，后台任务继续。失败题可在页面列表独立重试图片准备或识别，服务器重启也会恢复已确认的图片准备和未完成 AI 任务。重复提交沿用同一题框、草稿及任务。人工已填写的内容仍受冲突保护，只有明确确认替换才覆盖。
@@ -35,7 +40,7 @@
 
 ### 配置与接口
 
-配置仍写入忽略 Git 的 `.env.ai`（或 `MISTAKES_AI_CONFIG_PATH`）。`MISTAKES_AI_*` 保留为通用识别；新增 `MISTAKES_AI_SEGMENTATION_*` 和 `MISTAKES_AI_ANALYSIS_*`，三组均有 `ENABLED`、`BASE_URL`、`MODEL`、`API_KEY`。解析请求使用 Bearer 密钥和 `messages`，读取 `choices[0].message.content` 的 Markdown；含图题通过 `image_url` 携带已验证属于当前错题的本站配图，因此解析模型需支持图片输入。
+配置仍写入忽略 Git 的 `.env.ai`（或 `MISTAKES_AI_CONFIG_PATH`）。`MISTAKES_AI_*` 保留为通用识别；新增 `MISTAKES_AI_SEGMENTATION_*` 和 `MISTAKES_AI_ANALYSIS_*`，三组均有 `ENABLED`、`BASE_URL`、`MODEL`、`API_KEY`。解析请求使用 Bearer 密钥和 `messages`，指令放在 `developer` 角色，并设置 `reasoning_effort: 'medium'` 与 `max_completion_tokens: 8192`。正文读取 `choices[0].message.content`，字符串或 `text`／`output_text` 内容数组都接受。含图题通过 `image_url` 携带已验证属于当前错题的本站配图，因此解析模型需支持图片输入。
 
 前缀均为 `/api/mistakes`，返回格式仍为 `{ success, data }`：
 
