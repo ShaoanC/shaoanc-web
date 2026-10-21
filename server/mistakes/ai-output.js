@@ -1,6 +1,6 @@
 const object = (properties) => ({ type: 'object', properties, required: Object.keys(properties), additionalProperties: false });
 
-function recognitionFormat(type) {
+function recognitionFormat(type, mode = 'single') {
     const string = { type: 'string' };
     const properties = { [type]: string };
     if (type !== 'analysis') {
@@ -17,6 +17,11 @@ function recognitionFormat(type) {
         properties.subjectId = { type: ['string', 'null'] };
         properties.primaryPath = { type: 'array', items: string };
         properties.auxiliaryPaths = { type: 'array', items: { type: 'array', items: string } };
+    }
+    if (mode === 'page-entry') {
+        properties.answer = string;
+        properties.figures.items.properties.field = { type: 'string', enum: ['question', 'answer'] };
+        properties.figures.items.required.push('field');
     }
     return { responseMimeType: 'application/json', responseJsonSchema: object(properties) };
 }

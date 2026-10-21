@@ -1,5 +1,46 @@
 # 拍照录题与 AI 任务
 
+## 按页批量录题与独立解析 API（2026-10-21）
+
+实施任务：
+
+- completed：三套独立 AI 配置、管理表单及连接测试；模拟服务验证配置保存互不覆盖、密钥不回传和协议路由。
+- completed：Gemini Segmentation 页面任务、按大题选框、整页共享存储与后台裁图；验证坐标、点选、多选、调整及手机布局。
+- completed：逐题一次识别题干与蓝笔答案、批量草稿及含图联合校对；验证无图直接填入、缺答案留空、修改冲突及配图上传。
+- completed：持久化图片准备、识别队列、重试、取消、重启恢复与来源清理；隔离烟测验证复用原草稿、单题失败不影响其他题、来源图最后引用清理。
+- completed：前端构建、核心烟测、AI 烟测、按页烟测、服务端语法检查及桌面/手机浏览器检查；使用与部署说明已更新。
+
+### 使用
+
+1. 管理员在“设置 → AI 设置”分别配置三套服务。通用识别与页面分题使用 Gemini 原生基础地址（例如 `https://generativelanguage.googleapis.com/v1beta`），生成解析使用 OpenAI Chat Completions 基础地址（例如 `https://api.openai.com/v1`）。系统分别追加 `/models/{model}:generateContent` 和 `/chat/completions`，不要填写完整请求路径。三套模型、密钥及启用状态各自保存；留空密钥保持原值。新分题与解析服务默认未启用，不从通用配置自动复制密钥，也不回退到通用服务。
+2. 在“录入错题 → 按页批量录入”选择或拍摄整页，每次最多 12 张 JPG、PNG、WebP，可调整顺序和左右旋转。图片按显示方向压缩为最长边 3200 像素、目标 3.8MB 内的 JPEG，服务器单页上限仍为 4MB。整页上传完成后分题在后台继续。
+3. 每页调用专用 Gemini Segmentation，保存题号、`box_2d` 和原始 `mask`。矩形框默认不选中，点选或全选需要录入的错题；“调整题框”可移动/缩放，也支持方向键移动、Shift 加方向键缩放，“补画题框”可添加遗漏题目。题号可以修改。每个独立大题及其所属小问、公共题干和选项一起录入；题框不依据 mask 擦除文字或笔迹。
+4. 点击“批量录入所选题目”，立即建立草稿并持久保存选题，后台准备每题裁图，然后每题调用通用 Gemini 一次，同时转写题干、匹配蓝笔正确答案并建议归类。请求携带题目裁图及来源整页，能按题号寻找页面其他位置的蓝笔答案。蓝笔答案忠实转写，不重新计算；没找到时留空并提示。识别来源保存在草稿图片历史中。
+5. 无图题直接填入草稿，文字和归类疑点不阻止填入，可在 AI 任务查看提示。有必要配图时保留联合识别结果，进入题干、答案与配图校对；可选择每张配图属于题干还是答案。成功填入后，短答案沿用自动生成解析规则，使用独立解析 API。缺答案、待确认或待补充文字暂不自动解析；解析未启用不影响录题。
+6. 可以离开录入页，后台任务继续。失败题可在页面列表独立重试图片准备或识别，服务器重启也会恢复已确认的图片准备和未完成 AI 任务。重复提交沿用同一题框、草稿及任务。人工已填写的内容仍受冲突保护，只有明确确认替换才覆盖。
+
+页面来源只保存一次，每题保存独立裁图。删除导入页面将其从列表移除，已建立的草稿继续保留；其他草稿仍引用来源时不会删除整页文件，最后引用永久清理后才移除。未提交的来源页面可直接删除。本次不包含 PDF、跨页合题和透视矫正。
+
+### 配置与接口
+
+配置仍写入忽略 Git 的 `.env.ai`（或 `MISTAKES_AI_CONFIG_PATH`）。`MISTAKES_AI_*` 保留为通用识别；新增 `MISTAKES_AI_SEGMENTATION_*` 和 `MISTAKES_AI_ANALYSIS_*`，三组均有 `ENABLED`、`BASE_URL`、`MODEL`、`API_KEY`。解析请求使用 Bearer 密钥和 `messages`，读取 `choices[0].message.content` 的 Markdown；含图题通过 `image_url` 携带已验证属于当前错题的本站配图，因此解析模型需支持图片输入。
+
+前缀均为 `/api/mistakes`，返回格式仍为 `{ success, data }`：
+
+- 配置读取/保存和测试接口增加查询参数 `profile=general|segmentation|analysis`，省略时仍为通用服务。普通用户 `/ai/config` 保留顶层通用状态，并增加 `segmentation`、`analysis` 的可用状态。
+- `POST /page-imports` 接收 multipart `file`、`clientId`、`batchId`、`pageOrder`；`GET /page-imports` 和 `GET /page-imports/:id` 读取本人页面及各题进度，`GET /page-imports/:id/image` 鉴权读取整页。
+- `PATCH /page-imports/:id` 保存 `regions: [{id,label,box,selected}]`；`POST /page-imports/:id/import` 提交最终选题并立即返回草稿关联。前端不用回传 mask；已导入题框锁定。
+- `POST /page-imports/:id/retry`、`/cancel` 处理分题，`DELETE /page-imports/:id` 移除导入页面；`POST /page-imports/:id/items/:regionId/retry` 重试图片准备；识别重试复用 `/ai/jobs/:id/retry`。
+- 题干任务增加 `mode: "single" | "page-entry"`，旧任务默认 `single`。`page-entry` 结果和校对同时包含题干、答案及归类；配图增加所属 `field`。原有单题接口继续使用原字段。
+
+部署时运行 `npm ci --cache ./data/.npm-cache`、`npm run build`，重启 Node；数据库启动时自动增加页面导入表和任务字段。新增 `sharp` 图片裁剪依赖，分题、裁图准备、通用识别和解析共用并发 2 的任务队列。备份时一并保存数据库、图片目录和 `.env.ai`。
+
+### 本轮验证
+
+`npm run test:pages`、`npm run test:ai`、`npm test`、`npm run build` 和修改后服务端语法检查通过。按页烟测使用本地 Gemini/OpenAI 模拟接口及隔离数据库，覆盖配置隔离、整页分题、每题一次调用、联合校对、自动解析、冲突、重试、重启恢复、图片准备失败和来源清理。浏览器检查桌面 1440×1000、手机 390×844；确认录入入口、点选/全选、键盘调整题框、保存和批量提交、草稿跳转及配图确认，手机无横向溢出。截图保存在忽略 Git 的 `data/page-import-desktop.png`、`data/page-import-mobile.png`。
+
+本轮未使用真实 Gemini 或解析服务验证试卷识别准确率；真实分题与蓝笔识别效果需配置实际模型后用实际题页确认。
+
 ## Gemini 原生 API（2026-10-20）
 
 题干识别、答案识别、自动解析与图片测试统一使用 Gemini 原生 `generateContent` REST 接口，由 Node.js 内建 `fetch` 发送，不再依赖 OpenAI SDK。基础地址填写 `https://generativelanguage.googleapis.com/v1beta` 或兼容 Gemini 原生协议的代理；服务端自动拼接 `/models/{model}:generateContent`，通过 `x-goog-api-key` 请求头发送密钥。请求使用 Gemini 的 `systemInstruction`、`contents` / `parts`、内嵌图片与 JSON 生成配置，响应读取 `candidates` 和 `usageMetadata`。

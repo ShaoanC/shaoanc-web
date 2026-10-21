@@ -6,12 +6,13 @@ const { testVision } = require('./ai-vision-test');
 const { createJob, serializeJob, ownJob, applyJob, retryJob, cancelJob } = require('./ai');
 
 module.exports = function mountAiRoutes(router, { success, ownMistake, serializeMistake, cleanupExpiredTrash }) {
-    router.get('/ai/config', (req, res) => { res.set('Cache-Control', 'no-store'); success(res, publicConfig()); });
-    router.get('/admin/ai/config', requireAdmin, (req, res) => { res.set('Cache-Control', 'no-store'); success(res, publicConfig(true)); });
-    router.patch('/admin/ai/config', requireAdmin, (req, res) => { res.set('Cache-Control', 'no-store'); success(res, saveConfig(req.body || {})); });
+    require('./page-imports').mountPageImportRoutes(router, { success });
+    router.get('/ai/config', (req, res) => { res.set('Cache-Control', 'no-store'); success(res, publicConfig(false, req.query.profile || 'general')); });
+    router.get('/admin/ai/config', requireAdmin, (req, res) => { res.set('Cache-Control', 'no-store'); success(res, publicConfig(true, req.query.profile || 'general')); });
+    router.patch('/admin/ai/config', requireAdmin, (req, res) => { res.set('Cache-Control', 'no-store'); success(res, saveConfig(req.body || {}, req.query.profile || 'general')); });
     router.post('/admin/ai/test', requireAdmin, async (req, res) => {
         try {
-            success(res, await testVision());
+            success(res, await testVision(req.query.profile || 'general'));
         } catch (error) {
             res.status(400).json({ success: false, message: safeAiError(error) });
         }

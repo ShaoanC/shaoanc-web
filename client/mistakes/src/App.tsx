@@ -16,6 +16,7 @@ import { DetailPage } from './pages/DetailPage';
 import { ReviewPage } from './pages/ReviewPage';
 import { StatsPage } from './pages/StatsPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { PageImportsPage } from './PageImports';
 
 const navItems = [
   { path: '/mistakes', label: '我的错题', icon: LayoutGrid },
@@ -164,9 +165,10 @@ export default function App() {
 
   const routePath = path.split('?')[0];
   const detailMatch = routePath.match(/^\/mistakes\/(\d+)(\/edit)?$/);
-  const activePath = detailMatch ? '/mistakes' : routePath;
+  const activePath = detailMatch ? '/mistakes' : routePath === '/page-imports' ? '/new' : routePath;
   let page;
   if (routePath === '/new') page = <EditorPage key="new" />;
+  else if (routePath === '/page-imports') page = <PageImportsPage />;
   else if (detailMatch?.[2]) page = <EditorPage key={path} id={Number(detailMatch[1])} />;
   else if (detailMatch) page = <DetailPage key={path} id={Number(detailMatch[1])} />;
   else if (routePath === '/review') page = <ReviewPage key={path} />;

@@ -86,12 +86,25 @@ function saveImages(req, mistake) {
 }
 
 function deleteMistakeFiles(mistakeIds) {
-    const query = db.prepare('SELECT original_path, crop_path FROM mistake_images WHERE mistake_id = ?');
+    const query = db.prepare('SELECT original_path, crop_path, page_import_id FROM mistake_images WHERE mistake_id = ?');
+    const sourcePages = new Set();
     for (const id of mistakeIds) {
-        for (const row of query.all(id)) {
-            fs.rmSync(imagePath(row.original_path), { force: true });
-            fs.rmSync(imagePath(row.crop_path), { force: true });
+        for (const item of db.prepare('SELECT page_import_id, crop_path FROM page_import_items WHERE mistake_id = ?').all(id)) {
+            sourcePages.add(item.page_import_id);
+            if (item.crop_path) fs.rmSync(imagePath(item.crop_path), { force: true });
         }
+        for (const row of query.all(id)) {
+            if (row.page_import_id) sourcePages.add(row.page_import_id);
+            else fs.rmSync(imagePath(row.original_path), { force: true });
+            if (!row.page_import_id || row.crop_path !== row.original_path) fs.rmSync(imagePath(row.crop_path), { force: true });
+        }
+    }
+    const deleting = new Set(mistakeIds);
+    for (const pageId of sourcePages) {
+        const page = db.prepare('SELECT image_path, deleted_at FROM page_imports WHERE id = ?').get(pageId);
+        const referenced = db.prepare(`SELECT mistake_id FROM mistake_images WHERE page_import_id = ?
+            UNION SELECT mistake_id FROM page_import_items WHERE page_import_id = ? AND mistake_id IS NOT NULL`).all(pageId, pageId);
+        if (page?.deleted_at && referenced.every((row) => deleting.has(row.mistake_id))) fs.rmSync(imagePath(page.image_path), { force: true });
     }
 }
 

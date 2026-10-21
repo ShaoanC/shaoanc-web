@@ -142,6 +142,50 @@ if (!db.prepare('PRAGMA table_info(mistake_images)').all().some((column) => colu
 }
 db.exec('CREATE INDEX IF NOT EXISTS mistake_images_source ON mistake_images(source_image_id)');
 
+db.exec(`
+    CREATE TABLE IF NOT EXISTS page_imports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        client_id TEXT NOT NULL,
+        batch_id TEXT NOT NULL,
+        page_order INTEGER NOT NULL DEFAULT 0,
+        original_name TEXT NOT NULL,
+        image_path TEXT NOT NULL,
+        width INTEGER NOT NULL,
+        height INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT 'queued',
+        regions_json TEXT NOT NULL DEFAULT '[]',
+        result_json TEXT,
+        error TEXT,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        started_at TEXT,
+        finished_at TEXT,
+        next_attempt_at TEXT,
+        deleted_at TEXT,
+        UNIQUE (user_id, client_id)
+    );
+    CREATE INDEX IF NOT EXISTS page_imports_owner ON page_imports(user_id, id);
+    CREATE TABLE IF NOT EXISTS page_import_items (
+        page_import_id INTEGER NOT NULL REFERENCES page_imports(id) ON DELETE CASCADE,
+        region_id TEXT NOT NULL,
+        mistake_id INTEGER REFERENCES mistakes(id) ON DELETE SET NULL,
+        job_id INTEGER REFERENCES ai_jobs(id) ON DELETE SET NULL,
+        status TEXT NOT NULL DEFAULT 'preparing',
+        error TEXT,
+        crop_path TEXT,
+        region_json TEXT NOT NULL DEFAULT '{}',
+        input_json TEXT NOT NULL DEFAULT '{}',
+        PRIMARY KEY (page_import_id, region_id)
+    );
+`);
+for (const [name, definition] of [['mode', "TEXT NOT NULL DEFAULT 'single'"], ['source_json', "TEXT NOT NULL DEFAULT '{}'"]]) {
+    if (!db.prepare('PRAGMA table_info(ai_jobs)').all().some((column) => column.name === name)) db.exec(`ALTER TABLE ai_jobs ADD COLUMN ${name} ${definition}`);
+}
+if (!db.prepare('PRAGMA table_info(mistake_images)').all().some((column) => column.name === 'page_import_id')) {
+    db.exec('ALTER TABLE mistake_images ADD COLUMN page_import_id INTEGER REFERENCES page_imports(id)');
+}
+
 const initialDirectory = [
     ['math', '数学', [
         ['集合与逻辑', ['集合及其运算', '充分条件与必要条件', '全称与存在量词']],

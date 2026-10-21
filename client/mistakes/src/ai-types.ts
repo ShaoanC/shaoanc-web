@@ -13,7 +13,7 @@ export interface MistakeImage {
   sourceImageId?: number | null;
 }
 export type FigureBox = [number, number, number, number];
-export interface AiFigure { id: string; imageId: number; box: FigureBox | null; description: string }
+export interface AiFigure { id: string; imageId: number; box: FigureBox | null; description: string; field?: ImagePurpose }
 export interface AiIssue { imageId: number | null; type: string; description: string }
 export interface AiReviewResult extends Partial<AiInput> { primaryPath?: string[]; auxiliaryPaths?: string[][]; figures?: AiFigure[]; diagramImageIds?: number[]; issues?: AiIssue[]; needsReview?: boolean }
 export interface AiApplyOptions { force?: boolean; mode?: 'replace' | 'append'; review?: AiReviewResult; expectedInput?: AiInput }
@@ -29,6 +29,7 @@ export interface AiJob {
   id: number;
   mistakeId: number;
   type: AiJobType;
+  mode?: 'single' | 'page-entry';
   mistakeDeleted: boolean;
   status: 'queued' | 'running' | 'retrying' | 'succeeded' | 'failed' | 'cancelled';
   applyStatus: 'pending' | 'applied' | 'conflict';
@@ -47,15 +48,20 @@ export interface AiJobRequest {
   clientId?: string;
   mistakeId: number;
   type: AiJobType;
+  mode?: 'single' | 'page-entry';
   imageIds?: number[];
   input: AiInput;
   automatic?: boolean;
 }
 export interface AiApplyResult { job: AiJob; mistake: Mistake }
-export interface AiConfig {
+export interface AiServiceConfig {
   enabled: boolean;
   configured: boolean;
   baseUrl?: string;
   model?: string;
   hasApiKey?: boolean;
+}
+export interface AiConfig extends AiServiceConfig {
+  segmentation?: AiServiceConfig;
+  analysis?: AiServiceConfig;
 }

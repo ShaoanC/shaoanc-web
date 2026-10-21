@@ -8,6 +8,7 @@ import { AiTaskManager } from './AiTaskManager';
 import type { AiApplyOptions, AiApplyResult, AiConfig, AiJob, AiJobRequest } from './ai-types';
 
 export const AI_LABELS = { question: '题干识别', answer: '答案识别', analysis: '生成解析' };
+export const aiJobLabel = (job: AiJob) => job.mode === 'page-entry' ? '按页录题' : AI_LABELS[job.type];
 export const isActiveJob = (job: AiJob) => ['queued', 'running', 'retrying'].includes(job.status);
 export const needsReview = (job: AiJob) => !job.mistakeDeleted && job.status === 'succeeded' && job.applyStatus !== 'applied';
 export type JobAction = 'retry' | 'cancel';
@@ -122,8 +123,8 @@ export function AiTasksProvider({ children }: { children: ReactNode }) {
       for (const job of jobs) {
         const before = previous.current.get(job.id);
         if (!before || before === job.status || job.mistakeDeleted) continue;
-        if (job.status === 'succeeded') toast.success(`记录 #${job.mistakeId} ${AI_LABELS[job.type]}完成${job.applyStatus === 'applied' ? '，已填入。' : '，待校对。'}`, { autoClose: 8000 });
-        if (job.status === 'failed') toast.error(`记录 #${job.mistakeId} ${AI_LABELS[job.type]}失败，可在 AI 任务中重试。`);
+        if (job.status === 'succeeded') toast.success(`记录 #${job.mistakeId} ${aiJobLabel(job)}完成${job.applyStatus === 'applied' ? '，已填入。' : '，待校对。'}`, { autoClose: 8000 });
+        if (job.status === 'failed') toast.error(`记录 #${job.mistakeId} ${aiJobLabel(job)}失败，可在 AI 任务中重试。`);
       }
     }
     previous.current = new Map(jobs.map((job) => [job.id, job.status]));

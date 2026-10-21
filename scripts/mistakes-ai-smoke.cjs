@@ -65,13 +65,36 @@ async function runAiSmoke() {
             for await (const part of req) body += part;
             calls += 1;
             assert.equal(req.method, 'POST');
-            assert.equal(req.url, '/v1beta/models/mock-vision:generateContent');
-            assert.equal(req.headers['x-goog-api-key'], 'test-secret');
             const request = JSON.parse(body);
-            assert.equal(request.contents.length, 1);
-            assert.equal(request.contents[0].role, 'user');
             if (failures > 0) { failures -= 1; res.writeHead(failureStatus, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: { message: 'temporary', type: 'server_error' } })); return; }
             if (hold) await delay(hold);
+            if (req.url === '/v1/chat/completions') {
+                assert.equal(req.headers.authorization, 'Bearer analysis-secret');
+                assert.equal(req.headers['x-goog-api-key'], undefined, 'Analysis uses only its own OpenAI credentials');
+                assert.equal(request.model, 'mock-analysis');
+                assert.equal(request.messages[0].role, 'system');
+                assert.equal(request.messages[1].role, 'user');
+                const content = request.messages[1].content;
+                const imageIndices = content.filter((part) => part.type === 'text' && part.text.startsWith('题干或答案引用的本站配图')).map((part) => Number(part.text.match(/(\d+)$/)[1]));
+                const imageUrls = content.filter((part) => part.type === 'image_url').map((part) => part.image_url.url);
+                assert.deepEqual(imageIndices, imageUrls.map((_, index) => index + 1));
+                assert.ok(imageUrls.every((url) => url.startsWith('data:image/jpeg;base64,')), 'Owned images are sent inline');
+                requests.analysis = { system: request.messages[0].content, imageIndices, imageUrls, body };
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: '由 $x^2=4$ 得 $x=\\pm2$，因 $x>0$，故 $x=2$。' }, finish_reason: 'stop' }], ...(includeUsage ? { usage: { prompt_tokens: 11, completion_tokens: 7, total_tokens: 18 } } : {}) }));
+                return;
+            }
+            if (req.url === '/v1beta/models/mock-segmentation:generateContent') {
+                assert.equal(req.headers['x-goog-api-key'], 'segmentation-secret');
+                assert.ok(request.contents[0].parts.some((part) => part.inlineData?.data));
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify({ regions: [{ label: '文字', box_2d: [100, 100, 900, 900], mask: 'test-mask' }] }) }] }, finishReason: 'STOP' }] }));
+                return;
+            }
+            assert.equal(req.url, '/v1beta/models/mock-vision:generateContent');
+            assert.equal(req.headers['x-goog-api-key'], 'test-secret');
+            assert.equal(request.contents.length, 1);
+            assert.equal(request.contents[0].role, 'user');
             if (request.generationConfig?.responseJsonSchema && rejectFormat) {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ error: { message: rejectFormat } })); return;
@@ -164,7 +187,16 @@ async function runAiSmoke() {
         const configured = await admin('PATCH', '/admin/ai/config', { enabled: true, baseUrl: `http://127.0.0.1:${mock.address().port}/v1beta`, apiKey: 'test-secret', model: 'mock-vision' });
         assert.equal(configured.hasApiKey, true);
         assert.equal(JSON.stringify(configured).includes('test-secret'), false);
-        assert.deepEqual(await alice('GET', '/ai/config'), { enabled: true, configured: true });
+        assert.deepEqual(await alice('GET', '/ai/config'), { enabled: true, configured: true, segmentation: { enabled: false, configured: false }, analysis: { enabled: false, configured: false } });
+        const analysisConfig = await admin('PATCH', '/admin/ai/config?profile=analysis', { enabled: true, baseUrl: `http://127.0.0.1:${mock.address().port}/v1`, apiKey: 'analysis-secret', model: 'mock-analysis' });
+        assert.equal(analysisConfig.hasApiKey, true);
+        assert.equal(JSON.stringify(analysisConfig).includes('analysis-secret'), false);
+        await admin('PATCH', '/admin/ai/config?profile=segmentation', { enabled: true, baseUrl: `http://127.0.0.1:${mock.address().port}/v1beta`, apiKey: 'segmentation-secret', model: 'mock-segmentation' });
+        await admin('PATCH', '/admin/ai/config?profile=general', { apiKey: '' });
+        assert.deepEqual(await alice('GET', '/ai/config'), { enabled: true, configured: true, segmentation: { enabled: true, configured: true }, analysis: { enabled: true, configured: true } });
+        assert.equal((await admin('GET', '/admin/ai/config?profile=analysis')).model, 'mock-analysis', 'Saving general preserves other profiles');
+        assert.match((await admin('POST', '/admin/ai/test?profile=analysis', {})).message, /生成解析 API 连接测试通过/);
+        assert.match((await admin('POST', '/admin/ai/test?profile=segmentation', {})).message, /区域识别测试通过/);
         assert.match((await admin('POST', '/admin/ai/test', {})).message, /图片识别测试通过/);
         visionReply = '连接成功'; includeUsage = false;
         assert.match((await admin('POST', '/admin/ai/test', {}, 400)).message, /已连通.*未正确读出/);
@@ -464,7 +496,7 @@ async function runAiSmoke() {
         assert.ok(compareReports(scored, regressed).includes('出现退化'));
         assert.deepEqual(metrics.at(-1).usage, { inputTokens: 11, outputTokens: 7, totalTokens: 18 });
         assert.ok(metrics.every((entry) => entry.elapsedMs >= 0));
-        assert.equal(/test-secret|data:image|私密/.test(JSON.stringify(metrics)), false, 'Request logs contain metadata only');
+        assert.equal(/test-secret|analysis-secret|segmentation-secret|data:image|私密/.test(JSON.stringify(metrics)), false, 'Request logs contain metadata only');
         failures = 3;
         const failed = await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'answer', input: input(await latest()), imageIds: [answerImage.id] }, 201);
         const failedResult = await completed(failed);

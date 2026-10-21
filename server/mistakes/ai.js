@@ -5,7 +5,7 @@ const { db } = require('./database');
 const { fail } = require('./auth');
 const { publicConfig, safeAiError } = require('./ai-config');
 const { recognitionMessages } = require('./ai-messages');
-const { requestCompletion, aiErrorCategory } = require('./ai-request');
+const { requestCompletion, requestAnalysis, aiErrorCategory } = require('./ai-request');
 const { recognitionFormat, parseRecognitionJson, sourceImageId, figureLocation } = require('./ai-output');
 const { imagePath, questionForMistake } = require('./images');
 const { markdownImages, legacyFigureText } = require('./question-images');
@@ -26,6 +26,8 @@ const incompletePattern = /[\[【（(]\s*待(?:确认|补充)[^\]】）)]*[\]】
 function normalizeResult(job, value) {
     const field = job.type;
     const result = { ...value, [field]: text.min(1).parse(value[field]) };
+    const pageEntry = job.mode === 'page-entry';
+    if (pageEntry) result.answer = text.parse(value.answer ?? '');
     const imageIds = JSON.parse(job.image_ids);
     const allowed = new Set(imageIds);
     result.issues = Array.isArray(value.issues) ? value.issues.map((issue) => ({
@@ -47,7 +49,7 @@ function normalizeResult(job, value) {
             const reason = { source: '未关联到本次图片，请选择来源图片并重新框选', format: '坐标格式不正确，请重新框选', bounds: '选框超出图片或范围为空，请重新框选' }[locationError] || '定位无效，请重新框选';
             addIssue('invalid_figure', `配图 ${id} ${reason}`, imageId || null);
         }
-        return { id, imageId, box, description: typeof figure?.description === 'string' ? figure.description : '题目配图',
+        return { id, imageId, box, ...(pageEntry ? { field: figure?.field === 'answer' ? 'answer' : 'question' } : {}), description: typeof figure?.description === 'string' ? figure.description : '题目配图',
             ...(error ? { locationError, rawLocation: figure?.rawLocation || {
                 imageId: figure?.imageId, imageIndex: figure?.imageIndex, box_2d: figure?.box_2d, bounds: figure?.bounds, box: figure?.box, bbox: figure?.bbox
             } } : {}) };
@@ -72,12 +74,16 @@ function normalizeResult(job, value) {
         if (!result.subjectId) addIssue('classification', '学科暂缺，请校对归类');
         else if (!result.primaryPath.length && !Number.isSafeInteger(result.primaryKnowledgePointId)) addIssue('classification', '主知识点暂缺，请校对归类');
     }
-    const markers = [...result[field].matchAll(/\[\[figure:([^\]]+)\]\]/g)].map((match) => match[1]);
+    const combinedText = pageEntry ? `${result.question}\n${result.answer}` : result[field];
+    const markers = [...combinedText.matchAll(/\[\[figure:([^\]]+)\]\]/g)].map((match) => match[1]);
     for (const marker of new Set(markers)) {
         if (!result.figures.some((figure) => figure.id === marker && figure.box)) addIssue('unmatched_figure', `配图标记 ${marker} 没有有效选框，请补画或明确移除`);
     }
-    if (markdownImages(result[field]).length) addIssue('unlocated_figure', '识别结果包含未定位的图片链接，请检查并改用确认后的本站配图');
-    result.needsReview = Boolean(value.needsReview || result.issues.length || result.figures.length || incompletePattern.test(result[field]));
+    if (markdownImages(combinedText).length) addIssue('unlocated_figure', '识别结果包含未定位的图片链接，请检查并改用确认后的本站配图');
+    if (pageEntry && !result.answer.trim()) addIssue('answer_missing', '未识别到可匹配的蓝笔答案，正确答案已留空');
+    result.needsReview = pageEntry
+        ? Boolean(result.figures.length || /\[\[figure:/.test(combinedText) || markdownImages(combinedText).length)
+        : Boolean(value.needsReview || result.issues.length || result.figures.length || incompletePattern.test(result[field]));
     return result;
 }
 
@@ -89,7 +95,7 @@ function inputFor(row) {
 function serializeJob(row) {
     const imageIds = JSON.parse(row.image_ids);
     const result = row.result_json ? normalizeResult(row, JSON.parse(row.result_json)) : null;
-    return { id: row.id, mistakeId: row.mistake_id, type: row.type, status: row.status, applyStatus: row.apply_status,
+    return { id: row.id, mistakeId: row.mistake_id, type: row.type, mode: row.mode || 'single', status: row.status, applyStatus: row.apply_status,
         input: JSON.parse(row.input_json), imageIds, result, mistakeDeleted: Boolean(row.mistake_deleted_at),
         error: row.error, attempts: row.attempts, maxAttempts: row.max_attempts, createdAt: row.created_at,
         startedAt: row.started_at, finishedAt: row.finished_at, nextAttemptAt: row.next_attempt_at };
@@ -115,7 +121,7 @@ function isShortAnswer(answer) {
 }
 
 function enqueueAutomatic(row) {
-    const config = publicConfig();
+    const config = publicConfig(false, 'analysis');
     if (!config.enabled || !config.configured || row.deleted_at || !row.question.trim() || row.analysis.trim() || !isShortAnswer(row.answer)
         || incompletePattern.test(row.question) || incompletePattern.test(row.answer)) return null;
     try {
@@ -157,6 +163,14 @@ function analysisNoticeFor(row) {
 
 function createJob(userId, body) {
     if (!['question', 'answer', 'analysis'].includes(body.type)) fail(400, '无效的 AI 任务类型');
+    const mode = body.mode || 'single';
+    if (!['single', 'page-entry'].includes(mode) || (mode === 'page-entry' && body.type !== 'question')) fail(400, '无效的识别模式');
+    let source = {};
+    if (mode === 'page-entry') {
+        const page = db.prepare('SELECT id FROM page_imports WHERE id = ? AND user_id = ?').get(body.source?.pageImportId, userId);
+        if (!page || typeof body.source?.label !== 'string') fail(400, '按页录题来源无效');
+        source = { pageImportId: page.id, label: body.source.label, regionId: body.source.regionId };
+    }
     const clientId = body.clientId === undefined ? null : body.clientId;
     if (body.clientId !== undefined && (typeof clientId !== 'string' || !clientId.trim() || clientId.length > 100)) fail(400, '请提供有效的 AI 提交编号');
     const row = activeMistake(Number(body.mistakeId), userId);
@@ -178,7 +192,7 @@ function createJob(userId, body) {
         references = analysisImages(input, row.id, userId);
         imageIds = [...new Set(references.map((image) => image.id))];
     }
-    const fingerprint = crypto.createHash('sha256').update(JSON.stringify([body.type, input, imageIds,
+    const fingerprint = crypto.createHash('sha256').update(JSON.stringify([body.type, mode, source, input, imageIds,
         references.map((image) => [image.id, image.variant, image[`${image.variant}_path`]])])).digest('hex');
     const requestFingerprint = `${row.id}:${body.automatic ? 1 : 0}:${fingerprint}`;
     if (clientId) {
@@ -191,7 +205,7 @@ function createJob(userId, body) {
             return serializeJob(requested);
         }
     }
-    const config = publicConfig();
+    const config = publicConfig(false, body.type === 'analysis' ? 'analysis' : 'general');
     if (!config.enabled || !config.configured) fail(400, '管理员尚未启用并配置 AI 服务');
     const previous = db.prepare(`SELECT * FROM ai_jobs WHERE mistake_id = ? AND type = ? AND fingerprint = ?
         AND (status IN ('queued', 'running', 'retrying') OR (? = 1 AND automatic = 1)) ORDER BY id DESC LIMIT 1`)
@@ -199,8 +213,8 @@ function createJob(userId, body) {
     const job = db.transaction(() => {
         let result = previous;
         if (!result) {
-            const inserted = db.prepare(`INSERT INTO ai_jobs (mistake_id, user_id, type, input_json, image_ids, automatic, fingerprint, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(row.id, userId, body.type, JSON.stringify(input), JSON.stringify(imageIds), body.automatic ? 1 : 0, fingerprint, now());
+            const inserted = db.prepare(`INSERT INTO ai_jobs (mistake_id, user_id, type, mode, source_json, input_json, image_ids, automatic, fingerprint, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(row.id, userId, body.type, mode, JSON.stringify(source), JSON.stringify(input), JSON.stringify(imageIds), body.automatic ? 1 : 0, fingerprint, now());
             result = db.prepare('SELECT * FROM ai_jobs WHERE id = ?').get(inserted.lastInsertRowid);
         }
         if (clientId) db.prepare('INSERT INTO ai_job_requests (user_id, client_id, job_id, fingerprint) VALUES (?, ?, ?, ?)').run(userId, clientId, result.id, requestFingerprint);
@@ -240,8 +254,18 @@ async function requestResult(job, signal) {
         if (!image.id) throw Object.assign(new Error('Missing image'), { status: 400 });
         return { id: image.id, bytes: fs.readFileSync(imagePath(image[`${image.variant}_path`])) };
     });
-    return requestCompletion({ messages: recognitionMessages({ type: job.type, input, subjects, directory, images }), responseFormat: recognitionFormat(job.type), signal,
-        context: { jobId: job.id, type: job.type, attempt: job.attempts + 1, imageCount: images.length },
+    const context = { jobId: job.id, type: job.type, mode: job.mode, attempt: job.attempts + 1, imageCount: images.length };
+    if (job.type === 'analysis') return normalizeResult(job, await requestAnalysis({ input, images, signal, context }));
+    let target;
+    if (job.mode === 'page-entry') {
+        target = JSON.parse(job.source_json);
+        const page = db.prepare('SELECT * FROM page_imports WHERE id = ? AND user_id = ?').get(target.pageImportId, job.user_id);
+        if (!page) throw Object.assign(new Error('Missing source page'), { status: 400 });
+        if (images.length !== 2) throw Object.assign(new Error('Missing page image'), { status: 400 });
+        context.imageCount = images.length;
+    }
+    return requestCompletion({ messages: recognitionMessages({ type: job.type, mode: job.mode, target, input, subjects, directory, images }), responseFormat: recognitionFormat(job.type, job.mode), signal,
+        context,
         interpret: (raw) => parseResult(job, raw) });
 }
 
@@ -257,9 +281,11 @@ function applyJob(id, userId, options = {}) {
     if (review !== undefined && (!review || typeof review !== 'object' || Array.isArray(review))) fail(400, '请提供有效的校对结果');
     const finalText = review ? text.min(1).safeParse(review[job.type]) : { success: true, data: result[job.type] };
     if (!finalText.success) fail(400, '请提供校对后的完整文字');
-    if (finalText.data.includes('[[figure:')) fail(400, '仍有配图标记，请补画并上传配图或明确移除标记后再填入');
+    const answer = job.mode === 'page-entry' ? text.parse(review ? review.answer ?? result.answer : result.answer) : null;
+    const combinedText = answer === null ? finalText.data : `${finalText.data}\n${answer}`;
+    if (combinedText.includes('[[figure:')) fail(400, '仍有配图标记，请补画并上传配图或明确移除标记后再填入');
     const allowedImages = new Set(JSON.parse(job.image_ids));
-    for (const reference of markdownImages(finalText.data)) {
+    for (const reference of markdownImages(combinedText)) {
         const image = reference.imageId && db.prepare('SELECT id, source_image_id FROM mistake_images WHERE id = ? AND mistake_id = ? AND user_id = ?')
             .get(reference.imageId, row.id, userId);
         if (!image || (!allowedImages.has(image.id) && !allowedImages.has(image.source_image_id))) fail(400, '校对配图必须属于当前用户、当前错题，并来自本次任务图片或其派生配图');
@@ -267,6 +293,7 @@ function applyJob(id, userId, options = {}) {
     const current = inputFor(row);
     const fields = job.type === 'question' ? ['question', 'subjectId', 'primaryKnowledgePointId', 'auxiliaryKnowledgePointIds']
         : job.type === 'answer' ? ['answer'] : ['question', 'answer', 'analysis'];
+    if (job.mode === 'page-entry') fields.push('answer');
     const expected = options.expectedInput === undefined ? input : inputSchema.safeParse(options.expectedInput);
     if (options.expectedInput !== undefined && !expected.success) fail(400, '校对内容快照无效');
     const expectedInput = options.expectedInput === undefined ? input : expected.data;
@@ -277,6 +304,10 @@ function applyJob(id, userId, options = {}) {
     if (!options.force && options.mode !== 'append' && row[job.type].trim() && row[job.type] !== finalText.data) {
         db.prepare("UPDATE ai_jobs SET apply_status = 'conflict' WHERE id = ?").run(id);
         fail(409, '当前字段已有内容，请校对后明确确认替换');
+    }
+    if (!options.force && answer !== null && row.answer.trim() && row.answer !== answer) {
+        db.prepare("UPDATE ai_jobs SET apply_status = 'conflict' WHERE id = ?").run(id);
+        fail(409, '正确答案已有内容，请校对后明确确认替换');
     }
     db.transaction(() => {
         const time = now();
@@ -314,6 +345,7 @@ function applyJob(id, userId, options = {}) {
             auxiliary = [...new Set(auxiliary)].filter((pointId) => pointId && pointId !== primary);
             db.prepare('UPDATE mistakes SET question = ?, subject_id = ?, primary_knowledge_point_id = ?, auxiliary_knowledge_point_ids = ?, updated_at = ? WHERE id = ?')
                 .run(finalText.data, subjectId, primary, JSON.stringify(auxiliary), time, row.id);
+            if (answer !== null) db.prepare('UPDATE mistakes SET answer = ? WHERE id = ?').run(answer, row.id);
         } else {
             const field = job.type;
             if (options.mode === 'append' && field !== 'answer') fail(400, '只有答案支持追加');
@@ -400,6 +432,7 @@ function recoverJobs() {
     stopped = false;
     db.prepare("UPDATE ai_jobs SET status = 'queued' WHERE status = 'running'").run();
     for (const job of db.prepare("SELECT id FROM ai_jobs WHERE status IN ('queued','retrying') ORDER BY id").all()) schedule(job.id);
+    require('./page-imports').recoverPageImports();
 }
 
 function cancelJob(id, userId) {
@@ -415,7 +448,7 @@ function retryJob(id, userId) {
     const job = ownJob(id, userId);
     activeMistake(job.mistake_id, userId);
     if (!['failed', 'cancelled'].includes(job.status)) fail(409, '只能重试失败或已取消的任务');
-    const config = publicConfig();
+    const config = publicConfig(false, job.type === 'analysis' ? 'analysis' : 'general');
     if (!config.enabled || !config.configured) fail(400, '管理员尚未启用并配置 AI 服务');
     const duplicate = db.prepare("SELECT id FROM ai_jobs WHERE mistake_id = ? AND type = ? AND fingerprint = ? AND status IN ('queued','running','retrying') AND id != ?")
         .get(job.mistake_id, job.type, job.fingerprint, id);
@@ -434,7 +467,8 @@ function cancelMistakeJobs(ids) {
 async function stopJobs() {
     stopped = true;
     for (const controller of controllers.values()) controller.abort();
+    require('./page-imports').stopPageImports();
     if (runtime) await (await runtime).queue.onIdle();
 }
 
-module.exports = { createJob, serializeJob, ownJob, applyJob, retryJob, cancelJob, cancelMistakeJobs, recoverJobs, stopJobs, enqueueAutomatic, inputFor, isShortAnswer, analysisNoticeFor };
+module.exports = { createJob, serializeJob, ownJob, applyJob, retryJob, cancelJob, cancelMistakeJobs, recoverJobs, stopJobs, enqueueAutomatic, inputFor, isShortAnswer, analysisNoticeFor, runtimeForJobs, canRetry };

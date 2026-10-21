@@ -22,7 +22,7 @@ const formKeys: (keyof Form)[] = ['question', 'answer', 'analysis', 'note', 'rat
 const empty: Form = { question: '', answer: '', analysis: '', note: '', rating: 0, subjectId: null, primaryKnowledgePointId: null, auxiliaryKnowledgePointIds: [], lifecycle: 'draft' };
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 const inputOf = (value: Form | Mistake): AiInput => ({ question: value.question, answer: value.answer, analysis: value.analysis, subjectId: value.subjectId, primaryKnowledgePointId: value.primaryKnowledgePointId, auxiliaryKnowledgePointIds: value.auxiliaryKnowledgePointIds });
-const resultFields = (job: AiJob): (keyof Form)[] => job.type === 'question' ? ['question', 'subjectId', 'primaryKnowledgePointId', 'auxiliaryKnowledgePointIds'] : [job.type];
+const resultFields = (job: AiJob): (keyof Form)[] => job.type === 'question' ? ['question', ...(job.mode === 'page-entry' ? ['answer' as const] : []), 'subjectId', 'primaryKnowledgePointId', 'auxiliaryKnowledgePointIds'] : [job.type];
 
 export function EditorPage({ id }: { id?: number }) {
   const { subjects, knowledgePoints, refreshDirectory, notify, user } = useApp();
@@ -63,6 +63,7 @@ export function EditorPage({ id }: { id?: number }) {
   const questionPhotoCount = questionBatch?.total ?? questionImageIds.length;
   const reuseQueued = questionBatch?.reuseStatus === 'waiting' || questionBatch?.reuseStatus === 'submitting';
   const aiAvailable = Boolean(config?.enabled && config.configured);
+  const analysisAvailable = Boolean(config?.analysis?.enabled && config.analysis.configured);
 
   function update(patch: Partial<Form>) { dataRef.current = { ...dataRef.current, ...patch }; setData(dataRef.current); }
   useEffect(() => {
@@ -156,6 +157,7 @@ export function EditorPage({ id }: { id?: number }) {
       if (typeof patch[job.type] === 'string') {
         ({ question: questionField, answer: answerField, analysis: analysisField })[job.type].current?.showPreview();
       }
+      if (job.mode === 'page-entry' && typeof patch.answer === 'string') answerField.current?.showPreview();
       setLocalConflicts((items) => unchanged ? items.filter((value) => value !== job.id) : [...new Set([...items, job.id])]);
       await refreshDirectory();
     } catch (err) { setError((err as Error).message); if (reviewed) throw err; }
@@ -175,11 +177,11 @@ export function EditorPage({ id }: { id?: number }) {
           if (job.type === 'question') {
             void api<Mistake>(`/mistakes/${job.mistakeId}`).then((item) => {
               if (!fields.every((field) => same(dataRef.current[field], job.input[field as keyof AiInput]))) { setLocalConflicts((items) => [...items, job.id]); return; }
-              const patch = Object.fromEntries(fields.map((field) => [field, item[field]])); update(patch); if (baseline.current) Object.assign(baseline.current, patch); questionField.current?.showPreview(); void refreshDirectory();
+              const patch = Object.fromEntries(fields.map((field) => [field, item[field]])); update(patch); if (baseline.current) Object.assign(baseline.current, patch); questionField.current?.showPreview(); if (job.mode === 'page-entry') answerField.current?.showPreview(); setAnalysisNotice(item.analysisNotice || ''); void refreshDirectory();
             });
           } else { update({ [job.type]: job.result[job.type] || '' }); ({ answer: answerField, analysis: analysisField })[job.type].current?.showPreview(); if (baseline.current) baseline.current[job.type] = job.result[job.type] || ''; }
         }
-        else if (dataRef.current[job.type] !== job.result[job.type]) setLocalConflicts((items) => [...items, job.id]);
+        else if ([job.type, ...(job.mode === 'page-entry' ? ['answer' as const] : [])].some((field) => !same(dataRef.current[field], job.result?.[field]))) setLocalConflicts((items) => [...items, job.id]);
       } else if (job.applyStatus === 'pending' && !job.result.needsReview && !job.result.figures?.length && !job.result.diagramImageIds?.length && !job.result.issues?.length && !/待确认|待补充|\[\[figure:/.test(job.result[job.type] || '')) {
         const latest = currentJobs.find((item) => item.type === job.type)?.id === job.id;
         if (latest && !job.input[job.type].trim() && resultFields(job).every((field) => same(dataRef.current[field], job.input[field as keyof AiInput]))) {
@@ -199,6 +201,7 @@ export function EditorPage({ id }: { id?: number }) {
   return <div className="editor-workbench">
     <a className="back-link" href={recordId ? `#/mistakes/${recordId}` : '#/mistakes'}><ArrowLeft size={16} />{recordId ? '返回错题详情' : '返回我的错题'}</a>
     <header className="editor-workbench-header"><div><h1>{id ? '编辑错题' : '录入错题'}</h1>{recordId && <span className="editor-record-id">记录 #{recordId}</span>}</div><div className="editor-workbench-state"><DataTypeBadge isTest={isTest} /><span className="editor-mode"><Pencil size={14} />正在编辑</span></div></header>
+    {!recordId && <p className="ai-notice"><a className="button secondary" href="#/page-imports">按页批量录入</a> 上传整页，选中题目后自动建立草稿并识别蓝笔答案。</p>}
     <LoadingContent loading={loading} kind="editor">{loadError ? <ErrorState message={loadError} /> : <form onSubmit={(event) => { event.preventDefault(); void save('archived'); }}>
       {error && <div className="form-error editor-validation" role="alert">{error}</div>}
       <div className="editor-uploaded"><ImageHistory mistakeId={recordId} onRecrop={(image) => { setTab(image.purpose === 'question' ? 'question' : 'answers'); void (image.purpose === 'question' ? questionPhotos : answerPhotos).current?.reuse(image); }} onRecognize={recognize} />{currentJobs.length > 0 && <button type="button" className="table-button" onClick={openTasks}><Sparkles size={16} />{currentJobs.filter(isActiveJob).length ? `${currentJobs.filter(isActiveJob).length} 项 AI 操作正在进行` : '查看 AI 任务'}</button>}</div>
@@ -213,9 +216,9 @@ export function EditorPage({ id }: { id?: number }) {
           <PhotoInput ref={answerPhotos} purpose="answer" recordId={recordId} ensureSaved={ensureSaved} aiAvailable={aiAvailable} actions={<button type="button" className="button secondary" disabled={!questionPhotoCount || !aiAvailable || reusingQuestionPhotos || Boolean(questionBatch?.reuseRequested) || (!questionBatch && (Boolean(saving) || Boolean(applying) || currentJobs.some((job) => job.type === 'answer' && isActiveJob(job))))} title={questionPhotoCount ? '按原顺序复用题干图片；上传中会先记录请求，完成后自动识别答案' : '先在题干中添加并提交图片'} onClick={() => void reuseQuestionPhotos()}><Copy size={16} />{reuseQueued ? '已记录，后台处理中…' : questionBatch?.reuseStatus === 'failed' ? '复用待重试' : questionBatch?.reuseRequested ? '已提交答案识别' : reusingQuestionPhotos ? '正在提交…' : `复用题干图片${questionPhotoCount ? `（${questionPhotoCount} 张）` : ''}`}</button>} />{candidates('answer')}
           {reuseQueued && <p className="ai-notice" role="status">复用请求已记录，将在题干图片全部上传后自动识别答案。</p>}
           <MarkdownField ref={answerField} name="正确答案" label={<>正确答案 <span className="optional-label">选填</span></>} rows={3} value={data.answer} onChange={(answer) => update({ answer })} placeholder="直接输入答案，或拍照识别后修改…" />
-          <p className="ai-notice">手动输入的短答案会在保存时自动生成解析；图片识别的短答案会在填入后生成。</p>
+          <p className="ai-notice">{analysisAvailable ? '手动输入的短答案会在保存时自动生成解析；图片识别的短答案会在填入后生成。' : user.role === 'admin' ? <a href="#/settings">生成解析服务尚未启用，前往设置独立配置。</a> : '生成解析服务尚未启用，题干和答案可以正常保存。'}</p>
           {analysisNotice && <p className="ai-review-issues" role="status">{analysisNotice}</p>}
-          <div className="photo-actions"><button type="button" className="button secondary" disabled={!aiAvailable || !data.question.trim() || starting || currentJobs.some((job) => job.type === 'analysis' && isActiveJob(job))} onClick={() => void generate()}><Sparkles size={16} />{starting ? '正在提交…' : '生成解析'}</button></div>
+          <div className="photo-actions"><button type="button" className="button secondary" disabled={!analysisAvailable || !data.question.trim() || starting || currentJobs.some((job) => job.type === 'analysis' && isActiveJob(job))} onClick={() => void generate()}><Sparkles size={16} />{starting ? '正在提交…' : '生成解析'}</button></div>
           {candidates('analysis')}<MarkdownField ref={analysisField} name="解题分析" label={<>解题分析 <span className="optional-label">选填</span></>} rows={5} value={data.analysis} onChange={(analysis) => update({ analysis })} placeholder="记录关键步骤、解题思路和需要注意的地方…" />
         </section>
         <section className="editor-block editor-note-block" {...panelProps('note')}><div className="editor-block-heading"><StickyNote size={18} /><h2>我的笔记</h2></div><MarkdownField name="我的笔记" label={<>我的笔记 <span className="optional-label">选填</span></>} rows={5} value={data.note} onChange={(note) => update({ note })} placeholder="为什么会做错？下次遇到类似题目，要提醒自己什么？" /></section>

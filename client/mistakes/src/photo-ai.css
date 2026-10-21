@@ -1,5 +1,6 @@
 .photo-dialog-backdrop { position: fixed; inset: 0; background: rgba(20, 40, 29, .48); z-index: 1200; }
 .photo-dialog { position: fixed; z-index: 1201; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(660px, calc(100vw - 32px)); max-height: calc(100dvh - 40px); overflow: auto; background: var(--surface-2); color: var(--text-primary); border: 1px solid var(--border-medium); border-radius: 8px; padding: 24px; box-shadow: 0 20px 80px #14281d33; }
+.ai-profile-settings + .ai-profile-settings { border-top: 1px solid var(--border-medium); margin-top: 28px; padding-top: 24px; }
 .photo-dialog-wide { width: min(960px, calc(100vw - 32px)); }
 .photo-dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .photo-dialog-heading h2 { font-size: 23px; }

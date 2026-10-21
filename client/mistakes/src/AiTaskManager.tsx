@@ -4,7 +4,7 @@ import { formatDate } from './api';
 import { useApp } from './context';
 import { Checkbox, PageHeader } from './components';
 import { MarkdownContent } from './MarkdownContent';
-import { AI_LABELS, isActiveJob, needsReview, useAiTasks, type JobAction } from './AiTasks';
+import { AI_LABELS, aiJobLabel, isActiveJob, needsReview, useAiTasks, type JobAction } from './AiTasks';
 import type { AiJob, AiJobType } from './ai-types';
 
 type Filter = 'all' | 'active' | 'review' | 'failed' | 'done' | 'cancelled';
@@ -44,7 +44,7 @@ export function AiTaskManager({ compact = false }: { compact?: boolean }) {
   const { jobs, config, error, loaded, refreshing, updatedAt, busyIds, refresh, actJobs, closeTasks } = useAiTasks();
   const { user, subjects } = useApp();
   const [filter, setFilter] = useState<Filter>('all');
-  const [type, setType] = useState<AiJobType | ''>('');
+  const [type, setType] = useState<AiJobType | 'page-entry' | ''>('');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<number[]>([]);
@@ -52,7 +52,10 @@ export function AiTaskManager({ compact = false }: { compact?: boolean }) {
   const [actionErrors, setActionErrors] = useState<{ id?: number; message: string }[]>([]);
   const [clock, setClock] = useState(Date.now());
   const activeCount = jobs.filter(isActiveJob).length;
-  const available = Boolean(config?.enabled && config.configured);
+  const generalAvailable = Boolean(config?.enabled && config.configured);
+  const analysisAvailable = Boolean(config?.analysis?.enabled && config.analysis.configured);
+  const available = generalAvailable || analysisAvailable;
+  const serviceAvailable = (job: AiJob) => job.type === 'analysis' ? analysisAvailable : generalAvailable;
   useEffect(() => { void refresh(); }, [refresh]);
   useEffect(() => {
     if (!activeCount) return;
@@ -61,8 +64,8 @@ export function AiTaskManager({ compact = false }: { compact?: boolean }) {
   }, [activeCount]);
 
   const term = search.trim().toLocaleLowerCase();
-  const matching = jobs.filter((job) => (!type || job.type === type) && (!term ||
-    `${job.id} ${job.mistakeId} ${AI_LABELS[job.type]} ${job.input.question} ${job.error || ''}`.toLocaleLowerCase().includes(term.replace(/^#/, ''))));
+  const matching = jobs.filter((job) => (!type || (type === 'page-entry' ? job.mode === 'page-entry' : job.type === type)) && (!term ||
+    `${job.id} ${job.mistakeId} ${aiJobLabel(job)} ${job.input.question} ${job.result?.question || ''} ${job.result?.answer || ''} ${job.error || ''}`.toLocaleLowerCase().includes(term.replace(/^#/, ''))));
   const filtered = matching.filter((job) => matches(job, filter)).sort((a, b) => priority(a) - priority(b) || b.id - a.id);
   const pageSize = compact ? 8 : 20;
   const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
@@ -70,7 +73,7 @@ export function AiTaskManager({ compact = false }: { compact?: boolean }) {
   const shown = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const selectable = shown.filter((job) => !busyIds.has(job.id) && (isActiveJob(job) || retryable(job)));
   const chosen = selectable.filter((job) => selected.includes(job.id));
-  const retryIds = chosen.filter(retryable).map((job) => job.id);
+  const retryIds = chosen.filter((job) => retryable(job) && serviceAvailable(job)).map((job) => job.id);
   const cancelIds = chosen.filter(isActiveJob).map((job) => job.id);
   function resetSelection() { setPage(1); setSelected([]); }
   function clearFilters() { setFilter('all'); setType(''); setSearch(''); resetSelection(); }
@@ -90,7 +93,7 @@ export function AiTaskManager({ compact = false }: { compact?: boolean }) {
     <div className="task-filters" aria-label="按任务状态筛选">{FILTERS.map((item) => <button type="button" key={item.id} aria-pressed={filter === item.id} onClick={() => { setFilter(item.id); resetSelection(); }}><span>{item.label}</span><strong>{loaded ? matching.filter((job) => matches(job, item.id)).length : '—'}</strong></button>)}</div>
     <div className="task-search-bar">
       <label className="task-search"><Search size={18} /><input type="search" aria-label="搜索 AI 任务" placeholder="搜索题目、任务编号、记录编号或失败原因" value={search} onChange={(event) => { setSearch(event.target.value); resetSelection(); }} /></label>
-      <select aria-label="任务类型" value={type} onChange={(event) => { setType(event.target.value as AiJobType | ''); resetSelection(); }}><option value="">全部类型</option>{Object.entries(AI_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+      <select aria-label="任务类型" value={type} onChange={(event) => { setType(event.target.value as AiJobType | 'page-entry' | ''); resetSelection(); }}><option value="">全部类型</option><option value="page-entry">按页录题</option>{Object.entries(AI_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
     </div>
     {actionErrors.length > 0 && <div className="task-action-errors" role="alert"><div><strong>部分操作未完成</strong><button type="button" className="icon-button" aria-label="关闭操作提示" onClick={() => setActionErrors([])}><X size={16} /></button></div><ul>{actionErrors.map((item, index) => <li key={item.id ?? index}>{item.id ? `任务 #${item.id}：` : ''}{item.message}</li>)}</ul></div>}
     {loaded && shown.length > 0 && <div className="task-selection-bar"><label><Checkbox aria-label="选择本页可操作任务" checked={selectable.length > 0 && chosen.length === selectable.length} indeterminate={chosen.length > 0 && chosen.length < selectable.length} disabled={!selectable.length} onChange={(event) => setSelected(event.target.checked ? selectable.map((job) => job.id) : [])} />{chosen.length ? `已选 ${chosen.length} 项` : '选择本页可操作任务'}</label><div><button type="button" className="table-button" disabled={!retryIds.length || !available} onClick={() => void act(retryIds, 'retry')}><RotateCcw size={14} />重试{retryIds.length ? ` (${retryIds.length})` : ''}</button><button type="button" className="table-button" disabled={!cancelIds.length} onClick={() => void act(cancelIds, 'cancel')}><X size={14} />取消{cancelIds.length ? ` (${cancelIds.length})` : ''}</button></div></div>}
@@ -101,14 +104,14 @@ export function AiTaskManager({ compact = false }: { compact?: boolean }) {
       const tone = job.status === 'failed' ? 'failed' : review ? 'review' : isActiveJob(job) ? 'active' : 'done';
       const link = job.mistakeDeleted ? '#/mistakes?trash=1' : `#/mistakes/${job.mistakeId}/edit`;
       return <article key={job.id} className={`task-row task-row-${tone}`}>
-        <div className="task-row-heading"><div className="task-row-title"><Checkbox aria-label={`选择任务 #${job.id}`} checked={chosen.some((item) => item.id === job.id)} disabled={busy || !(isActiveJob(job) || retryable(job))} onChange={(event) => setSelected((current) => event.target.checked ? [...current, job.id] : current.filter((id) => id !== job.id))} /><h3>{AI_LABELS[job.type]}</h3><span className="task-id">#{job.id}</span></div><span className={`task-status task-status-${tone}`}>{isActiveJob(job) ? <LoaderCircle size={14} className={job.status === 'running' ? 'spin' : ''} /> : job.applyStatus === 'applied' ? <CheckCircle2 size={14} /> : null}{status}</span></div>
+        <div className="task-row-heading"><div className="task-row-title"><Checkbox aria-label={`选择任务 #${job.id}`} checked={chosen.some((item) => item.id === job.id)} disabled={busy || !(isActiveJob(job) || retryable(job))} onChange={(event) => setSelected((current) => event.target.checked ? [...current, job.id] : current.filter((id) => id !== job.id))} /><h3>{aiJobLabel(job)}</h3><span className="task-id">#{job.id}</span></div><span className={`task-status task-status-${tone}`}>{isActiveJob(job) ? <LoaderCircle size={14} className={job.status === 'running' ? 'spin' : ''} /> : job.applyStatus === 'applied' ? <CheckCircle2 size={14} /> : null}{status}</span></div>
         <a className="task-excerpt" href={link}>{excerpt(job)}</a>
         <div className="task-meta"><a href={link}>记录 #{job.mistakeId}</a>{job.input.subjectId && <span>{subjects.find((subject) => subject.id === job.input.subjectId)?.name || job.input.subjectId}</span>}<span>{formatDate(job.createdAt, true)}</span><span><Clock3 size={13} />{duration(job, clock)}</span><span>尝试 {job.attempts}/{job.maxAttempts}</span>{job.imageIds.length > 0 && <span>{job.imageIds.length} 张图片</span>}</div>
         {job.mistakeDeleted ? <p className="task-row-notice">错题已移入回收站，恢复后可继续操作。</p> : job.applyStatus === 'conflict' && <p className="task-row-notice">题目内容已修改，AI 结果尚未覆盖现有内容。请打开编辑页核对。</p>}
         {job.status === 'retrying' && <p className="task-row-notice">{job.nextAttemptAt && Date.parse(job.nextAttemptAt) > clock ? `将在 ${Math.ceil((Date.parse(job.nextAttemptAt) - clock) / 1000)} 秒后自动重试，无需重复提交。` : '等待队列继续执行，无需重复提交。'}</p>}
         {job.error && <p className="task-row-error">{job.error}</p>}
-        {job.result && <details className="task-result" open={expanded.includes(job.id)} onToggle={(event) => { const open = event.currentTarget.open; setExpanded((current) => open ? current.includes(job.id) ? current : [...current, job.id] : current.filter((id) => id !== job.id)); }}><summary>查看 AI 结果{job.result.issues?.length ? ` · ${job.result.issues.length} 项待确认` : ''}</summary>{expanded.includes(job.id) && <div><MarkdownContent>{job.result[job.type] || ''}</MarkdownContent>{job.result.primaryPath?.length ? <p>知识点：{job.result.primaryPath.join(' / ')}</p> : null}{job.result.issues?.map((issue, index) => <p className="task-row-notice" key={index}>{issue.description}</p>)}{job.result.figures?.length ? <p className="task-row-notice">包含 {job.result.figures.length} 个配图区域，请在编辑页校对。</p> : null}</div>}</details>}
-        <div className="task-row-actions">{busy && <span role="status"><LoaderCircle size={14} className="spin" />正在提交…</span>}{isActiveJob(job) && <button type="button" className="table-button" disabled={busy} onClick={() => void act([job.id], 'cancel')}><X size={14} />取消任务</button>}{retryable(job) && <button type="button" className="button secondary" disabled={busy || !available} onClick={() => void act([job.id], 'retry')}><RotateCcw size={14} />重试</button>}<a className={review ? 'button primary' : 'text-link'} href={link}>{job.mistakeDeleted ? '前往回收站' : review ? '校对并填入' : job.status === 'failed' ? '修改题目' : '打开错题'}</a></div>
+        {job.result && <details className="task-result" open={expanded.includes(job.id)} onToggle={(event) => { const open = event.currentTarget.open; setExpanded((current) => open ? current.includes(job.id) ? current : [...current, job.id] : current.filter((id) => id !== job.id)); }}><summary>查看 AI 结果{job.result.issues?.length ? ` · ${job.result.issues.length} 项待确认` : ''}</summary>{expanded.includes(job.id) && <div><MarkdownContent>{job.result[job.type] || ''}</MarkdownContent>{job.mode === 'page-entry' && <><h4>正确答案</h4><MarkdownContent>{job.result.answer || '未识别到蓝笔答案，请补充。'}</MarkdownContent></>}{job.result.primaryPath?.length ? <p>知识点：{job.result.primaryPath.join(' / ')}</p> : null}{job.result.issues?.map((issue, index) => <p className="task-row-notice" key={index}>{issue.description}</p>)}{job.result.figures?.length ? <p className="task-row-notice">包含 {job.result.figures.length} 个配图区域，请在编辑页校对。</p> : null}</div>}</details>}
+        <div className="task-row-actions">{busy && <span role="status"><LoaderCircle size={14} className="spin" />正在提交…</span>}{isActiveJob(job) && <button type="button" className="table-button" disabled={busy} onClick={() => void act([job.id], 'cancel')}><X size={14} />取消任务</button>}{retryable(job) && <button type="button" className="button secondary" disabled={busy || !serviceAvailable(job)} onClick={() => void act([job.id], 'retry')}><RotateCcw size={14} />重试</button>}<a className={review ? 'button primary' : 'text-link'} href={link}>{job.mistakeDeleted ? '前往回收站' : review ? '校对并填入' : job.status === 'failed' ? '修改题目' : '打开错题'}</a></div>
       </article>;
     })}</div>}
     <div className="task-pagination"><span>共 {filtered.length} 项{filter !== 'all' || type || search ? <button type="button" onClick={clearFilters}>清除筛选</button> : null}</span><div><button type="button" className="icon-button" aria-label="上一页" disabled={currentPage <= 1} onClick={() => { setPage(currentPage - 1); setSelected([]); }}><ChevronLeft size={18} /></button><span>{currentPage} / {pages}</span><button type="button" className="icon-button" aria-label="下一页" disabled={currentPage >= pages} onClick={() => { setPage(currentPage + 1); setSelected([]); }}><ChevronRight size={18} /></button></div></div>
