@@ -1,0 +1,3 @@
+.settings-account-forms { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+.username-panel form { display: flex; flex-direction: column; gap: 21px; }
+.account-summary > h2 { max-width: 100%; overflow-wrap: anywhere; }

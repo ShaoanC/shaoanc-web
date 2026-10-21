@@ -501,8 +501,25 @@ async function runAiSmoke() {
         const failed = await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'answer', input: input(await latest()), imageIds: [answerImage.id] }, 201);
         const failedResult = await completed(failed);
         assert.equal(failedResult.status, 'failed'); assert.equal(failedResult.attempts, 3);
+        await bob('POST', `/ai/jobs/${failed.id}/cancel`, {}, 404);
+        assert.equal((await alice('POST', `/ai/jobs/${failed.id}/cancel`, {})).status, 'cancelled', 'Failed tasks can be dismissed');
+        assert.equal((await alice('POST', `/ai/jobs/${failed.id}/cancel`, {})).status, 'cancelled', 'Cancellation is idempotent');
         await alice('POST', `/ai/jobs/${failed.id}/retry`, {});
         assert.equal((await completed(failed)).status, 'succeeded');
+
+        const beforeDiscard = input(await latest());
+        const dismissed = await alice('POST', '/ai/jobs/batch', { action: 'cancel', ids: [badSchema.id, multipart.id, conflict.id, question.id] });
+        assert.deepEqual(dismissed.jobs.map((job) => job.id), [badSchema.id, multipart.id, conflict.id], 'Batch cancellation supports failed, pending review and conflicted results');
+        assert.ok(dismissed.jobs.every((job) => job.status === 'cancelled'));
+        assert.equal(dismissed.errors[0].id, question.id, 'Applied results cannot be cancelled');
+        assert.equal((await alice('GET', `/ai/jobs/${question.id}`)).applyStatus, 'applied');
+        assert.deepEqual(dismissed.jobs[1].result, multipart.result, 'Cancelled review results remain available for reference');
+        await alice('POST', `/ai/jobs/${conflict.id}/apply`, { force: true }, 409);
+        assert.deepEqual(input(await latest()), beforeDiscard, 'Cancelling review tasks never changes saved mistake content');
+        const freshConflict = await alice('POST', `/ai/jobs/${conflict.id}/retry`, {});
+        assert.equal(freshConflict.result, null, 'Retry discards the cancelled result before running again');
+        assert.equal(freshConflict.applyStatus, 'pending', 'Retry resets the previous conflict');
+        assert.equal((await completed(conflict)).applyStatus, 'conflict');
         await ai.stopJobs();
         const recovery = await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'answer', input: input(await latest()), imageIds: [answerImage.id] }, 201);
         app.db.prepare("UPDATE ai_jobs SET status = 'running', attempts = 1 WHERE id = ?").run(recovery.id);
@@ -542,6 +559,9 @@ async function runAiSmoke() {
         assert.ok(historyList.some((job) => job.id === historyIds[0]), 'Old failed jobs stay visible beyond the recent history limit');
         assert.ok(historyList.some((job) => job.id === historyIds[1]), 'Old review candidates stay visible beyond the recent history limit');
         assert.ok(!historyList.some((job) => job.id === historyIds[2]), 'Applied history remains bounded');
+        const cancelledHistory = await alice('POST', '/ai/jobs/batch', { action: 'cancel', ids: historyIds.slice(0, 2) });
+        assert.equal(cancelledHistory.jobs.length, 2);
+        assert.ok(!(await alice('GET', '/ai/jobs')).some((job) => historyIds.slice(0, 2).includes(job.id)), 'Cancelled old failures and review tasks no longer remain in the attention queue');
         const imageRows = app.db.prepare('SELECT original_path, crop_path FROM mistake_images WHERE mistake_id = ?').all(mistake.id);
         await alice('DELETE', `/mistakes/${mistake.id}`);
         assert.equal((await alice('GET', `/ai/jobs/${cancelled.id}`)).mistakeDeleted, true);
@@ -552,7 +572,7 @@ async function runAiSmoke() {
         for (const row of imageRows) for (const filename of [row.original_path, row.crop_path]) assert.equal(fs.existsSync(path.join(process.env.MISTAKES_UPLOADS_PATH, filename)), false, 'Permanent deletion removes source and derived files');
         await alice('GET', first.cropUrl.replace('/api/mistakes', ''), null, 404);
         assert.ok(calls > 0);
-        console.log('Photo AI smoke passed: OCR privacy, multi-region review, ownership, legacy diagrams, illustrated analysis, retries, conflicts and cleanup.');
+        console.log('Photo AI smoke passed: OCR privacy, multi-region review, ownership, legacy diagrams, illustrated analysis, retries, cancellation, conflicts and cleanup.');
     } finally {
         console.info = originalInfo;
         if (ai) await ai.stopJobs();

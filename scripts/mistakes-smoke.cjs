@@ -103,6 +103,16 @@ async function main() {
     assert.equal((await alice('GET', '/auth/me')).user.avatar, avatar);
     assert.equal((await alice('PATCH', '/auth/avatar', { avatar: null })).user.avatar, null);
 
+    await anonymous('PATCH', '/auth/profile', { username: 'smoke_renamed' }, 401);
+    await alice('PATCH', '/auth/profile', { username: 'invalid name' }, 400);
+    await alice('PATCH', '/auth/profile', { username: 'SMOKE_BOB' }, 409);
+    const renamedUsername = 'smoke_alice_renamed';
+    const renamedUser = await alice('PATCH', '/auth/profile', { username: ` ${renamedUsername} ` });
+    assert.equal(renamedUser.user.username, renamedUsername);
+    assert.equal(renamedUser.user.id, registrationAlice.user.id, 'Renaming preserves the account identity');
+    assert.equal((await alice('GET', '/auth/me')).user.username, renamedUsername, 'Existing sessions see the new name');
+    await anonymous('POST', '/auth/login', { username: 'smoke_alice', password: initialPassword }, 401);
+
     const knowledgePoints = await alice('GET', '/knowledge-points');
     const mathPoints = knowledgePoints.filter((point) => point.subjectId === 'math' && point.parentId !== null);
     const physicsPoint = knowledgePoints.find((point) => point.subjectId === 'physics');
@@ -265,13 +275,13 @@ async function main() {
     assert.equal((await secondAdmin('DELETE', '/mistakes/trash')).count, 6);
 
     const previousSession = client();
-    await previousSession('POST', '/auth/login', { username: 'smoke_alice', password: initialPassword });
+    await previousSession('POST', '/auth/login', { username: renamedUsername, password: initialPassword });
     const newPassword = 'ChangedSmokePassword2026!';
     await alice('PATCH', '/auth/password', { currentPassword: initialPassword, newPassword });
     assert.equal((await alice('GET', '/auth/me')).user.id, registrationAlice.user.id);
     await previousSession('GET', '/mistakes', undefined, 401);
-    await anonymous('POST', '/auth/login', { username: 'smoke_alice', password: initialPassword }, 401);
-    const changedLogin = await anonymous('POST', '/auth/login', { username: 'smoke_alice', password: newPassword });
+    await anonymous('POST', '/auth/login', { username: renamedUsername, password: initialPassword }, 401);
+    const changedLogin = await anonymous('POST', '/auth/login', { username: renamedUsername, password: newPassword });
     assert.equal(changedLogin.user.id, registrationAlice.user.id);
 
     const archivedBeforeDelete = await alice('GET', `/mistakes/${aliceMistake.id}`);

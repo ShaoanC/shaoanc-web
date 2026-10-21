@@ -272,6 +272,7 @@ async function requestResult(job, signal) {
 function applyJob(id, userId, options = {}) {
     const job = ownJob(id, userId);
     const row = activeMistake(job.mistake_id, userId);
+    if (job.status === 'cancelled') fail(409, '任务已取消，请重试后再填入');
     if (job.status !== 'succeeded') fail(409, '任务尚未完成');
     if (job.apply_status === 'applied' && !options.force) return row;
     const input = JSON.parse(job.input_json);
@@ -424,7 +425,7 @@ function schedule(id) {
         try { await runner.queue.add(() => runJob(id, runner)); } finally { scheduled.delete(id); }
     }).catch(() => {
         scheduled.delete(id);
-        if (!stopped) db.prepare("UPDATE ai_jobs SET status = 'failed', error = 'AI 任务无法启动，请重试', finished_at = ? WHERE id = ?").run(now(), id);
+        if (!stopped) db.prepare("UPDATE ai_jobs SET status = 'failed', error = 'AI 任务无法启动，请重试', finished_at = ? WHERE id = ? AND status IN ('queued','running','retrying')").run(now(), id);
     });
 }
 
@@ -437,7 +438,8 @@ function recoverJobs() {
 
 function cancelJob(id, userId) {
     const job = ownJob(id, userId);
-    if (pendingStates.includes(job.status)) {
+    if (job.status === 'succeeded' && job.apply_status === 'applied') fail(409, '任务结果已填入，无法取消');
+    if (job.status !== 'cancelled') {
         db.prepare("UPDATE ai_jobs SET status = 'cancelled', finished_at = ?, next_attempt_at = NULL WHERE id = ?").run(now(), id);
         controllers.get(id)?.abort();
     }
@@ -453,7 +455,7 @@ function retryJob(id, userId) {
     const duplicate = db.prepare("SELECT id FROM ai_jobs WHERE mistake_id = ? AND type = ? AND fingerprint = ? AND status IN ('queued','running','retrying') AND id != ?")
         .get(job.mistake_id, job.type, job.fingerprint, id);
     if (duplicate) fail(409, '相同内容已有任务正在处理，请等待完成');
-    db.prepare("UPDATE ai_jobs SET status = 'queued', attempts = 0, error = NULL, started_at = NULL, finished_at = NULL, next_attempt_at = NULL WHERE id = ?").run(id);
+    db.prepare("UPDATE ai_jobs SET status = 'queued', apply_status = 'pending', result_json = NULL, attempts = 0, error = NULL, started_at = NULL, finished_at = NULL, next_attempt_at = NULL WHERE id = ?").run(id);
     // A cancelled request may still be unwinding. Queue again after its cleanup.
     const resume = () => { if (scheduled.has(id)) setTimeout(resume, 50).unref(); else schedule(id); };
     resume();
