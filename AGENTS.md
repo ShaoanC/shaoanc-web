@@ -19,6 +19,7 @@
 - `npm run test:ai`: run `scripts/mistakes-ai-smoke.cjs` with a local mock AI and isolated database/uploads to check photo entry, knowledge ownership, automatic analysis, retries, recovery, conflicts and cleanup.
 - `npm run test:pages`: check page segmentation, per-question blue-answer entry, independent API profiles, figure review, background preparation, retries/recovery and shared-source cleanup using local mock Gemini/OpenAI services and an isolated database.
 - `node scripts/mistakes-upload-smoke.cjs`: check background photo uploads, deferred answer reuse, automatic retries and resume using mocked requests.
+- `node scripts/mistakes-photo-preparation-smoke.cjs`: check compression worker deadlines and main-thread recovery using mocked compression.
 - `npm test`: run the core mistakes/search smoke checks and CAPTCHA authentication smoke checks with isolated temporary databases under ignored `data/`.
 - `node scripts/mistakes-captcha-smoke.cjs`: run only the CAPTCHA and authentication-limit checks using a mocked verification API.
 

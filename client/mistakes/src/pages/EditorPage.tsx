@@ -89,7 +89,14 @@ export function EditorPage({ id }: { id?: number }) {
     const snapshot = { ...dataRef.current, lifecycle };
     if (lifecycle === 'archived' && (!snapshot.question.trim() || !snapshot.subjectId)) throw new Error('归档前请填写题干并选择学科。');
     const body = Object.fromEntries(formKeys.filter((key) => !baseline.current || !same(snapshot[key], baseline.current[key])).map((key) => [key, snapshot[key]]));
-    const promise = api<Mistake>(recordRef.current ? `/mistakes/${recordRef.current}` : '/mistakes', json({ ...body, generateAnalysis }, recordRef.current ? 'PATCH' : 'POST'));
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30_000);
+    const promise = api<Mistake>(recordRef.current ? `/mistakes/${recordRef.current}` : '/mistakes', {
+      ...json({ ...body, generateAnalysis }, recordRef.current ? 'PATCH' : 'POST'), signal: controller.signal,
+    }).catch((err) => {
+      if (controller.signal.aborted) throw new Error('保存超时，请检查网络后重试，当前内容和已选图片会保留。');
+      throw err;
+    });
     pendingSave.current = promise;
     setSaving(lifecycle);
     try {
@@ -106,7 +113,7 @@ export function EditorPage({ id }: { id?: number }) {
       }
       update(patch);
       return item;
-    } finally { pendingSave.current = null; setSaving(null); }
+    } finally { clearTimeout(timeout); pendingSave.current = null; setSaving(null); }
   }
   const ensureSaved = () => persist(dataRef.current.lifecycle);
   async function save(lifecycle: Lifecycle) {

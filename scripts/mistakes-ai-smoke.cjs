@@ -73,6 +73,7 @@ async function runAiSmoke() {
                 assert.equal(req.headers['x-goog-api-key'], undefined, 'Analysis uses only its own OpenAI credentials');
                 assert.equal(request.model, 'mock-analysis');
                 assert.equal(request.messages[0].role, 'system');
+                assert.ok(request.messages[0].content.includes('不要校对、评判或质疑给定答案'), 'The independent analysis API retains the latest answer-explanation instructions');
                 assert.equal(request.messages[1].role, 'user');
                 const content = request.messages[1].content;
                 const imageIndices = content.filter((part) => part.type === 'text' && part.text.startsWith('题干或答案引用的本站配图')).map((part) => Number(part.text.match(/(\d+)$/)[1]));

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'react';
 import imageCompression from 'browser-image-compression';
-import compressionWorkerUrl from 'browser-image-compression/dist/browser-image-compression.js?url';
+import { compressJpeg } from './photo-compression';
 import { ArrowDown, ArrowLeft, ArrowUp, Check, CheckSquare, ImagePlus, LoaderCircle, Maximize2, Move, MousePointer2, Plus, RefreshCw, RotateCcw, RotateCw, Trash2, Upload } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { api, formatDate, json } from './api';
@@ -48,7 +48,7 @@ async function preparePage(file: File) {
       if (input.size <= 3.8 * 1024 * 1024) return input;
     } finally { URL.revokeObjectURL(url); }
   }
-  return imageCompression(input, { maxSizeMB: 3.8, maxWidthOrHeight: 3200, initialQuality: .92, fileType: 'image/jpeg', useWebWorker: true, libURL: compressionWorkerUrl });
+  return compressJpeg(input, { maxSizeMB: 3.8, maxWidthOrHeight: 3200, initialQuality: .92 });
 }
 
 function sortPages(pages: PageImport[]) {

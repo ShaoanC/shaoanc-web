@@ -6,11 +6,13 @@ const { File } = require('node:buffer');
 
 const input = { question: '题干', answer: '', analysis: '', subjectId: null, primaryKnowledgePointId: null, auxiliaryKnowledgePointIds: [] };
 const photo = (clientId) => ({ clientId, originalName: `${clientId}.jpg`, original: new File(['original'], `${clientId}.jpg`, { type: 'image/jpeg' }), crop: new File(['crop'], 'crop.jpg', { type: 'image/jpeg' }) });
-const response = (data, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => ({ success: status === 200, data, message: '模拟上传失败' }) });
+const response = (data, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => ({ success: status >= 200 && status < 300, data, message: '模拟上传失败' }) });
+const disconnectedResponse = () => ({ ...response(null, 201), json: async () => { throw new TypeError('响应读取期间连接断开'); } });
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 
 async function queueRuntime() {
     let fetchHandler;
+    let expireRequests = false;
     const timers = new Set();
     const retryDelays = [];
     const context = vm.createContext({
@@ -21,7 +23,8 @@ async function queueRuntime() {
         setTimeout(callback, delay) {
             const retry = [1000, 2000, 4000].includes(delay);
             if (retry) retryDelays.push(delay);
-            const timer = setTimeout(() => { timers.delete(timer); callback(); }, retry ? 0 : delay);
+            const requestTimeout = expireRequests && [30000, 90000].includes(delay);
+            const timer = setTimeout(() => { timers.delete(timer); callback(); }, retry || requestTimeout ? 0 : delay);
             timers.add(timer);
             return timer;
         },
@@ -51,6 +54,7 @@ async function queueRuntime() {
         timers,
         retryDelays,
         mock(handler) { fetchHandler = handler; },
+        expireRequests(enabled) { expireRequests = enabled; },
     };
 }
 
@@ -104,13 +108,19 @@ async function run() {
         assert.equal(queue.getSnapshot()[0].reuseStatus, 'submitted');
 
         const resumedUploads = [];
+        const resumedSignals = [];
         const resumedJobs = [];
         let allowResume = false;
+        runtime.expireRequests(true);
         runtime.mock(async (url, options) => {
             if (url.endsWith('/images')) {
                 const clientId = options.body.get('clientId');
                 resumedUploads.push(clientId);
-                if (clientId === 'remaining' && !allowResume) return response(null, 503);
+                assert.equal(options.signal.aborted, false, 'Each upload starts with a usable request signal');
+                if (clientId === 'remaining') resumedSignals.push(options.signal);
+                if (clientId === 'remaining' && !allowResume) return new Promise((_resolve, reject) => {
+                    options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true });
+                });
                 return response({ id: clientId === 'saved' ? 201 : 202 });
             }
             resumedJobs.push(JSON.parse(options.body));
@@ -124,24 +134,58 @@ async function run() {
         assert.deepEqual([...queue.getSnapshot()[0].imageIds], [201]);
         assert.equal(queue.getSnapshot()[0].reuseStatus, 'waiting', 'Failed uploads keep the answer reuse intent');
         assert.deepEqual(runtime.retryDelays, [1000, 1000, 2000, 4000]);
+        assert.equal(resumedSignals.length, 4, 'Request timeouts exhaust the automatic retry budget');
+        assert.ok(resumedSignals.every((signal) => signal.aborted), 'Timed out requests are aborted');
         allowResume = true;
         queue.retry(resumeId);
         await waitFor(queue, (batches) => batches[0].status === 'completed');
         assert.deepEqual(resumedUploads, ['saved', 'remaining', 'remaining', 'remaining', 'remaining', 'remaining'], 'Manual retry only uploads the unfinished image');
         assert.deepEqual(resumedJobs.map((job) => job.type), ['question', 'answer']);
         assert.ok(resumedJobs.every((job) => job.imageIds.join(',') === '201,202'));
+        assert.equal(new Set(resumedSignals).size, 5, 'Automatic and manual retries each get a fresh request signal');
+        assert.equal(resumedSignals.at(-1).aborted, false, 'Manual retry succeeds without reusing an aborted signal');
+        runtime.expireRequests(false);
+
+        const interruptedUploads = [];
+        runtime.mock(async (url, options) => {
+            assert.ok(url.endsWith('/images'));
+            interruptedUploads.push(options.body.get('clientId'));
+            return interruptedUploads.length === 1 ? disconnectedResponse() : response({ id: 301 }, 201);
+        });
+        queue.enqueue({ mistakeId: 3, purpose: 'question', input, files: [photo('body-disconnected')], recognize: false });
+        await waitFor(queue, (batches) => batches[0].status === 'completed');
+        assert.deepEqual(interruptedUploads, ['body-disconnected', 'body-disconnected'], 'A lost response body retries the same accepted image request');
+        assert.deepEqual([...queue.getSnapshot()[0].imageIds], [301]);
+
+        const interruptedJobs = [];
+        let recognitionUploads = 0;
+        runtime.mock(async (url, options) => {
+            if (url.endsWith('/images')) {
+                recognitionUploads += 1;
+                return response({ id: 401 }, 201);
+            }
+            assert.equal(url, '/api/mistakes/ai/jobs');
+            interruptedJobs.push(JSON.parse(options.body));
+            return interruptedJobs.length === 1 ? disconnectedResponse() : response({ id: 501 }, 201);
+        });
+        queue.enqueue({ mistakeId: 4, purpose: 'answer', input, files: [photo('recognition-body-disconnected')], recognize: true });
+        await waitFor(queue, (batches) => batches[0].status === 'completed');
+        assert.equal(recognitionUploads, 1, 'Retrying an accepted recognition request does not reupload its image');
+        assert.equal(interruptedJobs.length, 2);
+        assert.deepEqual(interruptedJobs[0], interruptedJobs[1], 'A lost AI response retries the identical submission and client ID');
+        assert.ok(interruptedJobs[0].clientId);
 
         let aborted = false;
         runtime.mock((_url, options) => new Promise((_resolve, reject) => {
             options.signal.addEventListener('abort', () => { aborted = true; reject(options.signal.reason); }, { once: true });
         }));
-        queue.enqueue({ mistakeId: 3, purpose: 'answer', input, files: [photo('cancelled')], recognize: false });
+        queue.enqueue({ mistakeId: 5, purpose: 'answer', input, files: [photo('cancelled')], recognize: false });
         queue.dispose();
         await tick();
         assert.equal(aborted, true, 'Dispose aborts the active upload');
         assert.equal(queue.getSnapshot().length, 0);
         assert.equal(runtime.timers.size, 0, 'Dispose clears request and retry timers');
-        console.log('Photo upload smoke passed: background reuse, ordered retries, resume, and disposal.');
+        console.log('Photo upload smoke passed: background reuse, connection recovery, timeout resume, idempotent submissions, and disposal.');
     } finally {
         queue.dispose();
         for (const timer of runtime.timers) clearTimeout(timer);

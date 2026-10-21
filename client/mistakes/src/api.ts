@@ -37,7 +37,12 @@ export async function api<T>(path: string, options: RequestInit = {}, activity: 
       credentials: 'same-origin',
       headers: { ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }), ...options.headers },
     });
-    const result = await response.json().catch(() => null);
+    const result = await response.json().catch((error: unknown) => {
+      if (error instanceof SyntaxError) return null;
+      // Reading the response body can fail after the server has accepted a request.
+      // Keep connection and abort errors available to the caller's retry policy.
+      throw error;
+    });
     if (!response.ok || !result?.success) {
       throw new ApiError(result?.message || '请求失败，请稍后重试。', response.status);
     }
