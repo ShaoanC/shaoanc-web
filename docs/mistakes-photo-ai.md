@@ -1,5 +1,10 @@
 # 拍照录题与 AI 任务
 
+## 生成解析 thinking（2026-10-21）
+
+- completed：生成解析的 Chat Completions 请求显式传入 `reasoning_effort: 'medium'`，适用于当前使用的 `gpt-6-luna`；模型仍使用独立解析配置，通用识别与页面分题请求保持原样。
+- completed：服务端语法检查和 `npm run test:ai` 通过，模拟 API 验证解析请求携带 medium reasoning 参数，保留配图及给定答案讲解流程。
+
 ## 全部 worktree 整合（2026-10-21）
 
 - completed：检查全部 5 个 worktree，均无未提交文件；合并尚未进入 main 的 `5e4d631`（用户名编辑、任务取消与解析说明）和 `7fba6d4`（弱网上传恢复）。其他 worktree 提交均已包含在 main 历史中。
