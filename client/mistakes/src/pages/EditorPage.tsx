@@ -24,7 +24,7 @@ const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 const inputOf = (value: Form | Mistake): AiInput => ({ question: value.question, answer: value.answer, analysis: value.analysis, subjectId: value.subjectId, primaryKnowledgePointId: value.primaryKnowledgePointId, auxiliaryKnowledgePointIds: value.auxiliaryKnowledgePointIds });
 const resultFields = (job: AiJob): (keyof Form)[] => job.type === 'question' ? ['question', ...(job.mode === 'page-entry' ? ['answer' as const] : []), 'subjectId', 'primaryKnowledgePointId', 'auxiliaryKnowledgePointIds'] : [job.type];
 
-export function EditorPage({ id }: { id?: number }) {
+export function EditorPage({ id, onCreated }: { id?: number; onCreated?: (id: number) => void }) {
   const { subjects, knowledgePoints, refreshDirectory, notify, user } = useApp();
   const { jobs, config, createJob, applyJob, refresh, openTasks } = useAiTasks();
   const { queue: photoQueue, batches: photoBatches } = usePhotoUploads();
@@ -50,6 +50,7 @@ export function EditorPage({ id }: { id?: number }) {
   const openedAt = useRef(Date.now());
   const [dismissed, setDismissed] = useState<number[]>([]);
   const [localConflicts, setLocalConflicts] = useState<number[]>([]);
+  const [actionQuery, setActionQuery] = useState(window.location.hash.split('?')[1] || '');
   const panelPrefix = useId();
   const questionField = useRef<MarkdownFieldHandle>(null);
   const answerField = useRef<MarkdownFieldHandle>(null);
@@ -58,6 +59,9 @@ export function EditorPage({ id }: { id?: number }) {
   const questionPhotos = useRef<PhotoInputHandle>(null);
   const answerPhotos = useRef<PhotoInputHandle>(null);
   const currentJobs = jobs.filter((job) => job.mistakeId === recordId);
+  const actionParams = new URLSearchParams(actionQuery);
+  const requestedJob = currentJobs.find((job) => job.id === Number(actionParams.get('aiJob')));
+  const requestedPhoto = actionParams.get('photo');
   const questionBatch = photoBatches.find((batch) => batch.mistakeId === recordId && batch.purpose === 'question');
   const questionImageIds = questionBatch?.imageIds ?? currentJobs.find((job) => job.type === 'question')?.imageIds ?? [];
   const questionPhotoCount = questionBatch?.total ?? questionImageIds.length;
@@ -67,13 +71,34 @@ export function EditorPage({ id }: { id?: number }) {
 
   function update(patch: Partial<Form>) { dataRef.current = { ...dataRef.current, ...patch }; setData(dataRef.current); }
   useEffect(() => {
+    const route = () => {
+      const query = window.location.hash.split('?')[1] || '';
+      const params = new URLSearchParams(query);
+      const jobId = Number(params.get('aiJob'));
+      setActionQuery(query);
+      setDismissed((items) => items.includes(jobId) ? items.filter((id) => id !== jobId) : items);
+      const job = currentJobs.find((item) => item.id === jobId);
+      if (job) setTab(job.type === 'question' ? 'question' : 'answers');
+      else if (params.get('photo')) setTab(params.get('photo') === 'answer' ? 'answers' : 'question');
+    };
+    window.addEventListener('hashchange', route);
+    return () => window.removeEventListener('hashchange', route);
+  }, [jobs, recordId]);
+  useEffect(() => {
+    if (loading) return;
+    if (requestedJob) {
+      setTab(requestedJob.type === 'question' ? 'question' : 'answers');
+      setDismissed((items) => items.includes(requestedJob.id) ? items.filter((id) => id !== requestedJob.id) : items);
+    } else if (requestedPhoto === 'question' || requestedPhoto === 'answer') setTab(requestedPhoto === 'question' ? 'question' : 'answers');
+  }, [loading, requestedJob?.id, requestedPhoto]);
+  useEffect(() => {
     const media = window.matchMedia('(max-width: 640px)');
     const change = () => setMobile(media.matches);
     media.addEventListener('change', change); return () => media.removeEventListener('change', change);
   }, []);
   useEffect(() => { if (!recordRef.current && subjects.length && !dataRef.current.subjectId) update({ subjectId: subjects[0].id }); }, [subjects]);
   useEffect(() => {
-    if (!id) return;
+    if (!id || baseline.current?.id === id) return;
     let active = true;
     api<Mistake>(`/mistakes/${id}`).then((item) => {
       if (!active) return;
@@ -106,6 +131,7 @@ export function EditorPage({ id }: { id?: number }) {
       if (!recordRef.current) {
         recordRef.current = item.id; setRecordId(item.id);
         window.history.replaceState(null, '', `#/mistakes/${item.id}/edit`);
+        onCreated?.(item.id);
       }
       const patch: Partial<Form> = { lifecycle: item.lifecycle };
       for (const key of formKeys) {

@@ -50,7 +50,7 @@ function sourceImageId(value, imageIds) {
     return imageIds.includes(id) ? id : 0;
 }
 
-function figureLocation(figure, imageIds) {
+function figureLocation(figure, imageIds, padding = 0) {
     const imageId = sourceImageId(figure, imageIds);
     const bounds = figure?.bounds;
     const nativeBox = figure?.box_2d;
@@ -66,7 +66,13 @@ function figureLocation(figure, imageIds) {
     const valid = numeric && candidate[0] >= 0 && candidate[0] < 1 && candidate[1] >= 0 && candidate[1] < 1 && candidate[2] > 0 && candidate[3] > 0
         && candidate[0] + candidate[2] <= 1.000001 && candidate[1] + candidate[3] <= 1.000001;
     const error = !imageId ? 'source' : !numeric ? 'format' : !valid ? 'bounds' : null;
-    return { imageId, box: error ? null : [candidate[0], candidate[1], Math.min(candidate[2], 1 - candidate[0]), Math.min(candidate[3], 1 - candidate[1])], error };
+    if (error) return { imageId, box: null, error };
+    if (!padding) return { imageId, box: [candidate[0], candidate[1], Math.min(candidate[2], 1 - candidate[0]), Math.min(candidate[3], 1 - candidate[1])], error };
+    const left = Math.max(0, candidate[0] - padding);
+    const top = Math.max(0, candidate[1] - padding);
+    const right = Math.min(1, candidate[0] + candidate[2] + padding);
+    const bottom = Math.min(1, candidate[1] + candidate[3] + padding);
+    return { imageId, box: [left, top, right - left, bottom - top], error };
 }
 
 module.exports = { recognitionFormat, parseRecognitionJson, sourceImageId, figureLocation };

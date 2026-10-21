@@ -21,6 +21,10 @@ assert.equal(figureLocation({ imageId: 9, box: null }, imageIds).error, 'format'
 assert.equal(figureLocation({ imageId: 9, box: [100, 200, 800, 900] }, imageIds).error, 'bounds');
 assert.equal(figureLocation({ ...named, bounds: { ...named.bounds, left: 0.9 } }, imageIds).error, 'bounds');
 assert.ok(figureLocation({ imageId: 9, box: [0.1, 0.2, 0.90000000001, 0.8] }, imageIds).box, 'Floating-point edge rounding is tolerated');
+const padded = figureLocation({ imageIndex: 1, box_2d: [125, 125, 500, 500] }, imageIds, 0.01);
+assert.deepEqual(padded.box, [0.115, 0.115, 0.395, 0.395], 'AI question figures receive a small margin on every side');
+assert.deepEqual(figureLocation(padded, imageIds).box, padded.box, 'Reading stored coordinates never adds another margin');
+assert.deepEqual(figureLocation({ imageIndex: 1, box_2d: [0, 0, 1000, 1000] }, imageIds, 0.01).box, [0, 0, 1, 1], 'Margins stop at image edges');
 const formula = { question: '$\\frac{1}{2}$ 与 $\\sqrt{x}$\n第二行' };
 assert.deepEqual(parseRecognitionJson('识别结果：\n```json\n' + JSON.stringify(formula) + '\n```'), formula);
 assert.throws(() => parseRecognitionJson(String.raw`{"question":"$\sqrt{x}$"}`), SyntaxError);
@@ -301,7 +305,7 @@ async function runAiSmoke() {
         assert.equal((await alice('POST', '/ai/jobs', multipleRequest, 201)).id, multiple.id, 'A creation retry returns the pending question review');
         assert.equal((await alice('POST', '/ai/jobs', reuseFiguresRequest, 201)).id, reuseFigures.id, 'A creation retry returns the pending answer review');
         assert.equal(multipleResult.result.figures.length, 2, 'One image supports multiple independent regions');
-        assert.deepEqual(multipleResult.result.figures.map((figure) => figure.box), [[0.125, 0.125, 0.375, 0.375], [0.5, 0.5, 0.375, 0.375]]);
+        assert.deepEqual(multipleResult.result.figures.map((figure) => figure.box), [[0.115, 0.115, 0.395, 0.395], [0.49, 0.49, 0.395, 0.395]]);
         assert.deepEqual(reuseFiguresResult.result.figures[0].box, [0.25, 0.625, 0.375, 0.25]);
         assert.equal((await latest()).question, sourceSnapshot.question);
         assert.equal((await latest()).answer, sourceSnapshot.answer, 'Background answer reuse does not fill unconfirmed figures');

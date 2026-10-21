@@ -5,6 +5,7 @@ import { api, json } from './api';
 import { useApp } from './context';
 import { AiDialog } from './AiDialog';
 import { AiTaskManager } from './AiTaskManager';
+import { toastDestination } from './toast-navigation';
 import type { AiApplyOptions, AiApplyResult, AiConfig, AiJob, AiJobRequest } from './ai-types';
 
 export const AI_LABELS = { question: '题干识别', answer: '答案识别', analysis: '生成解析' };
@@ -124,17 +125,25 @@ export function AiTasksProvider({ children }: { children: ReactNode }) {
       for (const job of jobs) {
         const before = previous.current.get(job.id);
         if (!before || before === job.status || job.mistakeDeleted) continue;
-        if (job.status === 'succeeded') toast.success(`记录 #${job.mistakeId} ${aiJobLabel(job)}完成${job.applyStatus === 'applied' ? '，已填入。' : '，待校对。'}`, { autoClose: 8000 });
-        if (job.status === 'failed') toast.error(`记录 #${job.mistakeId} ${aiJobLabel(job)}失败，可在 AI 任务中重试。`);
+        if (job.status === 'succeeded') {
+          const review = job.applyStatus !== 'applied';
+          const path = review ? `/mistakes/${job.mistakeId}/edit?aiJob=${job.id}` : `/mistakes/${job.mistakeId}`;
+          toast.success(<a className="ai-toast-link" href={`#${path}`}><span>记录 #{job.mistakeId} {aiJobLabel(job)}完成{review ? '，待校对。' : '，已填入。'}</span><small>{review ? '点击校对并填入' : '点击查看错题'}</small></a>, { autoClose: 8000, ...toastDestination(path) });
+        }
+        if (job.status === 'failed') {
+          const path = `/ai-tasks?job=${job.id}`;
+          toast.error(<a className="ai-toast-link" href={`#${path}`}><span>记录 #{job.mistakeId} {aiJobLabel(job)}失败。</span><small>点击查看原因并重试</small></a>, toastDestination(path));
+        }
       }
     }
     previous.current = new Map(jobs.map((job) => [job.id, job.status]));
   }, [jobs]);
   useEffect(() => {
     if (!active || open || onTasksPage) { toast.dismiss(toastId); return; }
-    const content = <div className="ai-toast-copy"><span>{active} 项 AI 操作正在处理</span><button type="button" onClick={() => setOpen(true)}>查看任务</button></div>;
-    if (toast.isActive(toastId)) toast.update(toastId, { render: content, type: 'info', autoClose: false });
-    else toast(content, { toastId, type: 'info', autoClose: false });
+    const content = <a className="ai-toast-link" href="#/ai-tasks"><span>{active} 项 AI 操作正在处理</span><small>点击查看任务</small></a>;
+    const options = { type: 'info' as const, autoClose: false as const, ...toastDestination('/ai-tasks') };
+    if (toast.isActive(toastId)) toast.update(toastId, { render: content, ...options });
+    else toast(content, { toastId, ...options });
   }, [active, open, onTasksPage, toastId]);
 
   const createJob = useCallback(async (request: AiJobRequest) => {
@@ -147,8 +156,13 @@ export function AiTasksProvider({ children }: { children: ReactNode }) {
       mergeJobs([result.job]);
       toast.success('AI 结果已填入。');
       return result;
-    } catch (err) { toast.error((err as Error).message); void refresh(); throw err; }
-  }, [refresh, mergeJobs]);
+    } catch (err) {
+      const job = jobs.find((item) => item.id === id);
+      const path = job ? `/mistakes/${job.mistakeId}/edit?aiJob=${id}` : '/ai-tasks';
+      toast.error(<a className="ai-toast-link" href={`#${path}`}><span>{(err as Error).message}</span><small>点击继续校对</small></a>, toastDestination(path));
+      void refresh(); throw err;
+    }
+  }, [refresh, mergeJobs, jobs]);
   const actJobs = useCallback(async (ids: number[], action: JobAction) => {
     const targets = [...new Set(ids)].filter((id) => !busy.current.has(id));
     if (!targets.length) return { jobs: [], errors: [] };

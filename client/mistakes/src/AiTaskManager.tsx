@@ -21,6 +21,7 @@ function matches(job: AiJob, filter: Filter) {
   return filter === 'all' || job.status === filter;
 }
 function priority(job: AiJob) { return isActiveJob(job) ? 0 : needsReview(job) ? 1 : job.status === 'failed' ? 2 : 3; }
+const requestedJobId = () => Number(new URLSearchParams(window.location.hash.split('?')[1] || '').get('job')) || null;
 function duration(job: AiJob, clock: number) {
   if (!job.startedAt) return job.status === 'queued' ? '等待执行' : '尚未执行';
   const seconds = Math.max(0, Math.floor(((job.finishedAt ? Date.parse(job.finishedAt) : clock) - Date.parse(job.startedAt)) / 1000));
@@ -51,6 +52,7 @@ export function AiTaskManager({ compact = false }: { compact?: boolean }) {
   const [expanded, setExpanded] = useState<number[]>([]);
   const [actionErrors, setActionErrors] = useState<{ id?: number; message: string }[]>([]);
   const [clock, setClock] = useState(Date.now());
+  const [targetJobId, setTargetJobId] = useState<number | null>(() => compact ? null : requestedJobId());
   const activeCount = jobs.filter(isActiveJob).length;
   const generalAvailable = Boolean(config?.enabled && config.configured);
   const analysisAvailable = Boolean(config?.analysis?.enabled && config.analysis.configured);
@@ -58,13 +60,21 @@ export function AiTaskManager({ compact = false }: { compact?: boolean }) {
   const serviceAvailable = (job: AiJob) => job.type === 'analysis' ? analysisAvailable : generalAvailable;
   useEffect(() => { void refresh(); }, [refresh]);
   useEffect(() => {
+    if (compact) return;
+    const route = () => {
+      setTargetJobId(requestedJobId()); setFilter('all'); setType(''); setSearch(''); setPage(1); setSelected([]);
+    };
+    window.addEventListener('hashchange', route);
+    return () => window.removeEventListener('hashchange', route);
+  }, [compact]);
+  useEffect(() => {
     if (!activeCount) return;
     const timer = setInterval(() => setClock(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [activeCount]);
 
   const term = search.trim().toLocaleLowerCase();
-  const matching = jobs.filter((job) => (!type || (type === 'page-entry' ? job.mode === 'page-entry' : job.type === type)) && (!term ||
+  const matching = jobs.filter((job) => (!targetJobId || job.id === targetJobId) && (!type || (type === 'page-entry' ? job.mode === 'page-entry' : job.type === type)) && (!term ||
     `${job.id} ${job.mistakeId} ${aiJobLabel(job)} ${job.input.question} ${job.result?.question || ''} ${job.result?.answer || ''} ${job.error || ''}`.toLocaleLowerCase().includes(term.replace(/^#/, ''))));
   const filtered = matching.filter((job) => matches(job, filter)).sort((a, b) => priority(a) - priority(b) || b.id - a.id);
   const pageSize = compact ? 8 : 20;
@@ -76,7 +86,7 @@ export function AiTaskManager({ compact = false }: { compact?: boolean }) {
   const retryIds = chosen.filter((job) => retryable(job) && serviceAvailable(job)).map((job) => job.id);
   const cancelIds = chosen.filter(canCancelJob).map((job) => job.id);
   function resetSelection() { setPage(1); setSelected([]); }
-  function clearFilters() { setFilter('all'); setType(''); setSearch(''); resetSelection(); }
+  function clearFilters() { setTargetJobId(null); setFilter('all'); setType(''); setSearch(''); resetSelection(); }
   async function act(ids: number[], action: JobAction) {
     setActionErrors([]);
     try {
@@ -90,6 +100,7 @@ export function AiTaskManager({ compact = false }: { compact?: boolean }) {
     <div className="task-sync-bar"><span className={error ? 'task-sync-error' : ''}>{error ? updatedAt ? '连接异常，已保留上次结果' : '暂时无法连接' : !loaded ? '正在加载任务…' : activeCount ? `${activeCount} 项正在处理，自动更新中` : '任务状态自动更新'}{updatedAt && <small>更新于 {new Date(updatedAt).toLocaleTimeString('zh-CN', { hour12: false })}</small>}</span><div>{compact && <a className="text-link" href="#/ai-tasks" onClick={closeTasks}>打开管理页面</a>}<button type="button" className="button ghost" disabled={refreshing} onClick={() => void refresh()}><RefreshCw size={15} className={refreshing ? 'spin' : ''} />刷新</button></div></div>
     {error && <div className="inline-alert" role="alert">{error}<button type="button" disabled={refreshing} onClick={() => void refresh()}>重新连接</button></div>}
     {config && !available && <p className="task-service-notice">{user.role === 'admin' ? <a href="#/settings">AI 服务尚未启用或配置完整，前往设置。</a> : 'AI 服务暂不可用，请联系管理员。已有结果仍可查看和校对。'}</p>}
+    {targetJobId && <p className="task-row-notice">已定位任务 #{targetJobId} <button type="button" className="table-button" onClick={clearFilters}>查看全部任务</button></p>}
     <div className="task-filters" aria-label="按任务状态筛选">{FILTERS.map((item) => <button type="button" key={item.id} aria-pressed={filter === item.id} onClick={() => { setFilter(item.id); resetSelection(); }}><span>{item.label}</span><strong>{loaded ? matching.filter((job) => matches(job, item.id)).length : '—'}</strong></button>)}</div>
     <div className="task-search-bar">
       <label className="task-search"><Search size={18} /><input type="search" aria-label="搜索 AI 任务" placeholder="搜索题目、任务编号、记录编号或失败原因" value={search} onChange={(event) => { setSearch(event.target.value); resetSelection(); }} /></label>
@@ -102,7 +113,7 @@ export function AiTaskManager({ compact = false }: { compact?: boolean }) {
       const review = needsReview(job);
       const status = job.status === 'succeeded' ? job.applyStatus === 'applied' ? '已填入' : job.applyStatus === 'conflict' ? '内容有更新，待校对' : '待校对' : STATUS[job.status];
       const tone = job.status === 'failed' ? 'failed' : review ? 'review' : isActiveJob(job) ? 'active' : 'done';
-      const link = job.mistakeDeleted ? '#/mistakes?trash=1' : `#/mistakes/${job.mistakeId}/edit`;
+      const link = job.mistakeDeleted ? '#/mistakes?trash=1' : `#/mistakes/${job.mistakeId}/edit${review ? `?aiJob=${job.id}` : ''}`;
       return <article key={job.id} className={`task-row task-row-${tone}`}>
         <div className="task-row-heading"><div className="task-row-title"><Checkbox aria-label={`选择任务 #${job.id}`} checked={chosen.some((item) => item.id === job.id)} disabled={busy || !(canCancelJob(job) || retryable(job))} onChange={(event) => setSelected((current) => event.target.checked ? [...current, job.id] : current.filter((id) => id !== job.id))} /><h3>{aiJobLabel(job)}</h3><span className="task-id">#{job.id}</span></div><span className={`task-status task-status-${tone}`}>{isActiveJob(job) ? <LoaderCircle size={14} className={job.status === 'running' ? 'spin' : ''} /> : job.applyStatus === 'applied' ? <CheckCircle2 size={14} /> : null}{status}</span></div>
         <a className="task-excerpt" href={link}>{excerpt(job)}</a>

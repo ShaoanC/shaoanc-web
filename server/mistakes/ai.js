@@ -23,7 +23,7 @@ const inputSchema = z.object({ question: text, answer: text, analysis: text,
 const pathSchema = z.array(z.string().trim().min(1).max(100)).max(6);
 const incompletePattern = /[\[【（(]\s*待(?:确认|补充)[^\]】）)]*[\]】）)]|\[\[figure:/u;
 
-function normalizeResult(job, value) {
+function normalizeResult(job, value, padFigures = false) {
     const field = job.type;
     const result = { ...value, [field]: text.min(1).parse(value[field]) };
     const pageEntry = job.mode === 'page-entry';
@@ -43,7 +43,10 @@ function normalizeResult(job, value) {
         let id = typeof figure?.id === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(figure.id) ? figure.id : `figure-${index + 1}`;
         if (usedIds.has(id)) { addIssue('duplicate_figure', `配图标识 ${id} 重复，请检查插入位置`); id = `${id}-${index + 1}`; }
         usedIds.add(id);
-        const { imageId, box, error } = figureLocation(figure, imageIds);
+        // Add a small margin only when receiving a new question figure from AI.
+        // Stored results and user-adjusted regions retain their exact coordinates.
+        const padding = padFigures && field === 'question' && (!pageEntry || figure?.field !== 'answer') ? 0.01 : 0;
+        const { imageId, box, error } = figureLocation(figure, imageIds, padding);
         const locationError = figure?.locationError || error;
         if (error) {
             const reason = { source: '未关联到本次图片，请选择来源图片并重新框选', format: '坐标格式不正确，请重新框选', bounds: '选框超出图片或范围为空，请重新框选' }[locationError] || '定位无效，请重新框选';
@@ -238,7 +241,7 @@ function resolvePath(userId, subjectId, names) {
 }
 
 function parseResult(job, raw) {
-    return normalizeResult(job, parseRecognitionJson(raw));
+    return normalizeResult(job, parseRecognitionJson(raw), true);
 }
 
 async function requestResult(job, signal) {

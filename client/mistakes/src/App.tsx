@@ -112,6 +112,8 @@ export default function App() {
   const [knowledgePoints, setKnowledgePoints] = useState<KnowledgePoint[]>([]);
   const [directoryError, setDirectoryError] = useState('');
   const [path, setPath] = useState(window.location.hash.slice(1) || '/mistakes');
+  // A new draft keeps its editor instance when a task link adopts the saved record URL.
+  const [newEditor, setNewEditor] = useState<{ session: number; recordId: number | null }>({ session: 0, recordId: null });
   const pendingWelcome = useRef<string | null>(null);
 
   useEffect(() => {
@@ -124,7 +126,16 @@ export default function App() {
       }
       setUser(result.user);
     }).catch(() => { if (active) setUser(null); }).finally(() => { if (active) setInitializing(false); });
-    const onHash = () => { setPath(window.location.hash.slice(1) || '/mistakes'); window.scrollTo(0, 0); };
+    const onHash = () => {
+      const nextPath = window.location.hash.slice(1) || '/mistakes';
+      const nextRoute = nextPath.split('?')[0];
+      setNewEditor((current) => {
+        if (nextRoute === '/new') return { session: current.session + 1, recordId: null };
+        if (current.recordId && nextRoute !== `/mistakes/${current.recordId}/edit`) return { ...current, recordId: null };
+        return current;
+      });
+      setPath(nextPath); window.scrollTo(0, 0);
+    };
     window.addEventListener('hashchange', onHash);
     return () => { active = false; window.removeEventListener('hashchange', onHash); };
   }, []);
@@ -167,9 +178,9 @@ export default function App() {
   const detailMatch = routePath.match(/^\/mistakes\/(\d+)(\/edit)?$/);
   const activePath = detailMatch ? '/mistakes' : routePath === '/page-imports' ? '/new' : routePath;
   let page;
-  if (routePath === '/new') page = <EditorPage key="new" />;
+  if (routePath === '/new') page = <EditorPage key={`new-${newEditor.session}`} onCreated={(recordId) => setNewEditor((current) => ({ ...current, recordId }))} />;
   else if (routePath === '/page-imports') page = <PageImportsPage />;
-  else if (detailMatch?.[2]) page = <EditorPage key={path} id={Number(detailMatch[1])} />;
+  else if (detailMatch?.[2]) page = <EditorPage key={newEditor.recordId === Number(detailMatch[1]) ? `new-${newEditor.session}` : routePath} id={Number(detailMatch[1])} />;
   else if (detailMatch) page = <DetailPage key={path} id={Number(detailMatch[1])} />;
   else if (routePath === '/review') page = <ReviewPage key={path} />;
   else if (routePath === '/stats') page = <StatsPage />;

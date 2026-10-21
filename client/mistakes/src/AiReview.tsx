@@ -36,8 +36,8 @@ export function AiReview({ job, input, busy, onApply, onDismiss }: { job: AiJob;
   const [imageId, setImageId] = useState(job.imageIds[0]);
   const [activeId, setActiveId] = useState<string | null>(draft.figures[0]?.id || null);
   const [redrawId, setRedrawId] = useState<string | null>(null);
-  const [mobileView, setMobileView] = useState<'image' | 'result'>('image');
-  const [preview, setPreview] = useState(false);
+  const [mobileView, setMobileView] = useState<'image' | 'result'>('result');
+  const [preview, setPreview] = useState(true);
   const [full, setFull] = useState<string | null>(null);
   const [previews, setPreviews] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
@@ -63,6 +63,20 @@ export function AiReview({ job, input, busy, onApply, onDismiss }: { job: AiJob;
   const changedDuringReview = reviewFields.some((field) => JSON.stringify(input[field]) !== JSON.stringify(draft.expectedInput[field]));
   function update(patch: Partial<ReviewDraft>) { draftRef.current = { ...draftRef.current, ...patch }; setDraft(draftRef.current); }
   useEffect(() => {
+    function openRequestedReview() {
+      const params = new URLSearchParams(window.location.hash.split('?')[1] || '');
+      const requestedId = params.get('aiJob');
+      if (requestedId !== String(job.id)) {
+        if (requestedId) setOpen(false);
+        return;
+      }
+      setPreview(true); setMobileView('result'); setOpen(true);
+    }
+    openRequestedReview();
+    window.addEventListener('hashchange', openRequestedReview);
+    return () => window.removeEventListener('hashchange', openRequestedReview);
+  }, [job.id]);
+  useEffect(() => {
     try { sessionStorage.setItem(storeKey(job), JSON.stringify(draft)); } catch { /* The open review still retains its draft. */ }
   }, [draft, job.id, job.mistakeId]);
   useEffect(() => {
@@ -83,6 +97,8 @@ export function AiReview({ job, input, busy, onApply, onDismiss }: { job: AiJob;
     return () => { active = false; window.clearTimeout(timer); urls.forEach(URL.revokeObjectURL); };
   }, [draft.figures, images, open]);
   function show() {
+    setPreview(true);
+    setMobileView('result');
     setOpen(true);
   }
   function showIssue(imageId: number) {
@@ -175,11 +191,11 @@ export function AiReview({ job, input, busy, onApply, onDismiss }: { job: AiJob;
     if (pageEntry && figureField(figure) === 'answer') previewAnswer = previewAnswer.split(figureMarker(figure.id)).join(replacement);
     else previewText = previewText.split(figureMarker(figure.id)).join(replacement);
   }
-  return <section className="ai-result">
+  return <section className="ai-result" data-ai-job={job.id}>
     <h3>{pageEntry ? '按页录题' : job.type === 'question' ? '题干识别' : job.type === 'answer' ? '答案识别' : '生成解析'}结果</h3>
     <p className="ai-notice">{job.applyStatus === 'conflict' ? '内容已变化，识别结果已保留。校对后再选择是否替换。' : job.result?.needsReview ? '识别完成，待校对。请检查疑点、图形范围和插入位置。' : '结果已保留，校对后可填入。'}</p>
-    <div className="ai-candidate-excerpt"><MarkdownContent>{(job.result?.[job.type] || '').slice(0, 500)}</MarkdownContent></div>
-    {pageEntry && <div className="ai-candidate-excerpt"><strong>正确答案</strong><MarkdownContent>{(job.result?.answer || '未识别到蓝笔答案，请补充。').slice(0, 300)}</MarkdownContent></div>}
+    <div className="ai-candidate-excerpt"><MarkdownContent>{job.result?.[job.type] || ''}</MarkdownContent></div>
+    {pageEntry && <div className="ai-candidate-excerpt"><strong>正确答案</strong><MarkdownContent>{job.result?.answer || '未识别到蓝笔答案，请补充。'}</MarkdownContent></div>}
     <div className="photo-actions"><button type="button" className="button primary" disabled={busy} onClick={show}>校对并填入</button><button type="button" className="table-button" onClick={onDismiss}>暂不填入</button></div>
     <AiDialog open={open} onClose={() => { if (!locked) setOpen(false); }} title={pageEntry ? '校对题干、答案与配图' : job.type === 'question' ? '校对题干与配图' : job.type === 'answer' ? '校对答案' : '校对解析'} description="检查原题内容与图形。框选只改变截图范围，重叠笔迹可保留原样。" wide>
       <div className="ai-review-tabs" role="group" aria-label="校对视图"><button type="button" aria-pressed={mobileView === 'image'} onClick={() => setMobileView('image')}>图片</button><button type="button" aria-pressed={mobileView === 'result'} onClick={() => setMobileView('result')}>结果</button></div>
@@ -199,11 +215,11 @@ export function AiReview({ job, input, busy, onApply, onDismiss }: { job: AiJob;
           </article>)}</div>
         </section>
         <section className={`ai-review-result${mobileView === 'result' ? ' is-mobile-active' : ''}`}>
-          <div className="markdown-field-heading"><h3>可编辑结果</h3><div className="markdown-field-modes"><button type="button" aria-pressed={!preview} onClick={() => setPreview(false)}>编辑</button><button type="button" aria-pressed={preview} onClick={() => setPreview(true)}>预览</button></div></div>
+          <div className="markdown-field-heading"><h3>校对结果</h3><div className="markdown-field-modes" role="group" aria-label="校对结果显示模式"><button type="button" aria-pressed={!preview} onClick={() => setPreview(false)}>编辑</button><button type="button" aria-pressed={preview} onClick={() => setPreview(true)}>预览</button></div></div>
           {pageEntry && <h4>题干</h4>}
-          {preview ? <div className="ai-reviewed-preview"><MarkdownContent imageUrls={imageUrls}>{previewText}</MarkdownContent></div> : <textarea ref={textInput} className="ai-review-text" aria-label={pageEntry ? '校对题干' : '校对识别文字'} maxLength={20000} value={draft.text} disabled={locked} onFocus={() => setEditingField(job.type === 'answer' ? 'answer' : 'question')} onChange={(event) => update({ text: event.target.value })} onSelect={(event) => { cursor.current = { start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd, field: job.type === 'answer' ? 'answer' : 'question' }; }} />}
-          {pageEntry && <><h4>正确答案</h4>{preview ? <div className="ai-reviewed-preview"><MarkdownContent imageUrls={imageUrls}>{previewAnswer}</MarkdownContent></div> : <textarea ref={answerTextInput} className="ai-review-text" aria-label="校对正确答案" rows={5} maxLength={20000} value={draft.answerText} disabled={locked} onFocus={() => setEditingField('answer')} onChange={(event) => update({ answerText: event.target.value })} onSelect={(event) => { cursor.current = { start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd, field: 'answer' }; }} />}</>}
-          <p className="ai-notice">配图标记决定填入位置。先在文字中放置光标，再点“插入配图”；没有光标时追加到末尾。预览支持公式与表格。</p>
+          {preview ? <div className="ai-reviewed-preview" role="region" aria-label="校对识别结果预览"><MarkdownContent imageUrls={imageUrls} emptyText="暂无内容可预览。">{previewText}</MarkdownContent></div> : <textarea ref={textInput} className="ai-review-text" aria-label={pageEntry ? '校对题干' : '校对识别文字'} maxLength={20000} value={draft.text} disabled={locked} onFocus={() => setEditingField(job.type === 'answer' ? 'answer' : 'question')} onChange={(event) => update({ text: event.target.value })} onSelect={(event) => { cursor.current = { start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd, field: job.type === 'answer' ? 'answer' : 'question' }; }} />}
+          {pageEntry && <><h4>正确答案</h4>{preview ? <div className="ai-reviewed-preview" role="region" aria-label="校对正确答案预览"><MarkdownContent imageUrls={imageUrls} emptyText="暂无答案可预览。">{previewAnswer}</MarkdownContent></div> : <textarea ref={answerTextInput} className="ai-review-text" aria-label="校对正确答案" rows={5} maxLength={20000} value={draft.answerText} disabled={locked} onFocus={() => setEditingField('answer')} onChange={(event) => update({ answerText: event.target.value })} onSelect={(event) => { cursor.current = { start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd, field: 'answer' }; }} />}</>}
+          <p className="ai-notice">预览支持公式、表格与配图，切换“编辑”可修改内容。配图标记决定填入位置；在文字中放置光标后点“插入配图”，没有光标时追加到末尾。</p>
           {reviewIssues.length ? <div className="ai-review-issues" role="note"><strong>需要检查</strong><ul>{reviewIssues.map((issue, index) => <li key={index}>{issue.imageId && job.imageIds.includes(issue.imageId) ? <button type="button" className="ai-issue-link" onClick={() => showIssue(issue.imageId!)}>图片 {job.imageIds.indexOf(issue.imageId) + 1}：{issue.description}</button> : issue.description}</li>)}</ul></div> : null}
           {unmatched.length > 0 && <div className="ai-review-issues"><strong>以下标记没有有效选框或所属内容不符</strong>{unmatched.map((id) => <p key={id}>{figureMarker(id)} <button type="button" className="table-button" disabled={locked} onClick={() => redraw(id)}>选择图片并框选</button> <button type="button" className="table-button" disabled={locked} onClick={() => update({ text: draftRef.current.text.split(figureMarker(id)).join(''), answerText: draftRef.current.answerText.split(figureMarker(id)).join('') })}>移除标记</button></p>)}<p>选择来源图片并框选，原标记与文字位置会保留；没有对应配图时可移除标记。</p></div>}
           {unplaced.length > 0 && <p className="ai-notice">{unplaced.length} 张选中配图还没有插入文字，填入前请点“插入配图”或取消勾选。</p>}

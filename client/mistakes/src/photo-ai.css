@@ -19,6 +19,10 @@
 .ai-job .markdown-content { font-size: 15px; padding: 12px 0; max-height: 320px; overflow: auto; }
 .ai-toast-copy { display: grid; gap: 6px; }
 .ai-toast-copy button { justify-self: start; color: var(--primary); border: 0; background: none; padding: 0; text-decoration: underline; }
+.ai-toast-actionable { cursor: pointer; }
+.ai-toast-link { display: grid; gap: 6px; color: inherit; text-decoration: none; }
+.ai-toast-link small { color: var(--primary); text-decoration: underline; text-underline-offset: 3px; }
+.ai-toast-link:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
 .ai-empty { padding: 28px 0; color: var(--text-secondary); }
 .ai-settings { max-width: 740px; }
 .ai-settings h2 { margin-bottom: 12px; }
