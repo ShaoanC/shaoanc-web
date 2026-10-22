@@ -76,6 +76,20 @@ async function run() {
         for (const [username, role] of [['pageadmin', 'admin'], ['pageuser', 'user'], ['pageother', 'user']]) {
             app.db.prepare('INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)').run(username, hashPassword(password), role, new Date().toISOString());
         }
+        const runners = await Promise.all(['pageadmin', 'pageuser', 'pageother'].map((username) =>
+            ai.runtimeForJobs(app.db.prepare('SELECT id FROM users WHERE username = ?').get(username).id)));
+        assert.equal(runners[1].queue, runners[2].queue, 'Ordinary users retain their shared queue');
+        let releaseQueue;
+        const queueGate = new Promise((resolve) => { releaseQueue = resolve; });
+        const queued = runners.slice(0, 2).map((runner) => Array.from({ length: 12 }, () => runner.queue.add(() => queueGate)));
+        await delay(0);
+        try {
+            assert.equal(runners[0].queue.pending, 10, 'Administrators run ten tasks at once');
+            assert.equal(runners[1].queue.pending, 2, 'Ordinary users still run two tasks at once');
+        } finally {
+            releaseQueue();
+            await Promise.all(queued.flat());
+        }
         server = await listen(app);
         const origin = `http://127.0.0.1:${server.address().port}`;
         const base = `${origin}/api/mistakes`;

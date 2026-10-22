@@ -371,9 +371,15 @@ function canRetry(error, attempts) {
     return !error.status || [408, 409, 429].includes(error.status) || error.status >= 500;
 }
 
-async function runtimeForJobs() {
-    if (!runtime) runtime = Promise.all([import('p-queue'), import('p-retry')]).then(([queue, retry]) => ({ queue: new queue.default({ concurrency: 2 }), retry: retry.default, AbortError: retry.AbortError }));
-    return runtime;
+async function runtimeForJobs(userId) {
+    if (!runtime) runtime = Promise.all([import('p-queue'), import('p-retry')]).then(([queue, retry]) => ({
+        queue: new queue.default({ concurrency: 2 }),
+        adminQueue: new queue.default({ concurrency: 10 }),
+        retry: retry.default, AbortError: retry.AbortError
+    }));
+    const runner = await runtime;
+    const user = db.prepare('SELECT role FROM users WHERE id = ?').get(userId ?? null);
+    return { ...runner, queue: user?.role === 'admin' ? runner.adminQueue : runner.queue };
 }
 
 async function runJob(id, runner) {
@@ -424,7 +430,7 @@ async function runJob(id, runner) {
 function schedule(id) {
     if (stopped || scheduled.has(id)) return;
     scheduled.add(id);
-    void runtimeForJobs().then(async (runner) => {
+    void runtimeForJobs(db.prepare('SELECT user_id FROM ai_jobs WHERE id = ?').get(id)?.user_id).then(async (runner) => {
         try { await runner.queue.add(() => runJob(id, runner)); } finally { scheduled.delete(id); }
     }).catch(() => {
         scheduled.delete(id);
@@ -473,7 +479,10 @@ async function stopJobs() {
     stopped = true;
     for (const controller of controllers.values()) controller.abort();
     require('./page-imports').stopPageImports();
-    if (runtime) await (await runtime).queue.onIdle();
+    if (runtime) {
+        const runner = await runtime;
+        await Promise.all([runner.queue.onIdle(), runner.adminQueue.onIdle()]);
+    }
 }
 
 module.exports = { createJob, serializeJob, ownJob, applyJob, retryJob, cancelJob, cancelMistakeJobs, recoverJobs, stopJobs, enqueueAutomatic, inputFor, isShortAnswer, analysisNoticeFor, runtimeForJobs, canRetry };

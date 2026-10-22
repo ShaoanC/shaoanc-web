@@ -112,7 +112,7 @@ async function runPage(id, runner) {
 function schedulePage(id) {
     if (stopped || scheduled.has(id)) return;
     scheduled.add(id);
-    void require('./ai').runtimeForJobs().then(async (runner) => {
+    void require('./ai').runtimeForJobs(db.prepare('SELECT user_id FROM page_imports WHERE id = ?').get(id)?.user_id).then(async (runner) => {
         try { await runner.queue.add(() => runPage(id, runner)); } finally { scheduled.delete(id); }
     }).catch(() => {
         scheduled.delete(id);
@@ -155,7 +155,7 @@ function schedulePreparation(pageId, regionId) {
     const key = `${pageId}:${regionId}`;
     if (stopped || preparing.has(key)) return;
     preparing.add(key);
-    void require('./ai').runtimeForJobs().then(async (runner) => {
+    void require('./ai').runtimeForJobs(db.prepare('SELECT user_id FROM page_imports WHERE id = ?').get(pageId)?.user_id).then(async (runner) => {
         try { await runner.queue.add(() => prepareRegion(pageId, regionId)); }
         finally { preparing.delete(key); }
     }).catch(() => {
