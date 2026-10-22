@@ -12,6 +12,7 @@
     "test:ai": "node scripts/mistakes-ai-smoke.cjs",
     "test:pages": "node scripts/mistakes-page-smoke.cjs",
     "test:client": "node scripts/mistakes-editor-smoke.cjs && node scripts/mistakes-page-upload-smoke.cjs",
+    "test:export": "node scripts/mistakes-export-smoke.cjs",
     "baseline:ai": "node scripts/mistakes-ai-baseline.cjs",
     "admin:create": "node server/mistakes/create-admin.js"
   },
@@ -21,6 +22,8 @@
   "type": "commonjs",
   "dependencies": {
     "@base-ui/react": "1.9.0",
+    "@fontsource/noto-sans-sc": "5.3.1",
+    "@fontsource/noto-serif-sc": "5.3.1",
     "@friendlycaptcha/sdk": "1.1.1",
     "better-sqlite3": "^13.0.3",
     "browser-image-compression": "^2.0.2",
@@ -33,7 +36,9 @@
     "multer": "^2.4.0",
     "p-queue": "^10.0.0",
     "p-retry": "^8.0.1",
+    "pdfjs-dist": "6.4.299",
     "pinyin-match": "1.2.10",
+    "playwright": "1.64.1",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-image-crop": "^11.1.2",

@@ -1,0 +1,62 @@
+@page { size: A4 portrait; margin: 15mm; }
+
+*, *::before, *::after { box-sizing: border-box; }
+html { background: white; color: #171717; font-synthesis: none; text-rendering: optimizeLegibility; }
+body { margin: 0; padding: 0; }
+h1, h2, h3, p { margin: 0; }
+.export-document { width: 180mm; margin: 0; font-family: 'Noto Serif SC', serif; line-height: 1.7; overflow-wrap: anywhere; }
+.export-document-heading { padding-bottom: 5mm; margin-bottom: 7mm; border-bottom: 1.5pt solid #222; break-inside: avoid; break-after: avoid; }
+.export-document-heading h1 { font-family: 'Noto Sans SC', sans-serif; font-size: 22pt; font-weight: 600; line-height: 1.5; }
+.export-document-heading > div { display: flex; flex-wrap: wrap; gap: 6mm; margin-top: 3mm; color: #555; font-size: 9pt; }
+.export-question, .export-appendix-entry { padding-bottom: 6mm; margin-bottom: 6mm; border-bottom: .5pt solid #bbb; break-inside: avoid; }
+.export-question:last-child, .export-appendix-entry:last-child { padding-bottom: 0; margin-bottom: 0; border-bottom: 0; }
+.export-question.export-long-question, .export-appendix-entry.export-long-question { break-inside: auto; }
+.export-per-question .export-question + .export-question { break-before: page; }
+.export-question-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 5mm; break-inside: avoid; break-after: avoid; }
+.export-question-heading h2, .export-appendix-number { font-family: 'Noto Sans SC', sans-serif; font-size: 12pt; font-weight: 600; line-height: 1.6; }
+.export-question-heading > span { color: #666; font-size: 8pt; }
+.export-question-meta { margin-top: 1.5mm; font-size: 8.5pt; color: #555; break-after: avoid; }
+.export-question-text { margin-top: 3mm; break-before: avoid; }
+.export-question-text > :first-child { break-before: avoid; }
+.export-answer { margin-top: 4mm; }
+.export-answer h3 { margin-bottom: 1.5mm; font-family: 'Noto Sans SC', sans-serif; font-size: .9em; font-weight: 600; break-after: avoid; }
+.export-note { padding-left: 3mm; border-left: 1pt solid #999; }
+.export-answer-space { height: var(--practice-space); margin-top: 4mm; border-bottom: .5pt solid #ccc; break-inside: avoid; }
+.export-appendix { break-before: page; }
+.export-appendix-heading { margin-bottom: 6mm; padding-bottom: 4mm; border-bottom: 1pt solid #333; break-inside: avoid; break-after: avoid; }
+.export-appendix-heading h2 { font-family: 'Noto Sans SC', sans-serif; font-size: 18pt; font-weight: 600; }
+.export-appendix-heading p { margin-top: 2mm; font-size: 9pt; color: #555; }
+.export-appendix-number { break-after: avoid; }
+.export-empty-answer { margin-top: 2mm; color: #555; font-size: 10pt; }
+
+.markdown-content { min-width: 0; max-width: 100%; white-space: normal; }
+.markdown-content p { margin: 0 0 .7em; orphans: 3; widows: 3; }
+.markdown-content :is(h1, h2, h3, h4, h5, h6) { margin: 1em 0 .4em; font: inherit; font-weight: 700; line-height: 1.5; break-after: avoid; }
+.markdown-content :is(ul, ol) { margin: .6em 0; padding-left: 1.8em; }
+.markdown-content li { margin: .15em 0; }
+.markdown-content li > p { margin-bottom: .2em; }
+.markdown-content blockquote { margin: .7em 0; padding: .2em 0 .2em 1em; border-left: 1pt solid #888; color: #444; }
+.markdown-content a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.markdown-content img { display: block; max-width: 100%; max-height: 230mm; width: auto; height: auto; object-fit: contain; break-inside: avoid; }
+.markdown-content hr { margin: .9em 0; border: 0; border-top: .5pt solid #aaa; }
+.markdown-content code { font-family: Consolas, 'Liberation Mono', monospace; font-size: .85em; padding: .1em .2em; background: #f4f4f4; }
+.markdown-content pre { margin: .7em 0; padding: 3mm; border: .5pt solid #ccc; background: #f7f7f7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.markdown-content pre code { padding: 0; background: transparent; white-space: pre-wrap; }
+.markdown-table-scroll { max-width: 100%; margin: .7em 0; overflow: visible; }
+.markdown-content table { width: 100%; border-collapse: collapse; font-size: .9em; break-inside: auto; }
+.markdown-content :is(th, td) { min-width: 3em; padding: .35em .5em; border: .5pt solid #999; text-align: left; }
+.markdown-content th { font-weight: 700; background: #f2f2f2; }
+.markdown-content tr { break-inside: avoid; }
+.markdown-content thead { display: table-header-group; }
+.markdown-content .katex { display: inline-block; max-width: none; white-space: nowrap; font-size: 1.05em; }
+.markdown-content .katex-display { margin: .7em 0; break-inside: avoid; overflow: visible; }
+.markdown-content .katex-display > .katex { display: inline-block; max-width: none; }
+.markdown-content .katex-error { white-space: pre-wrap; overflow-wrap: anywhere; }
+.markdown-content > :first-child { margin-top: 0; }
+.markdown-content > :last-child { margin-bottom: 0; }
+.text-muted { color: #777; }
+.task-list-item { list-style: none; }
+.checkbox-control { display: inline-block; vertical-align: middle; width: 1em; height: 1em; margin-right: .4em; line-height: 1; position: relative; }
+.checkbox-input { appearance: auto; width: 1em; height: 1em; margin: 0; opacity: 1; accent-color: #222; }
+.checkbox-mark { display: none; }
+

@@ -1,179 +1,145 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Dialog } from '@base-ui/react/dialog';
-import { ArrowLeft, FileDown, LoaderCircle, Printer, RotateCcw, X } from 'lucide-react';
+import { ArrowLeft, Download, Eye, FileDown, LoaderCircle, Printer, X } from 'lucide-react';
 import { Checkbox } from './components';
-import { knowledgeLabel, useApp } from './context';
-import { MarkdownContent } from './MarkdownContent';
-import { ratingLabel } from './StarRating';
-import type { KnowledgePoint, Mistake, Subject } from './types';
+import { downloadExportFile, requestExportPdf } from './export-api';
+import { defaultExportOptions, type ExportFile, type ExportOptions, type ExportRequest } from './export-types';
+import type { Mistake } from './types';
 import './mistake-export.css';
 
-interface ExportOptions {
-  version: 'complete' | 'practice';
-  includeNotes: boolean;
-}
-
-interface ExportSnapshot {
-  mistakes: Mistake[];
-  subjects: Subject[];
-  knowledgePoints: KnowledgePoint[];
-  options: ExportOptions;
-  date: string;
-}
+const PdfPreview = lazy(() => import('./PdfPreview'));
 
 interface MistakeExportProps {
   mistakes: Mistake[];
   totalCount?: number;
-  loadMistakes?: () => Promise<Mistake[]>;
+  filters?: Record<string, string>;
   selectedIds?: number[];
   single?: boolean;
   onClose: () => void;
 }
 
-function fitPrintContent(document: HTMLElement) {
-  // Measure at the paper's fixed content width, including on narrow screens.
-  document.querySelectorAll<HTMLElement>('.katex, table').forEach((element) => {
-    element.style.zoom = '1';
-    const available = element.closest('.markdown-content')?.clientWidth || document.clientWidth;
-    const width = Math.max(element.scrollWidth, element.getBoundingClientRect().width);
-    if (width > available) element.style.zoom = String(available / width);
-  });
-}
-
-function ExportPreview({ snapshot, onBack }: { snapshot: ExportSnapshot; onBack: () => void }) {
-  const paper = useRef<HTMLElement>(null);
-  const backButton = useRef<HTMLButtonElement>(null);
-  const [attempt, setAttempt] = useState(0);
-  const [ready, setReady] = useState(false);
-  const [error, setError] = useState('');
-  const { mistakes, subjects, knowledgePoints, options, date } = snapshot;
-  const complete = options.version === 'complete';
-
-  useEffect(() => {
-    const title = document.title;
-    document.title = `拾题错题本-${date}-${complete ? '完整版' : '练习版'}`;
-    document.body.classList.add('export-preview-open');
-    backButton.current?.focus({ preventScroll: true });
-    return () => {
-      document.title = title;
-      document.body.classList.remove('export-preview-open');
-    };
-  }, [date, complete]);
-
-  useEffect(() => {
-    let active = true;
-    let timeout: number;
-    const page = paper.current!;
-    setReady(false);
-    setError('');
-    const images = Array.from(page.querySelectorAll('img'));
-    if (attempt) images.forEach((image) => {
-      if (image.complete && image.naturalWidth) return;
-      const url = new URL(image.src, window.location.href);
-      if (url.protocol === 'http:' || url.protocol === 'https:') {
-        url.searchParams.set('_exportRetry', String(attempt));
-        image.src = url.href;
-      }
-    });
-    const resources = Promise.all([
-      document.fonts.ready,
-      ...images.map((image) => image.decode().catch(() => { throw new Error('有配图加载失败，请重试后打印。'); })),
-    ]);
-    const deadline = new Promise<never>((_, reject) => {
-      timeout = window.setTimeout(() => reject(new Error('字体或配图加载超时，请检查网络后重试。')), 20000);
-    });
-    void Promise.race([resources, deadline]).then(() => {
-      if (!active) return;
-      fitPrintContent(page);
-      setReady(true);
-    }).catch((err: Error) => { if (active) setError(err.message); })
-      .finally(() => window.clearTimeout(timeout));
-    return () => { active = false; window.clearTimeout(timeout); };
-  }, [snapshot, attempt]);
-
-  return <>
-    <header className="export-preview-toolbar export-screen-only">
-      <div className="export-preview-heading">
-        <button ref={backButton} type="button" className="button ghost" onClick={onBack}><ArrowLeft size={17} />返回设置</button>
-        <div><Dialog.Title>导出预览</Dialog.Title><Dialog.Description>{complete ? '完整版' : '练习版'} · {mistakes.length} 道题 · A4 纵向</Dialog.Description></div>
-      </div>
-      <div className="export-preview-actions">
-        <button type="button" className="button primary" disabled={!ready} onClick={() => window.print()}>{!ready && !error ? <LoaderCircle className="spin" size={17} /> : <Printer size={17} />}打印 / 保存 PDF</button>
-        <Dialog.Close className="icon-button" aria-label="关闭导出预览"><X size={21} /></Dialog.Close>
-      </div>
-    </header>
-    <div className="export-preview-message export-screen-only" role={error ? 'alert' : 'status'}>
-      {error ? <><span>{error}</span><button type="button" className="text-link" onClick={() => setAttempt((value) => value + 1)}><RotateCcw size={15} />重新加载</button></> : ready ? '在打印窗口选择“另存为 PDF”。建议关闭浏览器页眉和页脚；最终分页以打印窗口为准。' : '正在准备字体和配图…'}
-    </div>
-    <div className="export-paper-scroll">
-      <article ref={paper} className="export-document" aria-label="待导出的错题内容" aria-busy={!ready}>
-        <header className="export-document-heading"><p>拾题 · 把错题，学明白。</p><h1>拾题错题本</h1><div><span>{date}</span><span>{complete ? '完整版' : '练习版'}</span><span>共 {mistakes.length} 道</span></div></header>
-        {mistakes.map((mistake, index) => <section className="export-question" key={mistake.id}>
-          <header className="export-question-heading"><h2>第 {index + 1} 题</h2><span>记录 #{mistake.id}{mistake.lifecycle === 'draft' ? ' · 草稿' : ''}</span></header>
-          <p className="export-question-meta">{subjects.find((subject) => subject.id === mistake.subjectId)?.name || '未选学科'} · {knowledgeLabel(knowledgePoints, mistake.primaryKnowledgePointId)} · {ratingLabel(mistake.rating)}</p>
-          {mistake.auxiliaryKnowledgePointIds.length > 0 && <p className="export-question-meta">辅助知识点：{mistake.auxiliaryKnowledgePointIds.map((id) => knowledgeLabel(knowledgePoints, id)).join('；')}</p>}
-          <MarkdownContent className="export-question-text" emptyText="题干暂未填写">{mistake.question}</MarkdownContent>
-          {complete ? <>
-            {mistake.answer.trim() && <section className="export-answer"><h3>正确答案</h3><MarkdownContent>{mistake.answer}</MarkdownContent></section>}
-            {mistake.analysis.trim() && <section className="export-answer"><h3>解题分析</h3><MarkdownContent>{mistake.analysis}</MarkdownContent></section>}
-            {options.includeNotes && mistake.note.trim() && <section className="export-answer export-note"><h3>我的笔记</h3><MarkdownContent>{mistake.note}</MarkdownContent></section>}
-          </> : <div className="export-answer-space" aria-label="答题空白" />}
-        </section>)}
-      </article>
-    </div>
-  </>;
-}
-
-export function MistakeExport({ mistakes, totalCount, loadMistakes, selectedIds = [], single = false, onClose }: MistakeExportProps) {
-  const { subjects, knowledgePoints } = useApp();
+export function MistakeExport({ mistakes, totalCount, filters, selectedIds = [], single = false, onClose }: MistakeExportProps) {
   const [scope, setScope] = useState<'all' | 'selected'>(selectedIds.length ? 'selected' : 'all');
-  const [options, setOptions] = useState<ExportOptions>({ version: 'complete', includeNotes: true });
-  const [snapshot, setSnapshot] = useState<ExportSnapshot | null>(null);
-  const [preparing, setPreparing] = useState(false);
+  const [options, setOptions] = useState<ExportOptions>({ ...defaultExportOptions });
+  const [file, setFile] = useState<ExportFile | null>(null);
+  const [preview, setPreview] = useState(false);
+  const [preparing, setPreparing] = useState<'preview' | 'download' | null>(null);
   const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const request = useRef<AbortController | null>(null);
+  const cache = useRef<{ key: string; file: ExportFile } | null>(null);
   const previewButton = useRef<HTMLButtonElement>(null);
+  const backButton = useRef<HTMLButtonElement>(null);
   const eligible = mistakes.filter((mistake) => !mistake.deletedAt);
   const selected = eligible.filter((mistake) => selectedIds.includes(mistake.id));
-  const chosen = single || scope === 'all' ? eligible : selected;
-  const eligibleCount = totalCount ?? eligible.length;
-  const chosenCount = single || scope === 'selected' ? chosen.length : eligibleCount;
+  const source = single || scope === 'selected' || !filters
+    ? { ids: (single || scope === 'all' ? eligible : selected).map((mistake) => mistake.id) }
+    : { filters };
+  const chosenCount = single || scope === 'selected' ? (single ? eligible.length : selected.length) : totalCount ?? eligible.length;
+  const payload: ExportRequest = { source, options: { ...options, title: options.title.trim() || defaultExportOptions.title } };
+  const requestKey = JSON.stringify(payload);
 
-  async function preview() {
-    if (!chosenCount || preparing) return;
-    setPreparing(true); setError('');
+  useEffect(() => {
+    request.current?.abort();
+    request.current = null;
+    if (cache.current && cache.current.key !== requestKey) {
+      URL.revokeObjectURL(cache.current.file.url);
+      cache.current = null;
+      setFile(null);
+    }
+    setPreparing(null);
+    setPreview(false);
+    setError('');
+    setMessage('');
+  }, [requestKey]);
+
+  useEffect(() => () => {
+    request.current?.abort();
+    if (cache.current) URL.revokeObjectURL(cache.current.file.url);
+  }, []);
+
+  useEffect(() => {
+    if (preview) backButton.current?.focus({ preventScroll: true });
+  }, [preview]);
+
+  function update<K extends keyof ExportOptions>(key: K, value: ExportOptions[K]) {
+    setOptions((previous) => ({ ...previous, [key]: value }));
+  }
+
+  async function prepare(action: 'preview' | 'download') {
+    if (!chosenCount || request.current) return;
+    setError(''); setMessage('');
+    if (cache.current?.key === requestKey) {
+      if (action === 'preview') setPreview(true);
+      else { downloadExportFile(cache.current.file); setMessage('PDF 已生成，可再次下载或查看预览。'); }
+      return;
+    }
+    const controller = new AbortController();
+    request.current = controller;
+    setPreparing(action);
     try {
-      const full = loadMistakes ? await loadMistakes() : eligible;
-      const items = single || scope === 'all' ? full : full.filter((item) => selectedIds.includes(item.id));
-      if (!items.length) throw new Error('没有可导出的题目，请刷新列表后重试。');
-      const now = new Date();
-      const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-      setSnapshot(structuredClone({ mistakes: items, subjects, knowledgePoints, options, date }));
-    } catch (err) { setError((err as Error).message); }
-    finally { setPreparing(false); }
+      const generated = await requestExportPdf(payload, controller.signal);
+      if (controller.signal.aborted || request.current !== controller) { URL.revokeObjectURL(generated.url); return; }
+      if (cache.current) URL.revokeObjectURL(cache.current.file.url);
+      cache.current = { key: requestKey, file: generated };
+      setFile(generated);
+      if (action === 'preview') setPreview(true);
+      else { downloadExportFile(generated); setMessage('PDF 已生成，可再次下载或查看预览。'); }
+    } catch (err) {
+      if (!controller.signal.aborted && request.current === controller) setError((err as Error).message || 'PDF 生成失败，请重试。');
+    } finally {
+      if (request.current === controller) { request.current = null; setPreparing(null); }
+    }
+  }
+
+  function cancel() {
+    request.current?.abort();
+    request.current = null;
+    setPreparing(null);
+    setMessage('已取消生成，可重新选择并导出。');
   }
 
   function back() {
-    setSnapshot(null);
+    setPreview(false);
     window.requestAnimationFrame(() => previewButton.current?.focus());
   }
 
   return <Dialog.Root open onOpenChange={(open) => { if (!open) onClose(); }}>
     <Dialog.Portal id="mistake-export-root">
       <Dialog.Backdrop className="export-backdrop" />
-      <Dialog.Popup className={`export-dialog${snapshot ? ' is-preview' : ''}`}>
-        {snapshot ? <ExportPreview snapshot={snapshot} onBack={back} /> : <>
-          <header className="export-settings-heading"><div><span className="eyebrow">整理成册，随时温习</span><Dialog.Title>导出错题</Dialog.Title></div><Dialog.Close className="icon-button" aria-label="关闭导出设置"><X size={21} /></Dialog.Close></header>
-          <Dialog.Description className="export-settings-description">预览排版后，在浏览器打印窗口保存为 PDF。</Dialog.Description>
-          {!single && <fieldset className="export-options"><legend>导出范围</legend>
-            <label><input type="radio" name="export-scope" value="all" checked={scope === 'all'} onChange={() => setScope('all')} /><span>当前筛选结果<small>{eligibleCount} 道题</small></span></label>
-            <label className={!selected.length ? 'is-disabled' : ''}><input type="radio" name="export-scope" value="selected" disabled={!selected.length} checked={scope === 'selected'} onChange={() => setScope('selected')} /><span>已选题目<small>{selected.length} 道题</small></span></label>
-          </fieldset>}
-          <fieldset className="export-options export-version-options"><legend>内容版本</legend>
-            <label><input type="radio" name="export-version" value="complete" checked={options.version === 'complete'} onChange={() => setOptions({ ...options, version: 'complete' })} /><span>完整版<small>每题附答案与解析，方便回顾</small></span></label>
-            <label><input type="radio" name="export-version" value="practice" checked={options.version === 'practice'} onChange={() => setOptions({ ...options, version: 'practice' })} /><span>练习版<small>仅含题干，留出答题空白</small></span></label>
-          </fieldset>
-          <label className="export-notes-option"><Checkbox checked={options.includeNotes} disabled={options.version === 'practice'} onChange={(event) => setOptions({ ...options, includeNotes: event.target.checked })} />包含我的笔记{options.version === 'practice' && <small>仅完整版可用</small>}</label>
-          <p className="form-error" role="alert">{error}</p><footer className="export-settings-footer"><span>将导出 <strong>{chosenCount}</strong> 道题</span><button ref={previewButton} type="button" className="button primary" disabled={!chosenCount || preparing} onClick={() => void preview()}>{preparing ? <LoaderCircle size={17} className="spin" /> : <FileDown size={17} />}{preparing ? '正在读取完整题目…' : '预览排版'}</button></footer>
+      <Dialog.Popup className={`export-dialog${preview && file ? ' is-preview' : ''}`}>
+        {preview && file ? <>
+          <header className="export-preview-toolbar">
+            <div className="export-preview-heading"><button ref={backButton} type="button" className="button ghost" onClick={back}><ArrowLeft size={17} />设置</button><div><Dialog.Title>导出预览</Dialog.Title><Dialog.Description>{file.count || chosenCount} 道题 · {options.version === 'complete' ? '完整版' : '练习版'} · A4</Dialog.Description></div></div>
+            <Dialog.Close className="icon-button export-preview-close" aria-label="关闭导出预览"><X size={21} /></Dialog.Close>
+          </header>
+          <Suspense fallback={<div className="export-preview-loading" role="status"><LoaderCircle className="spin" size={22} />正在打开 PDF…</div>}><PdfPreview file={file} /></Suspense>
+          <footer className="export-preview-actions"><span>预览与下载使用同一份 PDF</span><a className="button secondary" href={file.url} target="_blank" rel="noopener noreferrer"><Printer size={17} />打开 / 打印</a><button type="button" className="button primary" onClick={() => downloadExportFile(file)}><Download size={17} />下载 PDF</button></footer>
+        </> : <>
+          <header className="export-settings-heading"><div><Dialog.Title>导出错题</Dialog.Title><Dialog.Description>整理成册，用熟悉的试卷字体温习。</Dialog.Description></div><Dialog.Close className="icon-button" aria-label="关闭导出设置"><X size={21} /></Dialog.Close></header>
+          <div className="export-settings-body">
+            <fieldset className="export-settings-fields" disabled={Boolean(preparing)}>
+              {!single && <fieldset className="export-options"><legend>导出范围</legend>
+                <label><input type="radio" name="export-scope" checked={scope === 'all'} onChange={() => setScope('all')} /><span>当前筛选结果<small>{totalCount ?? eligible.length} 道题</small></span></label>
+                <label className={!selected.length ? 'is-disabled' : ''}><input type="radio" name="export-scope" disabled={!selected.length} checked={scope === 'selected'} onChange={() => setScope('selected')} /><span>已选题目<small>{selected.length} 道题 · 按列表顺序</small></span></label>
+              </fieldset>}
+              <fieldset className="export-options"><legend>内容版本</legend>
+                <label><input type="radio" name="export-version" checked={options.version === 'complete'} onChange={() => update('version', 'complete')} /><span>完整版<small>题干、答案与解析</small></span></label>
+                <label><input type="radio" name="export-version" checked={options.version === 'practice'} onChange={() => update('version', 'practice')} /><span>练习版<small>只保留题干与答题空白</small></span></label>
+              </fieldset>
+              <div className="export-field-grid">
+                <label className="export-field export-title-field"><span>文档标题</span><input value={options.title} maxLength={80} placeholder="拾题错题本" onChange={(event) => update('title', event.target.value)} /></label>
+                <label className="export-field"><span>正文字号</span><select value={options.fontSize} onChange={(event) => update('fontSize', Number(event.target.value) as ExportOptions['fontSize'])}><option value="10.5">紧凑 · 10.5 磅</option><option value="12">标准 · 12 磅</option><option value="14">大字 · 14 磅</option></select></label>
+                <label className="export-field"><span>题目排版</span><select value={options.layout} onChange={(event) => update('layout', event.target.value as ExportOptions['layout'])}><option value="continuous">连续排题</option><option value="per-question">每题另起一页</option></select></label>
+                {options.version === 'complete' ? <label className="export-field export-title-field"><span>答案与解析位置</span><select value={options.answerPlacement} onChange={(event) => update('answerPlacement', event.target.value as ExportOptions['answerPlacement'])}><option value="inline">每道题后</option><option value="appendix">集中放在文末</option></select></label> : <label className="export-field export-title-field"><span>每题答题留白</span><select value={options.practiceSpace} onChange={(event) => update('practiceSpace', Number(event.target.value) as ExportOptions['practiceSpace'])}><option value="20">较少 · 20 毫米</option><option value="40">标准 · 40 毫米</option><option value="60">较多 · 60 毫米</option></select></label>}
+              </div>
+              <label className="export-notes-option"><Checkbox checked={options.includeNotes} disabled={options.version === 'practice'} onChange={(event) => update('includeNotes', event.target.checked)} />包含我的笔记{options.version === 'practice' && <small>仅完整版可用</small>}</label>
+            </fieldset>
+            <p className="export-paper-note">A4 纵向 · 思源宋体正文 · 15 毫米页边距</p>
+            {error && <p className="form-error export-feedback" role="alert">{error} 可保留当前设置后重试。</p>}
+            <div className="export-feedback" role="status">{preparing ? <><LoaderCircle className="spin" size={16} /><span>正在生成 PDF，题目较多时请稍候…</span><button type="button" className="text-link" onClick={cancel}>取消</button></> : message}</div>
+          </div>
+          <footer className="export-settings-footer"><span>共 <strong>{chosenCount}</strong> 道题</span><div><button ref={previewButton} type="button" className="button secondary" disabled={!chosenCount || Boolean(preparing)} onClick={() => void prepare('preview')}>{preparing === 'preview' ? <LoaderCircle className="spin" size={17} /> : <Eye size={17} />}预览 PDF</button><button type="button" className="button primary" disabled={!chosenCount || Boolean(preparing)} onClick={() => void prepare('download')}>{preparing === 'download' ? <LoaderCircle className="spin" size={17} /> : <FileDown size={17} />}下载 PDF</button></div></footer>
         </>}
       </Dialog.Popup>
     </Dialog.Portal>

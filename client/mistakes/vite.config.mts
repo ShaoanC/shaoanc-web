@@ -12,6 +12,12 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: fileURLToPath(new URL('../../public/mistakes', import.meta.url)),
       emptyOutDir: true,
+      rolldownOptions: {
+        input: {
+          main: fileURLToPath(new URL('./index.html', import.meta.url)),
+          export: fileURLToPath(new URL('./export.html', import.meta.url)),
+        },
+      },
     },
     server: {
       host: '127.0.0.1',
