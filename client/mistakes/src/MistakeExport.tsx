@@ -23,6 +23,8 @@ interface ExportSnapshot {
 
 interface MistakeExportProps {
   mistakes: Mistake[];
+  totalCount?: number;
+  loadMistakes?: () => Promise<Mistake[]>;
   selectedIds?: number[];
   single?: boolean;
   onClose: () => void;
@@ -122,21 +124,32 @@ function ExportPreview({ snapshot, onBack }: { snapshot: ExportSnapshot; onBack:
   </>;
 }
 
-export function MistakeExport({ mistakes, selectedIds = [], single = false, onClose }: MistakeExportProps) {
+export function MistakeExport({ mistakes, totalCount, loadMistakes, selectedIds = [], single = false, onClose }: MistakeExportProps) {
   const { subjects, knowledgePoints } = useApp();
   const [scope, setScope] = useState<'all' | 'selected'>(selectedIds.length ? 'selected' : 'all');
   const [options, setOptions] = useState<ExportOptions>({ version: 'complete', includeNotes: true });
   const [snapshot, setSnapshot] = useState<ExportSnapshot | null>(null);
+  const [preparing, setPreparing] = useState(false);
+  const [error, setError] = useState('');
   const previewButton = useRef<HTMLButtonElement>(null);
   const eligible = mistakes.filter((mistake) => !mistake.deletedAt);
   const selected = eligible.filter((mistake) => selectedIds.includes(mistake.id));
   const chosen = single || scope === 'all' ? eligible : selected;
+  const eligibleCount = totalCount ?? eligible.length;
+  const chosenCount = single || scope === 'selected' ? chosen.length : eligibleCount;
 
-  function preview() {
-    if (!chosen.length) return;
-    const now = new Date();
-    const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    setSnapshot(structuredClone({ mistakes: chosen, subjects, knowledgePoints, options, date }));
+  async function preview() {
+    if (!chosenCount || preparing) return;
+    setPreparing(true); setError('');
+    try {
+      const full = loadMistakes ? await loadMistakes() : eligible;
+      const items = single || scope === 'all' ? full : full.filter((item) => selectedIds.includes(item.id));
+      if (!items.length) throw new Error('没有可导出的题目，请刷新列表后重试。');
+      const now = new Date();
+      const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      setSnapshot(structuredClone({ mistakes: items, subjects, knowledgePoints, options, date }));
+    } catch (err) { setError((err as Error).message); }
+    finally { setPreparing(false); }
   }
 
   function back() {
@@ -152,7 +165,7 @@ export function MistakeExport({ mistakes, selectedIds = [], single = false, onCl
           <header className="export-settings-heading"><div><span className="eyebrow">整理成册，随时温习</span><Dialog.Title>导出错题</Dialog.Title></div><Dialog.Close className="icon-button" aria-label="关闭导出设置"><X size={21} /></Dialog.Close></header>
           <Dialog.Description className="export-settings-description">预览排版后，在浏览器打印窗口保存为 PDF。</Dialog.Description>
           {!single && <fieldset className="export-options"><legend>导出范围</legend>
-            <label><input type="radio" name="export-scope" value="all" checked={scope === 'all'} onChange={() => setScope('all')} /><span>当前筛选结果<small>{eligible.length} 道题</small></span></label>
+            <label><input type="radio" name="export-scope" value="all" checked={scope === 'all'} onChange={() => setScope('all')} /><span>当前筛选结果<small>{eligibleCount} 道题</small></span></label>
             <label className={!selected.length ? 'is-disabled' : ''}><input type="radio" name="export-scope" value="selected" disabled={!selected.length} checked={scope === 'selected'} onChange={() => setScope('selected')} /><span>已选题目<small>{selected.length} 道题</small></span></label>
           </fieldset>}
           <fieldset className="export-options export-version-options"><legend>内容版本</legend>
@@ -160,7 +173,7 @@ export function MistakeExport({ mistakes, selectedIds = [], single = false, onCl
             <label><input type="radio" name="export-version" value="practice" checked={options.version === 'practice'} onChange={() => setOptions({ ...options, version: 'practice' })} /><span>练习版<small>仅含题干，留出答题空白</small></span></label>
           </fieldset>
           <label className="export-notes-option"><Checkbox checked={options.includeNotes} disabled={options.version === 'practice'} onChange={(event) => setOptions({ ...options, includeNotes: event.target.checked })} />包含我的笔记{options.version === 'practice' && <small>仅完整版可用</small>}</label>
-          <footer className="export-settings-footer"><span>将导出 <strong>{chosen.length}</strong> 道题</span><button ref={previewButton} type="button" className="button primary" disabled={!chosen.length} onClick={preview}><FileDown size={17} />预览排版</button></footer>
+          <p className="form-error" role="alert">{error}</p><footer className="export-settings-footer"><span>将导出 <strong>{chosenCount}</strong> 道题</span><button ref={previewButton} type="button" className="button primary" disabled={!chosenCount || preparing} onClick={() => void preview()}>{preparing ? <LoaderCircle size={17} className="spin" /> : <FileDown size={17} />}{preparing ? '正在读取完整题目…' : '预览排版'}</button></footer>
         </>}
       </Dialog.Popup>
     </Dialog.Portal>

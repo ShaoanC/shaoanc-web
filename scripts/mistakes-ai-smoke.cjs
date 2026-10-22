@@ -46,6 +46,7 @@ async function runAiSmoke() {
     let ai;
     let failures = 0;
     let failureStatus = 500;
+    let failureRetryAfter = '';
     let rejectFormat = '';
     let visionReply = 'READ-5827';
     let responseMode = '';
@@ -70,7 +71,7 @@ async function runAiSmoke() {
             calls += 1;
             assert.equal(req.method, 'POST');
             const request = JSON.parse(body);
-            if (failures > 0) { failures -= 1; res.writeHead(failureStatus, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: { message: 'temporary', type: 'server_error' } })); return; }
+            if (failures > 0) { failures -= 1; res.writeHead(failureStatus, { 'Content-Type': 'application/json', ...(failureRetryAfter ? { 'Retry-After': failureRetryAfter } : {}) }); res.end(JSON.stringify({ error: { message: 'temporary', type: 'server_error' } })); return; }
             if (hold) await delay(hold);
             if (req.url === '/v1/chat/completions') {
                 assert.equal(req.headers.authorization, 'Bearer analysis-secret');
@@ -497,6 +498,35 @@ async function runAiSmoke() {
         const limited = await completed(await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'answer', input: input(await latest()), imageIds: [answerImage.id] }, 201));
         assert.equal(limited.status, 'succeeded'); assert.equal(limited.attempts, 2);
         failureStatus = 500;
+
+        const queue = (await ai.runtimeForJobs(users.alice)).queue;
+        const retryInput = input(await latest());
+        failureStatus = 429; failureRetryAfter = '60'; failures = 2;
+        const waiting = await Promise.all([0, 1].map((index) => alice('POST', '/ai/jobs', {
+            mistakeId: mistake.id, type: 'answer', imageIds: [answerImage.id], input: { ...retryInput, question: `退避队列检查 ${index}` }
+        }, 201)));
+        for (let index = 0; index < 100; index += 1) {
+            const rows = waiting.map((job) => app.db.prepare('SELECT status FROM ai_jobs WHERE id = ?').get(job.id));
+            if (rows.every((row) => row.status === 'retrying') && queue.pending === 0) break;
+            await delay(20);
+        }
+        const waitingRows = waiting.map((job) => app.db.prepare('SELECT status, attempts, next_attempt_at FROM ai_jobs WHERE id = ?').get(job.id));
+        assert.ok(waitingRows.every((row) => row.status === 'retrying' && row.attempts === 1 && Date.parse(row.next_attempt_at) > Date.now() + 50000), 'Retry-After and consumed attempts remain persisted');
+        assert.equal(queue.pending, 0, 'Two retrying jobs release both ordinary-user execution slots');
+        failureRetryAfter = ''; failureStatus = 500;
+        const unblocked = await completed(await alice('POST', '/ai/jobs', {
+            mistakeId: mistake.id, type: 'answer', imageIds: [answerImage.id], input: { ...retryInput, question: '退避期间新任务' }
+        }, 201));
+        assert.equal(unblocked.status, 'succeeded', 'A fresh task completes while both earlier jobs await Retry-After');
+        await alice('POST', `/ai/jobs/${waiting[0].id}/cancel`, {});
+        assert.equal((await alice('GET', `/ai/jobs/${waiting[0].id}`)).nextAttemptAt, null);
+        await ai.stopJobs();
+        assert.equal(app.db.prepare('SELECT status FROM ai_jobs WHERE id = ?').get(waiting[1].id).status, 'retrying', 'Stopping retains delayed work for recovery');
+        app.db.prepare('UPDATE ai_jobs SET next_attempt_at = ? WHERE id = ?').run(new Date(Date.now() + 80).toISOString(), waiting[1].id);
+        ai.recoverJobs();
+        assert.equal((await completed(waiting[1])).attempts, 2, 'Recovery schedules the remaining attempt after its persisted deadline');
+        await alice('POST', `/ai/jobs/${waiting[0].id}/retry`, {});
+        assert.equal((await completed(waiting[0])).attempts, 1, 'Cancellation clears the old timer so manual retry starts immediately');
 
         const datasetDirectory = path.join(directory, 'baseline');
         fs.mkdirSync(path.join(datasetDirectory, 'images'), { recursive: true });

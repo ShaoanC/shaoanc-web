@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'react-toastify';
 import { ArrowRight, BookOpen, CheckCircle2, ClipboardList, GraduationCap, LayoutGrid, LoaderCircle, LogOut, Plus, RotateCcw, Settings, ShieldCheck, Sparkles, TrendingUp } from 'lucide-react';
 import { api, json } from './api';
@@ -8,15 +8,17 @@ import { LogoMark } from './Logo';
 import { FriendlyCaptcha, type CaptchaState } from './FriendlyCaptcha';
 import { AiTasksProvider, AiTasksButton } from './AiTasks';
 import { PhotoUploadsProvider } from './PhotoUploads';
-import { AiTasksPage } from './AiTaskManager';
+import { PageLoadBoundary } from './PageLoadBoundary';
 import type { KnowledgePoint, Subject, User } from './types';
-import { MistakesPage } from './pages/MistakesPage';
-import { EditorPage } from './pages/EditorPage';
-import { DetailPage } from './pages/DetailPage';
-import { ReviewPage } from './pages/ReviewPage';
-import { StatsPage } from './pages/StatsPage';
-import { SettingsPage } from './pages/SettingsPage';
-import { PageImportsPage } from './PageImports';
+
+const MistakesPage = lazy(() => import('./pages/MistakesPage').then((module) => ({ default: module.MistakesPage })));
+const EditorPage = lazy(() => import('./pages/EditorPage').then((module) => ({ default: module.EditorPage })));
+const DetailPage = lazy(() => import('./pages/DetailPage').then((module) => ({ default: module.DetailPage })));
+const ReviewPage = lazy(() => import('./pages/ReviewPage').then((module) => ({ default: module.ReviewPage })));
+const StatsPage = lazy(() => import('./pages/StatsPage').then((module) => ({ default: module.StatsPage })));
+const SettingsPage = lazy(() => import('./pages/SettingsPage').then((module) => ({ default: module.SettingsPage })));
+const PageImportsPage = lazy(() => import('./PageImports').then((module) => ({ default: module.PageImportsPage })));
+const AiTasksPage = lazy(() => import('./AiTaskManager').then((module) => ({ default: module.AiTasksPage })));
 
 const navItems = [
   { path: '/mistakes', label: '我的错题', icon: LayoutGrid },
@@ -126,8 +128,12 @@ export default function App() {
       }
       setUser(result.user);
     }).catch(() => { if (active) setUser(null); }).finally(() => { if (active) setInitializing(false); });
-    const onHash = () => {
+    const onHash = (event: HashChangeEvent) => {
       const nextPath = window.location.hash.slice(1) || '/mistakes';
+      if (!window.dispatchEvent(new CustomEvent('mistakes:before-navigate', { cancelable: true, detail: { path: nextPath } }))) {
+        window.history.replaceState(null, '', new URL(event.oldURL).hash || '#/mistakes');
+        return;
+      }
       const nextRoute = nextPath.split('?')[0];
       setNewEditor((current) => {
         if (nextRoute === '/new') return { session: current.session + 1, recordId: null };
@@ -164,6 +170,8 @@ export default function App() {
   useEffect(() => { if (user) void refreshDirectory(); }, [user, refreshDirectory]);
 
   const logout = useCallback(async () => {
+    if (!window.dispatchEvent(new Event('mistakes:before-logout', { cancelable: true }))) return;
+    window.dispatchEvent(new Event('mistakes:session-ending'));
     try {
       await api('/auth/logout', json({}));
       notify('已退出登录。');
@@ -171,7 +179,7 @@ export default function App() {
       setSubjects([]);
       setKnowledgePoints([]);
       window.location.hash = '/mistakes';
-    } catch (err) { notify((err as Error).message, 'error'); }
+    } catch (err) { window.dispatchEvent(new Event('mistakes:session-resumed')); notify((err as Error).message, 'error'); }
   }, [notify]);
 
   const routePath = path.split('?')[0];
@@ -190,7 +198,7 @@ export default function App() {
 
   const workspace = user ? <AppContext.Provider value={{ user, updateUser: setUser, subjects, knowledgePoints, refreshDirectory, notify, logout }}><AiTasksProvider key={user.id}><PhotoUploadsProvider><div className="app-shell">
     <aside className="sidebar"><a className="brand" href="#/mistakes"><LogoMark /><span className="brand-text">拾题<span>把错题，学明白。</span></span></a><div className="sidebar-label">学习空间</div><SlidingNavigation value={activePath} ariaLabel="主导航" items={navItems.map(({ path: itemPath, label, icon: Icon }) => ({ id: itemPath, href: `#${itemPath}`, label: <><Icon size={19} strokeWidth={1.8} /><span>{label}</span></> }))} /><div className="sidebar-bottom"><div className="sidebar-reminder"><span className="reminder-icon"><RotateCcw size={22} /></span><strong>温故而知新，可以为师矣</strong><a href="#/review">打开复习页</a></div><div className="account"><a className="account-profile" href="#/settings"><span className="avatar">{user.avatar ? <img src={user.avatar} alt="" /> : user.username.slice(0, 1).toUpperCase()}</span><span className="account-name"><strong title={user.username}>{user.username}</strong><small>{user.role === 'admin' ? '管理员' : '我的账号'}</small></span></a><button className="icon-button" title="退出登录" aria-label="退出登录" onClick={logout}><LogOut size={17} /></button></div></div></aside>
-    <div className="main-shell"><header className="topbar"><span className="topbar-label"><BookOpen size={15} /> 个人学习空间</span><div className="topbar-right"><AiTasksButton /><a className="workspace-state" href="/"><ArrowRight size={16} /> 返回个人主页</a><a className="topbar-avatar" href="#/settings" aria-label="账号设置">{user.avatar ? <img src={user.avatar} alt="" /> : user.username.slice(0, 1).toUpperCase()}</a></div></header><main className="main-content">{directoryError && <div className="inline-alert" role="alert">基础目录加载失败：{directoryError}<button onClick={refreshDirectory}>重试</button></div>}{page}<footer className="page-footer"><span>拾题 · © {new Date().getFullYear()} ShaoanC</span></footer></main></div>
+    <div className="main-shell"><header className="topbar"><span className="topbar-label"><BookOpen size={15} /> 个人学习空间</span><div className="topbar-right"><AiTasksButton /><a className="workspace-state" href="/"><ArrowRight size={16} /> 返回个人主页</a><a className="topbar-avatar" href="#/settings" aria-label="账号设置">{user.avatar ? <img src={user.avatar} alt="" /> : user.username.slice(0, 1).toUpperCase()}</a></div></header><main className="main-content">{directoryError && <div className="inline-alert" role="alert">基础目录加载失败：{directoryError}<button onClick={refreshDirectory}>重试</button></div>}<PageLoadBoundary resetKey={routePath}><Suspense fallback={<p role="status">正在加载页面…</p>}>{page}</Suspense></PageLoadBoundary><footer className="page-footer"><span>拾题 · © {new Date().getFullYear()} ShaoanC</span></footer></main></div>
   </div></PhotoUploadsProvider></AiTasksProvider></AppContext.Provider> : <AuthPage onLogin={(nextUser) => { setUser(nextUser); setPath('/mistakes'); window.location.hash = '/mistakes'; }} onNotify={(msg) => { pendingWelcome.current = msg; }} />;
 
   return <><GlobalLoadingProgress /><LoadingContent loading={initializing} kind="shell" className="app-entrance">{!initializing && workspace}</LoadingContent></>;

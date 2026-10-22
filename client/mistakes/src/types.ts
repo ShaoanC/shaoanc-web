@@ -34,6 +34,7 @@ export interface MistakeSearch {
 }
 
 export interface Mistake {
+  summary?: boolean;
   analysisNotice?: string;
   isTest: boolean;
   id: number;
@@ -52,6 +53,13 @@ export interface Mistake {
   updatedAt: string;
   deletedAt: string | null;
   search?: MistakeSearch;
+}
+
+export interface MistakePage {
+  items: Mistake[];
+  total: number;
+  page: number;
+  pageSize: number;
 }
 
 export interface Review {

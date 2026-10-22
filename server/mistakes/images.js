@@ -88,9 +88,12 @@ function saveImages(req, mistake) {
 function deleteMistakeFiles(mistakeIds) {
     const query = db.prepare('SELECT original_path, crop_path, page_import_id FROM mistake_images WHERE mistake_id = ?');
     const sourcePages = new Set();
+    const removedRegions = new Map();
     for (const id of mistakeIds) {
-        for (const item of db.prepare('SELECT page_import_id, crop_path FROM page_import_items WHERE mistake_id = ?').all(id)) {
+        for (const item of db.prepare('SELECT page_import_id, region_id, crop_path FROM page_import_items WHERE mistake_id = ?').all(id)) {
             sourcePages.add(item.page_import_id);
+            if (!removedRegions.has(item.page_import_id)) removedRegions.set(item.page_import_id, new Set());
+            removedRegions.get(item.page_import_id).add(item.region_id);
             if (item.crop_path) fs.rmSync(imagePath(item.crop_path), { force: true });
         }
         for (const row of query.all(id)) {
@@ -106,6 +109,19 @@ function deleteMistakeFiles(mistakeIds) {
             UNION SELECT mistake_id FROM page_import_items WHERE page_import_id = ? AND mistake_id IS NOT NULL`).all(pageId, pageId);
         if (page?.deleted_at && referenced.every((row) => deleting.has(row.mistake_id))) fs.rmSync(imagePath(page.image_path), { force: true });
     }
+    db.transaction(() => {
+        for (const id of mistakeIds) db.prepare('DELETE FROM page_import_items WHERE mistake_id = ?').run(id);
+        for (const [pageId, regionIds] of removedRegions) {
+            const page = db.prepare('SELECT regions_json FROM page_imports WHERE id = ?').get(pageId);
+            if (!page) continue;
+            const regions = JSON.parse(page.regions_json).map((region) => {
+                if (!regionIds.has(region.id)) return region;
+                const { mistakeId, jobId, status, applyStatus, error, mistakeDeleted, ...box } = region;
+                return { ...box, selected: false };
+            });
+            db.prepare('UPDATE page_imports SET regions_json = ? WHERE id = ?').run(JSON.stringify(regions), pageId);
+        }
+    })();
 }
 
 module.exports = { uploadImages, serializeImage, saveImages, imagePath, questionForMistake, deleteMistakeFiles, uploadsDirectory };

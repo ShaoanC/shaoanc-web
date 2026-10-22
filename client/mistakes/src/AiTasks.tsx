@@ -1,12 +1,14 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Sparkles } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { api, json } from './api';
 import { useApp } from './context';
 import { AiDialog } from './AiDialog';
-import { AiTaskManager } from './AiTaskManager';
+import { PageLoadBoundary } from './PageLoadBoundary';
 import { toastDestination } from './toast-navigation';
 import type { AiApplyOptions, AiApplyResult, AiConfig, AiJob, AiJobRequest } from './ai-types';
+
+const AiTaskManager = lazy(() => import('./AiTaskManager').then((module) => ({ default: module.AiTaskManager })));
 
 export const AI_LABELS = { question: '题干识别', answer: '答案识别', analysis: '生成解析' };
 export const aiJobLabel = (job: AiJob) => job.mode === 'page-entry' ? '按页录题' : AI_LABELS[job.type];
@@ -182,7 +184,7 @@ export function AiTasksProvider({ children }: { children: ReactNode }) {
   return <Context.Provider value={{ jobs, config, error, loaded, refreshing, updatedAt, busyIds, refresh, createJob, applyJob, actJobs, openTasks: () => setOpen(true), closeTasks: () => setOpen(false) }}>
     {children}
     <AiDialog open={open} onClose={() => setOpen(false)} title="AI 任务" description="离开页面后任务会继续处理，结果保留在这里。" wide>
-      {open && <AiTaskManager compact />}
+      {open && <PageLoadBoundary><Suspense fallback={<p role="status">正在加载 AI 任务…</p>}><AiTaskManager compact /></Suspense></PageLoadBoundary>}
     </AiDialog>
   </Context.Provider>;
 }

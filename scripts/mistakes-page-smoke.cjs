@@ -16,7 +16,7 @@ async function run() {
     const close = (listener) => listener && new Promise((resolve) => { listener.closeAllConnections(); listener.close(resolve); });
     let mock, server, app, ai;
     let active = 0, peak = 0, segmentCalls = 0, recognitionCalls = 0, analysisCalls = 0;
-    let failRecognition = false, holdRecognition = 0, omitAnswer = false;
+    let failRecognition = false, holdRecognition = 0, omitAnswer = false, retrySegmentation = false;
     const calls = [];
     const pageSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1400"><rect width="1000" height="1400" fill="white"/><g font-family="Arial" font-size="30" fill="#222"><text x="60" y="100">1. Choose: 2 + 2 = (    )</text><text x="70" y="160">A. 3    B. 4    C. 5    D. 6</text><text x="60" y="760">2. Find x in the triangle.</text><path d="M200 1100 L400 850 L600 1100 Z" fill="none" stroke="#222" stroke-width="4"/><text x="400" y="820">x</text></g><g font-family="Arial" font-size="38" fill="#155bd7"><text x="750" y="190">1: B</text><text x="760" y="1200">2: 60</text></g></svg>';
     const jpeg = await sharp(Buffer.from(pageSvg)).jpeg().toBuffer();
@@ -42,6 +42,12 @@ async function run() {
                     segmentCalls += 1;
                     assert.equal(req.headers['x-goog-api-key'], 'seg-secret');
                     assert.ok(body.contents[0].parts.some((part) => part.inlineData));
+                    if (retrySegmentation) {
+                        retrySegmentation = false;
+                        res.statusCode = 429; res.setHeader('Retry-After', '120');
+                        res.end(JSON.stringify({ error: { message: 'retry later' } }));
+                        return;
+                    }
                     await delay(40);
                     const result = { regions: [
                         { label: '1', box_2d: [30, 40, 400, 960], mask: [[40, 30], [960, 30], [960, 400], [40, 400]] },
@@ -156,6 +162,18 @@ async function run() {
         assert.ok(page.regions[0].mask);
         assert.equal((await upload('first')).id, page.id);
         assert.equal(segmentCalls, 1, 'Lost upload responses do not repeat segmentation');
+        retrySegmentation = true;
+        const delayedPage = await upload('segmentation-backoff');
+        for (let index = 0; index < 100; index += 1) {
+            if ((await user('GET', `/page-imports/${delayedPage.id}`)).status === 'retrying') break;
+            await delay(20);
+        }
+        assert.equal((await user('GET', `/page-imports/${delayedPage.id}`)).status, 'retrying');
+        await delay(0);
+        assert.equal(runners[1].queue.pending, 0, 'Segmentation backoff does not occupy a shared queue slot');
+        assert.equal((await finished(`/page-imports/${(await upload('during-segmentation-backoff')).id}`)).status, 'succeeded', 'Other pages can run while segmentation waits for Retry-After');
+        await user('POST', `/page-imports/${delayedPage.id}/cancel`, {});
+        assert.equal((await user('GET', `/page-imports/${delayedPage.id}`)).status, 'cancelled');
         await other('GET', `/page-imports/${page.id}`, null, 404);
         await other('GET', `/page-imports/${page.id}/image`, null, 404);
         assert.ok((await user('GET', '/photos')).some((image) => image.key === `page-${page.id}`), 'Unselected uploaded pages are available to reuse as complete photos');
@@ -206,6 +224,20 @@ async function run() {
             subjectId: conflictDraft.subjectId, primaryKnowledgePointId: conflictDraft.primaryKnowledgePointId, auxiliaryKnowledgePointIds: conflictDraft.auxiliaryKnowledgePointIds };
         await user('POST', `/ai/jobs/${conflictItem.jobId}/apply`, { review: { question: '识别题干', answer: 'B' }, expectedInput }, 409);
         holdRecognition = 0;
+        // Permanent deletion unlocks the original box without deleting the live source page.
+        const conflictSourcePath = path.join(process.env.MISTAKES_UPLOADS_PATH, app.db.prepare('SELECT image_path FROM page_imports WHERE id = ?').get(conflictPage.id).image_path);
+        await user('DELETE', `/mistakes/${conflictItem.mistakeId}`);
+        assert.equal((await user('POST', `/page-imports/${conflictPage.id}/import`, { regions: conflictRegions })).items[0].mistakeId, conflictItem.mistakeId, 'Soft deletion retains the link for restoration');
+        await user('DELETE', `/mistakes/${conflictItem.mistakeId}/permanent`);
+        const unlocked = await user('GET', `/page-imports/${conflictPage.id}`);
+        assert.equal(unlocked.items.length, 0);
+        assert.equal(unlocked.regions[0].mistakeId, undefined);
+        assert.equal(unlocked.regions[0].selected, false);
+        assert.ok(fs.existsSync(conflictSourcePath), 'An active source page survives permanent deletion of its last draft');
+        const reimported = await user('POST', `/page-imports/${conflictPage.id}/import`, { regions: conflictRegions });
+        assert.notEqual(reimported.items[0].mistakeId, conflictItem.mistakeId, 'The same original box can create a new draft after permanent deletion');
+        const rePrepared = await prepared(conflictPage.id);
+        assert.equal((await finished(`/ai/jobs/${rePrepared.items[0].jobId}`)).applyStatus, 'applied');
         // Failure + retry and restart reuse the same draft, job and source crop.
         failRecognition = true;
         const retryPage = await finished(`/page-imports/${(await upload('retry')).id}`);

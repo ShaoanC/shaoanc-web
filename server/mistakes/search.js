@@ -62,6 +62,23 @@ function plainText(markdown) {
     return nodeRuns(markdownParser.parse(markdown)).map((run) => run.text).join('').replace(/\s+/gu, ' ').trim();
 }
 
+function previewMarkdown(markdown, length = 240) {
+    let remaining = length;
+    const parts = [];
+    for (const run of nodeRuns(markdownParser.parse(markdown))) {
+        if (remaining <= 0) { parts.push('…'); break; }
+        const characters = [...run.text.replace(/\s+/gu, ' ')];
+        if (run.type === 'math') {
+            parts.push(`$${run.text}$`);
+        } else {
+            parts.push(characters.slice(0, remaining).join('').replace(/([\\`*_{}\[\]()#+\-.!|$<>~])/g, '\\$1'));
+            if (characters.length > remaining) { parts.push('…'); break; }
+        }
+        remaining -= characters.length;
+    }
+    return parts.join('').trim();
+}
+
 function markdownContent(markdown) {
     const runs = nodeRuns(markdownParser.parse(markdown));
     const math = [];
@@ -370,4 +387,4 @@ function searchMistakes(userId, rows, keyword) {
     });
 }
 
-module.exports = { searchMistakes, updateCachedMistake, removeCachedMistake, invalidateUser, invalidateAll, plainText };
+module.exports = { searchMistakes, updateCachedMistake, removeCachedMistake, invalidateUser, invalidateAll, plainText, previewMarkdown };

@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, BookOpen, Check, CheckCircle2, ChevronDown, CircleHelp, Eye, Lightbulb, LoaderCircle, Play, RotateCcw, SkipForward, Target, Trophy } from 'lucide-react';
 import { api, json } from '../api';
+import { LatestRequest } from '../latest-request';
 import { knowledgeLabel, useApp } from '../context';
 import { MarkdownContent } from '../MarkdownContent';
 import { Checkbox, DataTypeBadge, EmptyState, ErrorState, PageHeader, StatusBadge } from '../components';
@@ -27,23 +28,26 @@ export function ReviewPage() {
   const [saving, setSaving] = useState(false);
   const [results, setResults] = useState<ReviewResult[]>([]);
   const [skipped, setSkipped] = useState(0);
+  const candidateRequest = useRef(new LatestRequest());
 
   const load = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const query = new URLSearchParams({ lifecycle: 'archived' });
-      if (subjectId) query.set('subjectId', subjectId);
-      if (knowledgePointId) query.set('knowledgePointId', knowledgePointId);
-      if (status) query.set('status', status);
-      if (rating !== '') query.set('rating', rating);
-      const items = await api<Mistake[]>(`/mistakes?${query}`);
-      setCandidates(items);
-      setSelected((current) => requestedId && items.some((item) => item.id === requestedId) ? [requestedId] : current.filter((id) => items.some((item) => item.id === id)));
-    } catch (err) { setError((err as Error).message); } finally { setLoading(false); }
+    const query = new URLSearchParams({ lifecycle: 'archived' });
+    if (subjectId) query.set('subjectId', subjectId);
+    if (knowledgePointId) query.set('knowledgePointId', knowledgePointId);
+    if (status) query.set('status', status);
+    if (rating !== '') query.set('rating', rating);
+    await candidateRequest.current.run((signal) => api<Mistake[]>(`/mistakes?${query}`, { signal }), {
+      start() { setLoading(true); setError(''); },
+      success(items) {
+        setCandidates(items);
+        setSelected((current) => requestedId && items.some((item) => item.id === requestedId) ? [requestedId] : current.filter((id) => items.some((item) => item.id === id)));
+      },
+      error(err) { setError(err.message); },
+      finish() { setLoading(false); },
+    });
   }, [subjectId, knowledgePointId, status, rating, requestedId]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void load(); return () => candidateRequest.current.cancel(); }, [load]);
 
   function start() {
     const items = candidates.filter((item) => selected.includes(item.id));

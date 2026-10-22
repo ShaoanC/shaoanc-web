@@ -354,6 +354,48 @@ async function main() {
     }
     await bob('DELETE', '/mistakes/trash');
 
+    const reliable = await alice('POST', '/mistakes', { clientId: 'reliable-new-draft', question: '原题干' }, 201);
+    const repeated = await alice('POST', '/mistakes', { clientId: 'reliable-new-draft', question: '响应丢失后新增的本地文字' }, 201);
+    assert.equal(repeated.id, reliable.id, 'Retrying a new draft reuses the created record');
+    assert.equal(repeated.question, '原题干', 'A retried creation does not overwrite a record edited elsewhere');
+    const otherOwner = await bob('POST', '/mistakes', { clientId: 'reliable-new-draft', question: '另一个账号' }, 201);
+    assert.notEqual(otherOwner.id, reliable.id, 'Creation IDs remain scoped to the account');
+    await alice('PATCH', `/mistakes/${reliable.id}`, { note: '来自另一设备的笔记', expectedFields: { note: '' } });
+    const concurrent = await alice('PATCH', `/mistakes/${reliable.id}`, { question: '新题干', expectedFields: { question: '原题干' } });
+    assert.equal(concurrent.note, '来自另一设备的笔记', 'Changes to different fields are merged');
+    await alice('PATCH', `/mistakes/${reliable.id}`, { question: '过时的题干', expectedFields: { question: '原题干' } }, 409);
+    assert.equal((await alice('GET', `/mistakes/${reliable.id}`)).question, '新题干', 'A stale edit cannot overwrite the same field');
+
+    const insertPageFixture = app.db.prepare(`INSERT INTO mistakes
+        (user_id, subject_id, lifecycle, question, answer, analysis, note, created_at, updated_at) VALUES (?, 'math', 'archived', ?, ?, ?, ?, ?, ?)`);
+    app.db.transaction(() => {
+        for (let index = 0; index < 27; index += 1) {
+            insertPageFixture.run(registrationAlice.user.id, `分页回归 ${index} 价格 \\$5 与 \\$10，$x^2$。` + '条件'.repeat(180),
+                '答案'.repeat(500), '解析'.repeat(500), '笔记'.repeat(500), new Date().toISOString(), new Date().toISOString());
+        }
+    })();
+    const allResults = await alice('GET', '/mistakes?lifecycle=all');
+    const firstPage = await alice('GET', '/mistakes?lifecycle=all&page=1&pageSize=24&summary=true');
+    const lastPage = await alice('GET', '/mistakes?lifecycle=all&page=999&pageSize=24&summary=true');
+    assert.deepEqual(firstPage.items.map((item) => item.id), allResults.slice(0, 24).map((item) => item.id));
+    assert.deepEqual([firstPage.total, firstPage.page, lastPage.page, lastPage.items.length], [28, 1, 2, 4]);
+    assert.ok(firstPage.items.every((item) => item.summary && !item.answer && !item.analysis && !item.note));
+    assert.ok(firstPage.items[0].question.includes('\\$5') && firstPage.items[0].question.includes('$x^2$'), 'Summaries preserve literal prices and complete formulas');
+    assert.ok(JSON.stringify(firstPage).length < JSON.stringify(allResults).length / 3, 'List summaries omit full answer and analysis bodies');
+    const searchPage = await alice('GET', '/mistakes?lifecycle=all&keyword=分页回归&page=2&pageSize=24&summary=true');
+    assert.equal(searchPage.total, 27);
+    assert.equal(searchPage.items.length, 3);
+    assert.ok(searchPage.items.every((item) => item.search.matchedTermCount > 0), 'Search relevance metadata survives pagination');
+    await alice('GET', '/mistakes?page=0', undefined, 400);
+    await alice('GET', '/mistakes?page=1&pageSize=101', undefined, 400);
+    const aggregate = await alice('GET', '/stats');
+    assert.deepEqual([aggregate.total, aggregate.archived, aggregate.drafts], [28, 27, 1]);
+    assert.equal(aggregate.byKnowledgePoint.find((point) => point.id === null).count, 27);
+    app.db.prepare('UPDATE mistakes SET deleted_at = ? WHERE user_id = ?').run(new Date().toISOString(), registrationAlice.user.id);
+    await alice('DELETE', '/mistakes/trash');
+    await bob('DELETE', `/mistakes/${otherOwner.id}`);
+    await bob('DELETE', `/mistakes/${otherOwner.id}/permanent`);
+
     await runSearchSmoke({ alice, bob, admin });
 
     await admin('PATCH', `/admin/users/${registrationBob.user.id}`, { active: false });

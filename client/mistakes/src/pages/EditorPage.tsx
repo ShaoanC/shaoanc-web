@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { ArrowLeft, Copy, FileText, Layers, Pencil, Sparkles, StickyNote } from 'lucide-react';
-import { api, json, navigate } from '../api';
+import { api, ApiError, json, navigate } from '../api';
 import { knowledgeLabel, useApp } from '../context';
 import { Checkbox, DataTypeBadge, ErrorState } from '../components';
 import { LoadingContent, SlidingTabs } from '../motion';
@@ -12,14 +12,11 @@ import { PhotoInput } from '../PhotoInput';
 import { usePhotoUploads } from '../PhotoUploads';
 import { AiReview } from '../AiReview';
 import { isActiveJob, useAiTasks } from '../AiTasks';
+import { clearEditorDraft, editorChanges, editorForm, editorSavePayload, emptyEditorForm as empty, hasEditorChanges, readEditorDraft, reconcileEditorSave, restoreEditorDraft, sameEditorValue as same, writeEditorDraft, type EditorForm as Form } from '../editor-draft';
 import type { AiApplyOptions, AiInput, AiJob, ImagePurpose } from '../ai-types';
 import type { Lifecycle, Mistake } from '../types';
 
 type EditorTab = 'question' | 'answers' | 'note' | 'classification';
-type Form = AiInput & { note: string; rating: number; lifecycle: Lifecycle };
-const formKeys: (keyof Form)[] = ['question', 'answer', 'analysis', 'note', 'rating', 'subjectId', 'primaryKnowledgePointId', 'auxiliaryKnowledgePointIds', 'lifecycle'];
-const empty: Form = { question: '', answer: '', analysis: '', note: '', rating: 0, subjectId: null, primaryKnowledgePointId: null, auxiliaryKnowledgePointIds: [], lifecycle: 'draft' };
-const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 const inputOf = (value: Form | Mistake): AiInput => ({ question: value.question, answer: value.answer, analysis: value.analysis, subjectId: value.subjectId, primaryKnowledgePointId: value.primaryKnowledgePointId, auxiliaryKnowledgePointIds: value.auxiliaryKnowledgePointIds });
 const resultFields = (job: AiJob): (keyof Form)[] => job.type === 'question' ? ['question', ...(job.mode === 'page-entry' ? ['answer' as const] : []), 'subjectId', 'primaryKnowledgePointId', 'auxiliaryKnowledgePointIds'] : [job.type];
 
@@ -27,15 +24,28 @@ export function EditorPage({ id, onCreated }: { id?: number; onCreated?: (id: nu
   const { subjects, knowledgePoints, refreshDirectory, notify, user } = useApp();
   const { jobs, config, createJob, applyJob, refresh, openTasks } = useAiTasks();
   const { queue: photoQueue, batches: photoBatches } = usePhotoUploads();
+  const [restored] = useState(() => { try { return readEditorDraft(window.localStorage, user.id, id); } catch { return null; } });
+  const restoredNotice = restored ? `已恢复本机草稿（${new Date(restored.updatedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}，仅此账号）。` : '';
+  const clientId = useRef(restored?.clientId || crypto.randomUUID());
+  const creationInput = useRef(restored?.creationInput);
+  const draftReady = useRef(!id);
+  const draftStored = useRef(true);
+  const mounted = useRef(true);
+  const leaving = useRef(false);
   const [recordId, setRecordId] = useState(id);
   const recordRef = useRef(id);
-  const [data, setData] = useState<Form>({ ...empty });
+  const [data, setData] = useState<Form>(() => !id && restored ? editorForm(restored.data) : { ...empty });
   const dataRef = useRef(data);
   const baseline = useRef<Mistake | null>(null);
   const [isTest, setIsTest] = useState(false);
   const [loading, setLoading] = useState(Boolean(id));
   const [loadError, setLoadError] = useState('');
   const [error, setError] = useState('');
+  const [draftNotice, setDraftNotice] = useState(!id ? restoredNotice : '');
+  const [draftError, setDraftError] = useState('');
+  const [saveConflict, setSaveConflict] = useState(false);
+  const [resolvingConflict, setResolvingConflict] = useState(false);
+  const pendingPhotos = useRef({ question: false, answer: false });
   const [analysisNotice, setAnalysisNotice] = useState('');
   const [saving, setSaving] = useState<Lifecycle | null>(null);
   const pendingSave = useRef<Promise<Mistake> | null>(null);
@@ -66,7 +76,51 @@ export function EditorPage({ id, onCreated }: { id?: number; onCreated?: (id: nu
   const aiAvailable = Boolean(config?.enabled && config.configured);
   const analysisAvailable = Boolean(config?.analysis?.enabled && config.analysis.configured);
 
-  function update(patch: Partial<Form>) { dataRef.current = { ...dataRef.current, ...patch }; setData(dataRef.current); }
+  function syncDraft() {
+    if (!draftReady.current) return;
+    try {
+      writeEditorDraft(window.localStorage, user.id, recordRef.current, { version: 1, clientId: clientId.current, data: editorForm(dataRef.current), baseline: baseline.current ? editorForm(baseline.current) : null, creationInput: creationInput.current, updatedAt: Date.now() });
+      draftStored.current = true;
+      setDraftError('');
+    } catch { draftStored.current = false; setDraftError('浏览器未能保存本机草稿，请先保存到错题本再离开。'); }
+  }
+  function update(patch: Partial<Form>) { dataRef.current = { ...dataRef.current, ...patch }; setData(dataRef.current); syncDraft(); }
+  useEffect(() => { syncDraft(); }, [data, recordId]);
+  useEffect(() => {
+    mounted.current = true;
+    function confirmLeave() {
+      const photos = pendingPhotos.current.question || pendingPhotos.current.answer;
+      if (photos && !window.confirm('还有未上传或正在准备的图片，离开后需要重新选择。确定离开？')) return false;
+      if (!draftStored.current && hasEditorChanges(dataRef.current, baseline.current) && !window.confirm('本机草稿保存失败，离开会丢失未提交的文字。确定离开？')) return false;
+      return true;
+    }
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      if (pendingPhotos.current.question || pendingPhotos.current.answer || hasEditorChanges(dataRef.current, baseline.current)) {
+        event.preventDefault(); event.returnValue = '';
+      }
+    };
+    const beforeNavigate = (event: Event) => {
+      const target = (event as CustomEvent<{ path: string }>).detail.path.split('?')[0];
+      const ownRoute = recordRef.current ? `/mistakes/${recordRef.current}/edit` : '/new';
+      if (target !== ownRoute && !confirmLeave()) event.preventDefault();
+    };
+    const beforeLogout = (event: Event) => { if (!confirmLeave()) event.preventDefault(); };
+    const sessionEnding = () => { leaving.current = true; };
+    const sessionResumed = () => { leaving.current = false; };
+    window.addEventListener('beforeunload', beforeUnload);
+    window.addEventListener('mistakes:before-navigate', beforeNavigate);
+    window.addEventListener('mistakes:before-logout', beforeLogout);
+    window.addEventListener('mistakes:session-ending', sessionEnding);
+    window.addEventListener('mistakes:session-resumed', sessionResumed);
+    return () => {
+      mounted.current = false;
+      window.removeEventListener('beforeunload', beforeUnload);
+      window.removeEventListener('mistakes:before-navigate', beforeNavigate);
+      window.removeEventListener('mistakes:before-logout', beforeLogout);
+      window.removeEventListener('mistakes:session-ending', sessionEnding);
+      window.removeEventListener('mistakes:session-resumed', sessionResumed);
+    };
+  }, []);
   useEffect(() => {
     const route = () => {
       const query = window.location.hash.split('?')[1] || '';
@@ -100,54 +154,89 @@ export function EditorPage({ id, onCreated }: { id?: number; onCreated?: (id: nu
     api<Mistake>(`/mistakes/${id}`).then((item) => {
       if (!active) return;
       if (item.deletedAt) { setLoadError('这道错题在回收站中，请先恢复后再编辑。'); return; }
-      baseline.current = item; setIsTest(item.isTest); setAnalysisNotice(item.analysisNotice || '');
-      update({ ...inputOf(item), note: item.note, rating: item.rating, lifecycle: item.lifecycle });
+      const recovered = restored ? restoreEditorDraft(restored, item) : { data: editorForm(item), baseline: editorForm(item) };
+      baseline.current = { ...item, ...recovered.baseline }; draftReady.current = true;
+      setIsTest(item.isTest); setAnalysisNotice(item.analysisNotice || '');
+      if (restored) setDraftNotice(`${restoredNotice}保存时会检查其他页面的修改。`);
+      update(recovered.data);
     }).catch((err) => { if (active) setLoadError(err.message); }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [id]);
 
   async function persist(lifecycle: Lifecycle, generateAnalysis = false): Promise<Mistake> {
     if (pendingSave.current) await pendingSave.current;
+    if (!mounted.current || leaving.current) throw new Error('编辑已结束，当前操作已取消。');
     const snapshot = { ...dataRef.current, lifecycle };
     if (lifecycle === 'archived' && (!snapshot.question.trim() || !snapshot.subjectId)) throw new Error('归档前请填写题干并选择学科。');
-    const body = Object.fromEntries(formKeys.filter((key) => !baseline.current || !same(snapshot[key], baseline.current[key])).map((key) => [key, snapshot[key]]));
+    update({ lifecycle });
+    const body = editorSavePayload(snapshot, baseline.current, clientId.current);
+    const submitted = recordRef.current ? snapshot : (creationInput.current ||= editorForm(snapshot));
+    syncDraft();
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 30_000);
     const promise = api<Mistake>(recordRef.current ? `/mistakes/${recordRef.current}` : '/mistakes', {
       ...json({ ...body, generateAnalysis }, recordRef.current ? 'PATCH' : 'POST'), signal: controller.signal,
     }).catch((err) => {
       if (controller.signal.aborted) throw new Error('保存超时，请检查网络后重试，当前内容和已选图片会保留。');
+      if (err instanceof ApiError && err.status === 409) setSaveConflict(true);
       throw err;
     });
     pendingSave.current = promise;
     setSaving(lifecycle);
     try {
       const item = await promise;
+      setSaveConflict(false);
       baseline.current = item;
       setAnalysisNotice(item.analysisNotice || '');
       if (!recordRef.current) {
         recordRef.current = item.id; setRecordId(item.id);
-        window.history.replaceState(null, '', `#/mistakes/${item.id}/edit`);
-        onCreated?.(item.id);
+        try { clearEditorDraft(window.localStorage, user.id, undefined, clientId.current); } catch { /* The record draft is written below even if local storage is unavailable. */ }
+        if (mounted.current && !leaving.current) {
+          window.history.replaceState(null, '', `#/mistakes/${item.id}/edit`);
+          onCreated?.(item.id);
+        }
       }
-      const patch: Partial<Form> = { lifecycle: item.lifecycle };
-      for (const key of formKeys) {
-        if (same(dataRef.current[key], snapshot[key])) Object.assign(patch, { [key]: item[key] });
-      }
-      update(patch);
+      update(reconcileEditorSave(dataRef.current, submitted, item));
       return item;
     } finally { clearTimeout(timeout); pendingSave.current = null; setSaving(null); }
   }
   const ensureSaved = () => persist(dataRef.current.lifecycle);
+  async function resolveSaveConflict(keepLocal: boolean) {
+    if (!recordRef.current || resolvingConflict || saving) return;
+    setResolvingConflict(true);
+    const before = editorForm(dataRef.current);
+    try {
+      const item = await api<Mistake>(`/mistakes/${recordRef.current}`);
+      if (!mounted.current || leaving.current) return;
+      if (item.deletedAt) throw new Error('这道错题已移入回收站，请先恢复。当前未提交内容仍保留在本机。');
+      const next = keepLocal ? editorForm(item) : reconcileEditorSave(dataRef.current, before, item);
+      if (keepLocal) {
+        for (const key of editorChanges(dataRef.current, baseline.current)) Object.assign(next, { [key]: dataRef.current[key] });
+      }
+      baseline.current = item;
+      update(next); setSaveConflict(false); setError(''); setAnalysisNotice(item.analysisNotice || '');
+      setDraftNotice(hasEditorChanges(next, item) ? '已载入最新版本并保留你的修改，请再次保存；这会更新相应字段。' : '已载入服务器最新内容。');
+    } catch (err) { setError((err as Error).message); }
+    finally { setResolvingConflict(false); }
+  }
   async function save(lifecycle: Lifecycle) {
-    if (saving || applying) return;
+    if (saving || applying || resolvingConflict) return;
     if (lifecycle === 'archived' && (!data.question.trim() || !data.subjectId)) {
       const target = !data.question.trim() ? 'question' : 'classification';
       setTab(target); setSaveOpen(false); setError('归档前请填写题干并选择学科。'); notify('归档前请填写题干并选择学科。', 'error');
       requestAnimationFrame(() => target === 'question' ? questionField.current?.focus() : subjectField.current?.focus()); return;
     }
     setError('');
-    try { const item = await persist(lifecycle, true); notify(lifecycle === 'draft' ? '草稿已保存。' : '错题已保存。'); void refresh(); navigate(`/mistakes/${item.id}`); }
+    try {
+      const item = await persist(lifecycle, true);
+      if (!mounted.current || leaving.current) return;
+      void refresh();
+      if (hasEditorChanges(dataRef.current, baseline.current) || pendingPhotos.current.question || pendingPhotos.current.answer) {
+        const message = hasEditorChanges(dataRef.current, baseline.current) ? '已保存本次提交的内容，仍有较新的修改未提交，请再次保存。' : '文字已保存，还有图片未上传，请处理后再离开。';
+        setDraftNotice(message); notify(message); return;
+      }
+      setDraftNotice(''); notify(lifecycle === 'draft' ? '草稿已保存。' : '错题已保存。'); navigate(`/mistakes/${item.id}`);
+    }
     catch (err) { setError((err as Error).message); notify((err as Error).message, 'error'); }
   }
   async function recognize(purpose: ImagePurpose, imageIds: number[]) {
@@ -233,16 +322,19 @@ export function EditorPage({ id, onCreated }: { id?: number; onCreated?: (id: nu
     <header className="editor-workbench-header"><div><h1>{id ? '编辑错题' : '录入错题'}</h1>{recordId && <span className="editor-record-id">记录 #{recordId}</span>}</div><div className="editor-workbench-state"><DataTypeBadge isTest={isTest} /><span className="editor-mode"><Pencil size={14} />正在编辑</span></div></header>
     <LoadingContent loading={loading} kind="editor">{loadError ? <ErrorState message={loadError} /> : <form onSubmit={(event) => { event.preventDefault(); void save('archived'); }}>
       {error && <div className="form-error editor-validation" role="alert">{error}</div>}
+      {saveConflict && <div className="ai-review-issues" role="alert"><p>其他页面已修改这道题。你的未提交内容仍保留在本机，请选择后再保存。</p><div className="photo-actions"><button type="button" className="button secondary" disabled={resolvingConflict || Boolean(saving)} onClick={() => void resolveSaveConflict(true)}>保留我的修改，准备重新保存</button><button type="button" className="button ghost" disabled={resolvingConflict || Boolean(saving)} onClick={() => void resolveSaveConflict(false)}>放弃本机修改，载入服务器内容</button></div></div>}
+      {draftNotice && <p className="ai-notice" role="status">{draftNotice}</p>}
+      {draftError && <p className="form-error" role="alert">{draftError}</p>}
       {currentJobs.length > 0 && <div className="editor-uploaded"><button type="button" className="table-button" onClick={openTasks}><Sparkles size={16} />{currentJobs.filter(isActiveJob).length ? `${currentJobs.filter(isActiveJob).length} 项 AI 操作正在进行` : '查看 AI 任务'}</button></div>}
       {config && !aiAvailable && <p className="ai-notice">{user.role === 'admin' ? <a href="#/settings">AI 尚未启用，前往设置配置。图片可以先保存。</a> : 'AI 尚未启用，可先保存图片或手动填写。'}</p>}
       <div className="editor-mobile-tabs"><SlidingTabs tabs={tabs} value={tab} onChange={(value) => setTab(value as EditorTab)} ariaLabel="编辑内容" /></div>
       <div className="editor-layout"><div className="editor-main">
         <section className="editor-block editor-question-block" {...panelProps('question')}><div className="editor-block-heading"><FileText size={18} /><h2>题目</h2><span>必填</span></div>
-          <PhotoInput purpose="question" recordId={recordId} ensureSaved={ensureSaved} aiAvailable={aiAvailable} />{candidates('question')}
+          <PhotoInput purpose="question" recordId={recordId} ensureSaved={ensureSaved} aiAvailable={aiAvailable} onPendingChange={(value) => { pendingPhotos.current.question = value; }} />{candidates('question')}
           <MarkdownField ref={questionField} name="题干" label={<>题干 <em>*</em></>} textareaClassName="question-editor" value={data.question} onChange={(question) => update({ question })} placeholder="输入题目内容，包括题目条件、问题和选项…" />
         </section>
         <section className="editor-block editor-answers-block" {...panelProps('answers')}><div className="editor-block-heading"><FileText size={18} /><h2>答案与分析</h2></div>
-          <PhotoInput purpose="answer" recordId={recordId} ensureSaved={ensureSaved} aiAvailable={aiAvailable} actions={<button type="button" className="button secondary" disabled={!questionPhotoCount || !aiAvailable || reusingQuestionPhotos || Boolean(questionBatch?.reuseRequested) || (!questionBatch && (Boolean(saving) || Boolean(applying) || currentJobs.some((job) => job.type === 'answer' && isActiveJob(job))))} title={questionPhotoCount ? '按原顺序复用题干图片；上传中会先记录请求，完成后自动识别答案' : '先在题干中添加并提交图片'} onClick={() => void reuseQuestionPhotos()}><Copy size={16} />{reuseQueued ? '已记录，后台处理中…' : questionBatch?.reuseStatus === 'failed' ? '复用待重试' : questionBatch?.reuseRequested ? '已提交答案识别' : reusingQuestionPhotos ? '正在提交…' : `复用题干图片${questionPhotoCount ? `（${questionPhotoCount} 张）` : ''}`}</button>} />{candidates('answer')}
+          <PhotoInput purpose="answer" recordId={recordId} ensureSaved={ensureSaved} aiAvailable={aiAvailable} onPendingChange={(value) => { pendingPhotos.current.answer = value; }} actions={<button type="button" className="button secondary" disabled={!questionPhotoCount || !aiAvailable || reusingQuestionPhotos || Boolean(questionBatch?.reuseRequested) || (!questionBatch && (Boolean(saving) || Boolean(applying) || currentJobs.some((job) => job.type === 'answer' && isActiveJob(job))))} title={questionPhotoCount ? '按原顺序复用题干图片；上传中会先记录请求，完成后自动识别答案' : '先在题干中添加并提交图片'} onClick={() => void reuseQuestionPhotos()}><Copy size={16} />{reuseQueued ? '已记录，后台处理中…' : questionBatch?.reuseStatus === 'failed' ? '复用待重试' : questionBatch?.reuseRequested ? '已提交答案识别' : reusingQuestionPhotos ? '正在提交…' : `复用题干图片${questionPhotoCount ? `（${questionPhotoCount} 张）` : ''}`}</button>} />{candidates('answer')}
           {reuseQueued && <p className="ai-notice" role="status">复用请求已记录，将在题干图片全部上传后自动识别答案。</p>}
           <MarkdownField ref={answerField} name="正确答案" label={<>正确答案 <span className="optional-label">选填</span></>} rows={3} value={data.answer} onChange={(answer) => update({ answer })} placeholder="直接输入答案，或拍照识别后修改…" />
           <p className="ai-notice">{analysisAvailable ? '手动输入的短答案会在保存时自动生成解析；图片识别的短答案会在填入后生成。' : user.role === 'admin' ? <a href="#/settings">生成解析服务尚未启用，前往设置独立配置。</a> : '生成解析服务尚未启用，题干和答案可以正常保存。'}</p>

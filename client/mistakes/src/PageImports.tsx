@@ -4,6 +4,8 @@ import { compressJpeg } from './photo-compression';
 import { ArrowDown, ArrowLeft, ArrowUp, Check, CheckSquare, ImagePlus, LoaderCircle, Maximize2, Move, MousePointer2, Plus, RefreshCw, RotateCcw, RotateCw, Trash2, Upload } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { api, formatDate, json } from './api';
+import { useApp } from './context';
+import { assignPageUploadBatch, uploadPageBatch, type PendingPage } from './page-upload';
 import { AiDialog } from './AiDialog';
 import { useAiTasks } from './AiTasks';
 import { validBox } from './ImageRegions';
@@ -24,7 +26,6 @@ export interface PageImport {
   batchId: string; pageOrder: number;
   regions: PageRegion[]; items: PageImportItem[]; error: string | null; attempts: number; createdAt: string;
 }
-interface PendingPage { id: string; file: File; url: string; error: string; pageOrder?: number }
 const statusLabel: Record<ImportStatus, string> = { queued: '等待分题', running: '正在分题', retrying: '等待重试', succeeded: '分题完成', failed: '分题失败', cancelled: '已取消' };
 const activeStatus = (status: ImportStatus) => ['queued', 'running', 'retrying'].includes(status);
 const clamp = (value: number, min = 0, max = 1) => Math.min(max, Math.max(min, value));
@@ -58,6 +59,7 @@ function sortPages(pages: PageImport[]) {
 }
 
 export function PageImportsPage() {
+  const { user } = useApp();
   const tasks = useAiTasks();
   const [pages, setPages] = useState<PageImport[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -75,7 +77,7 @@ export function PageImportsPage() {
   const revision = useRef(0);
   const mounted = useRef(true);
   const inflight = useRef(false);
-  const batchId = useRef(crypto.randomUUID());
+  const uploadController = useRef<AbortController | null>(null);
   const drafts = useRef(new Map<number, PageRegion[]>());
   const configured = tasks.config?.segmentation?.configured && tasks.config.segmentation.enabled;
   const recognition = tasks.config;
@@ -94,12 +96,14 @@ export function PageImportsPage() {
   }, []);
   useEffect(() => {
     mounted.current = true;
+    const cancelUploads = () => { uploadController.current?.abort(); };
     void refresh();
     const timer = window.setInterval(() => { if (!document.hidden) void refresh(); }, 3000);
     const focus = () => { void refresh(); };
     window.addEventListener('focus', focus);
-    return () => { mounted.current = false; clearInterval(timer); window.removeEventListener('focus', focus); };
-  }, [refresh]);
+    window.addEventListener('mistakes:session-ending', cancelUploads);
+    return () => { mounted.current = false; cancelUploads(); clearInterval(timer); window.removeEventListener('focus', focus); window.removeEventListener('mistakes:session-ending', cancelUploads); };
+  }, [refresh, user.id]);
   useEffect(() => () => { urls.current.forEach(URL.revokeObjectURL); }, []);
   function mergePage(page: PageImport) {
     revision.current += 1;
@@ -137,37 +141,40 @@ export function PageImportsPage() {
         ? resolve(new File([blob], entry.file.name.replace(/\.[^.]+$/, '') + '.png', { type: 'image/png' }))
         : reject(new Error('浏览器无法旋转图片。')), 'image/png'));
       const url = makeUrl(file);
-      setPending((items) => items.map((item) => item.id === entry.id ? { ...item, id: crypto.randomUUID(), file, url, error: '' } : item));
+      if (!mounted.current) { releaseUrl(url); return; }
+      setPending((items) => items.map((item) => item.id === entry.id ? { ...item, id: crypto.randomUUID(), batchId: undefined, pageOrder: undefined, file, url, error: '' } : item));
       releaseUrl(entry.url);
     } catch (err) { toast.error((err as Error).message); }
     finally { setRotatingId(''); }
   }
   async function upload() {
-    if (uploading || !pending.length) return;
+    if (uploadController.current || !pending.length) return;
+    const controller = new AbortController();
+    uploadController.current = controller;
     setUploading(true);
-    const snapshot = pending.map((entry, index) => ({ ...entry, pageOrder: entry.pageOrder ?? index }));
+    const snapshot = assignPageUploadBatch(pending);
     setPending(snapshot);
-    let uploaded = 0;
-    for (const [index, entry] of snapshot.entries()) {
-      try {
-        setUploadStage(`正在压缩并上传第 ${index + 1}/${snapshot.length} 页…`);
-        const file = await preparePage(entry.file);
-        const body = new FormData();
-        body.append('file', file, entry.file.name.replace(/\.[^.]+$/, '') + '.jpg');
-        body.append('clientId', entry.id); body.append('batchId', batchId.current); body.append('pageOrder', String(entry.pageOrder));
-        const page = await api<PageImport>('/page-imports', { method: 'POST', body });
-        mergePage(page); uploaded += 1;
-        if (uploaded === 1 && mounted.current) setSelectedId(page.id);
-        if (mounted.current) setPending((items) => items.filter((item) => item.id !== entry.id));
-        releaseUrl(entry.url);
-      } catch (err) {
-        if (mounted.current) setPending((items) => items.map((item) => item.id === entry.id ? { ...item, error: (err as Error).message } : item));
-      }
-    }
-    if (mounted.current) {
-      setUploading(false); setUploadStage('');
+    let selected = false;
+    try {
+      const uploaded = await uploadPageBatch(snapshot, {
+        signal: controller.signal,
+        prepare: preparePage,
+        send: (body, signal) => api<PageImport>('/page-imports', { method: 'POST', body, signal }),
+        onProgress: (index) => setUploadStage(`正在压缩并上传第 ${index + 1}/${snapshot.length} 页…`),
+        onSuccess: (entry, page) => {
+          mergePage(page);
+          if (!selected) { setSelectedId(page.id); selected = true; }
+          setPending((items) => items.filter((item) => item.id !== entry.id));
+          releaseUrl(entry.url);
+        },
+        onError: (entry, err) => setPending((items) => items.map((item) => item.id === entry.id ? { ...item, error: err.message } : item)),
+      });
       if (uploaded) toast.success(`${uploaded} 页已上传，后台正在分题。`);
-      if (uploaded === snapshot.length) batchId.current = crypto.randomUUID();
+    } catch (err) {
+      if (!controller.signal.aborted && mounted.current) toast.error((err as Error).message);
+    } finally {
+      if (uploadController.current === controller) uploadController.current = null;
+      if (mounted.current) { setUploading(false); setUploadStage(''); }
     }
   }
   async function pageAction(page: PageImport, action: 'retry' | 'cancel' | 'delete') {

@@ -39,7 +39,7 @@ async function jpeg(file: File) {
   } finally { URL.revokeObjectURL(url); }
 }
 
-export function PhotoInput({ purpose, recordId, ensureSaved, actions, aiAvailable }: { purpose: ImagePurpose; recordId?: number; ensureSaved: () => Promise<Mistake>; actions?: ReactNode; aiAvailable: boolean }) {
+export function PhotoInput({ purpose, recordId, ensureSaved, actions, aiAvailable, onPendingChange }: { purpose: ImagePurpose; recordId?: number; ensureSaved: () => Promise<Mistake>; actions?: ReactNode; aiAvailable: boolean; onPendingChange?: (pending: boolean) => void }) {
   const { queue, batches } = usePhotoUploads();
   const uploads = batches.filter((batch) => batch.mistakeId === recordId && batch.purpose === purpose && batch.status !== 'completed');
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -51,6 +51,7 @@ export function PhotoInput({ purpose, recordId, ensureSaved, actions, aiAvailabl
   const camera = useRef<HTMLInputElement>(null);
   const album = useRef<HTMLInputElement>(null);
   const urls = useRef(new Set<string>());
+  const mounted = useRef(true);
   const photo = useRef<HTMLImageElement>(null);
   const current = entries[selected];
   const imageReady = Boolean(current && loadedUrl === current.url);
@@ -60,7 +61,19 @@ export function PhotoInput({ purpose, recordId, ensureSaved, actions, aiAvailabl
     if (image?.complete && image.naturalWidth > 0) setLoadedUrl(image.src);
   }, []);
   const label = purpose === 'question' ? '题目' : '答案';
-  useEffect(() => () => { urls.current.forEach(URL.revokeObjectURL); }, []);
+  useEffect(() => { onPendingChange?.(entries.length > 0 || busy); }, [entries.length, busy, onPendingChange]);
+  useEffect(() => {
+    mounted.current = true;
+    const ending = () => { mounted.current = false; };
+    const resumed = () => { mounted.current = true; };
+    window.addEventListener('mistakes:session-ending', ending);
+    window.addEventListener('mistakes:session-resumed', resumed);
+    return () => {
+      mounted.current = false; urls.current.forEach(URL.revokeObjectURL);
+      window.removeEventListener('mistakes:session-ending', ending);
+      window.removeEventListener('mistakes:session-resumed', resumed);
+    };
+  }, []);
   function objectUrl(file: Blob) { const url = URL.createObjectURL(file); urls.current.add(url); return url; }
   function add(files: File[]) {
     const valid = files.filter((file) => ['image/jpeg', 'image/png', 'image/webp'].includes(file.type));
@@ -76,6 +89,7 @@ export function PhotoInput({ purpose, recordId, ensureSaved, actions, aiAvailabl
       const response = await fetch(image.originalUrl, { credentials: 'same-origin' });
       if (!response.ok) throw new Error('无法读取照片，请重新选择。');
       const blob = await response.blob();
+      if (!mounted.current) return;
       add([new File([blob], image.originalName, { type: blob.type || 'image/jpeg', lastModified: Date.now() })]);
     } finally { setBusy(false); }
   }
@@ -127,11 +141,13 @@ export function PhotoInput({ purpose, recordId, ensureSaved, actions, aiAvailabl
     try {
       setStage('正在保存草稿…');
       const item = await ensureSaved();
+      if (!mounted.current) return;
       const files: PreparedPhoto[] = [];
       for (const [index, entry] of snapshot.entries()) {
         setStage(`正在压缩第 ${index + 1}/${snapshot.length} 张图片…`);
         const original = await jpeg(entry.file);
         const crop = await jpeg(await croppedFile(entry));
+        if (!mounted.current) return;
         files.push({ clientId: entry.clientId, original, crop, originalName: entry.file.name.replace(/\.[^.]+$/, '') + '.jpg' });
       }
       queue.enqueue({ mistakeId: item.id, purpose, input: { question: item.question, answer: item.answer, analysis: item.analysis, subjectId: item.subjectId, primaryKnowledgePointId: item.primaryKnowledgePointId, auxiliaryKnowledgePointIds: item.auxiliaryKnowledgePointIds }, files, recognize });

@@ -10,12 +10,18 @@ const { recognitionFormat, parseRecognitionJson, sourceImageId, figureLocation }
 const { imagePath, questionForMistake } = require('./images');
 const { markdownImages, legacyFigureText } = require('./question-images');
 const { plainText, updateCachedMistake } = require('./search');
+const { createTaskScheduler, retryDelay } = require('./ai-scheduler');
 
 const pendingStates = ['queued', 'running', 'retrying'];
 const controllers = new Map();
-const scheduled = new Set();
 let runtime;
 let stopped = false;
+const scheduled = createTaskScheduler({
+    getTask: (id) => db.prepare('SELECT * FROM ai_jobs WHERE id = ?').get(id),
+    getRunner: runtimeForJobs,
+    run: runJob,
+    onError: (id) => db.prepare("UPDATE ai_jobs SET status = 'failed', error = 'AI 任务无法启动，请重试', finished_at = ? WHERE id = ? AND status IN ('queued','running','retrying')").run(now(), id)
+});
 const now = () => new Date().toISOString();
 const text = z.string().max(20000);
 const inputSchema = z.object({ question: text, answer: text, analysis: text,
@@ -383,63 +389,43 @@ async function runtimeForJobs(userId) {
 }
 
 async function runJob(id, runner) {
-    let job = db.prepare('SELECT * FROM ai_jobs WHERE id = ?').get(id);
+    const job = db.prepare('SELECT * FROM ai_jobs WHERE id = ?').get(id);
     if (stopped || !job || !pendingStates.includes(job.status)) return;
     const controller = new AbortController();
     controllers.set(id, controller);
     try {
-        if (job.next_attempt_at) {
-            const delay = Math.max(0, Date.parse(job.next_attempt_at) - Date.now());
-            if (delay) await new Promise((resolve) => { const timer = setTimeout(resolve, delay); controller.signal.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true }); });
-        }
         if (job.attempts >= job.max_attempts) throw new runner.AbortError('已达到最大尝试次数，请手动重试');
-        await runner.retry(async () => {
-            job = db.prepare('SELECT * FROM ai_jobs WHERE id = ?').get(id);
-            if (stopped || controller.signal.aborted || !job || !pendingStates.includes(job.status)) throw new runner.AbortError('任务已取消');
-            try { activeMistake(job.mistake_id, job.user_id); } catch { throw new runner.AbortError('错题已移入回收站'); }
-            db.prepare("UPDATE ai_jobs SET status = 'running', attempts = attempts + 1, started_at = COALESCE(started_at, ?), next_attempt_at = NULL, error = NULL WHERE id = ?").run(now(), id);
-            const result = await requestResult(job, controller.signal);
-            const current = db.prepare('SELECT status FROM ai_jobs WHERE id = ?').get(id);
-            if (controller.signal.aborted || !current || !pendingStates.includes(current.status)) return;
-            activeMistake(job.mistake_id, job.user_id);
-            db.prepare("UPDATE ai_jobs SET status = 'succeeded', result_json = ?, finished_at = ?, error = NULL WHERE id = ?").run(JSON.stringify(result), now(), id);
-            if (!result.needsReview && !JSON.parse(job.input_json)[job.type].trim()) {
-                try { applyJob(id, job.user_id); } catch (error) { if (error.status !== 409 && error.status !== 404) throw error; }
-            }
-        }, { retries: Math.max(0, job.max_attempts - job.attempts - 1), minTimeout: 2000, factor: 2, signal: controller.signal,
-            shouldRetry: ({ error }) => canRetry(error, job.attempts + 1),
-            onFailedAttempt: async ({ error, retriesLeft, attemptNumber }) => {
-                const current = db.prepare('SELECT status, attempts FROM ai_jobs WHERE id = ?').get(id);
-                if (!current || !pendingStates.includes(current.status)) return;
-                if (retriesLeft && canRetry(error, current.attempts)) {
-                    const base = 2000 * 2 ** (attemptNumber - 1);
-                    const retryAfter = error.headers?.get?.('retry-after');
-                    const serverWait = retryAfter ? (Number.isFinite(Number(retryAfter)) ? Number(retryAfter) * 1000 : Date.parse(retryAfter) - Date.now()) : 0;
-                    const delay = Math.max(base, Math.min(serverWait || 0, 120000));
-                    db.prepare("UPDATE ai_jobs SET status = 'retrying', error = ?, next_attempt_at = ? WHERE id = ?").run(safeAiError(error), new Date(Date.now() + delay).toISOString(), id);
-                    if (delay > base) await new Promise((resolve) => { const timer = setTimeout(resolve, delay - base); controller.signal.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true }); });
-                }
-            }
-        });
+        try { activeMistake(job.mistake_id, job.user_id); } catch { throw new runner.AbortError('错题已移入回收站'); }
+        db.prepare("UPDATE ai_jobs SET status = 'running', attempts = attempts + 1, started_at = COALESCE(started_at, ?), next_attempt_at = NULL, error = NULL WHERE id = ?").run(now(), id);
+        const result = await requestResult(job, controller.signal);
+        const current = db.prepare('SELECT status FROM ai_jobs WHERE id = ?').get(id);
+        if (controller.signal.aborted || !current || !pendingStates.includes(current.status)) return;
+        activeMistake(job.mistake_id, job.user_id);
+        db.prepare("UPDATE ai_jobs SET status = 'succeeded', result_json = ?, finished_at = ?, error = NULL WHERE id = ?").run(JSON.stringify(result), now(), id);
+        if (!result.needsReview && !JSON.parse(job.input_json)[job.type].trim()) {
+            try { applyJob(id, job.user_id); } catch (error) { if (error.status !== 409 && error.status !== 404) throw error; }
+        }
     } catch (error) {
-        if (!stopped && !controller.signal.aborted) db.prepare("UPDATE ai_jobs SET status = 'failed', error = ?, finished_at = ?, next_attempt_at = NULL WHERE id = ? AND status IN ('queued','running','retrying')")
-            .run(safeAiError(error), now(), id);
+        if (!stopped && !controller.signal.aborted) {
+            const current = db.prepare('SELECT status, attempts, max_attempts FROM ai_jobs WHERE id = ?').get(id);
+            if (current && pendingStates.includes(current.status)) {
+                if (current.attempts < current.max_attempts && canRetry(error, current.attempts)) {
+                    db.prepare("UPDATE ai_jobs SET status = 'retrying', error = ?, next_attempt_at = ? WHERE id = ?")
+                        .run(safeAiError(error), new Date(Date.now() + retryDelay(error, current.attempts)).toISOString(), id);
+                } else db.prepare("UPDATE ai_jobs SET status = 'failed', error = ?, finished_at = ?, next_attempt_at = NULL WHERE id = ?")
+                    .run(safeAiError(error), now(), id);
+            }
+        }
     } finally { controllers.delete(id); }
 }
 
 function schedule(id) {
-    if (stopped || scheduled.has(id)) return;
-    scheduled.add(id);
-    void runtimeForJobs(db.prepare('SELECT user_id FROM ai_jobs WHERE id = ?').get(id)?.user_id).then(async (runner) => {
-        try { await runner.queue.add(() => runJob(id, runner)); } finally { scheduled.delete(id); }
-    }).catch(() => {
-        scheduled.delete(id);
-        if (!stopped) db.prepare("UPDATE ai_jobs SET status = 'failed', error = 'AI 任务无法启动，请重试', finished_at = ? WHERE id = ? AND status IN ('queued','running','retrying')").run(now(), id);
-    });
+    if (!stopped) scheduled.schedule(id);
 }
 
 function recoverJobs() {
     stopped = false;
+    scheduled.resume();
     db.prepare("UPDATE ai_jobs SET status = 'queued' WHERE status = 'running'").run();
     for (const job of db.prepare("SELECT id FROM ai_jobs WHERE status IN ('queued','retrying') ORDER BY id").all()) schedule(job.id);
     require('./page-imports').recoverPageImports();
@@ -450,6 +436,7 @@ function cancelJob(id, userId) {
     if (job.status === 'succeeded' && job.apply_status === 'applied') fail(409, '任务结果已填入，无法取消');
     if (job.status !== 'cancelled') {
         db.prepare("UPDATE ai_jobs SET status = 'cancelled', finished_at = ?, next_attempt_at = NULL WHERE id = ?").run(now(), id);
+        scheduled.cancel(id);
         controllers.get(id)?.abort();
     }
     return serializeJob(ownJob(id, userId));
@@ -478,7 +465,7 @@ function cancelMistakeJobs(ids) {
 async function stopJobs() {
     stopped = true;
     for (const controller of controllers.values()) controller.abort();
-    require('./page-imports').stopPageImports();
+    await Promise.all([scheduled.stop(), require('./page-imports').stopPageImports()]);
     if (runtime) {
         const runner = await runtime;
         await Promise.all([runner.queue.onIdle(), runner.adminQueue.onIdle()]);

@@ -89,6 +89,14 @@ if (!db.prepare('PRAGMA table_info(mistakes)').all().some((column) => column.nam
     db.exec('ALTER TABLE mistakes ADD COLUMN rating REAL NOT NULL DEFAULT 0 CHECK (rating IN (0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5))');
 }
 db.exec('CREATE INDEX IF NOT EXISTS mistakes_trash ON mistakes(user_id, deleted_at)');
+db.exec(`
+    CREATE TABLE IF NOT EXISTS mistake_requests (
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        client_id TEXT NOT NULL,
+        mistake_id INTEGER NOT NULL REFERENCES mistakes(id) ON DELETE CASCADE,
+        PRIMARY KEY (user_id, client_id)
+    );
+`);
 if (!db.prepare('PRAGMA table_info(knowledge_points)').all().some((column) => column.name === 'owner_user_id')) {
     db.exec('ALTER TABLE knowledge_points ADD COLUMN owner_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE');
 }
@@ -185,6 +193,26 @@ for (const [name, definition] of [['mode', "TEXT NOT NULL DEFAULT 'single'"], ['
 if (!db.prepare('PRAGMA table_info(mistake_images)').all().some((column) => column.name === 'page_import_id')) {
     db.exec('ALTER TABLE mistake_images ADD COLUMN page_import_id INTEGER REFERENCES page_imports(id)');
 }
+
+// Older permanent deletions left detached items that kept their page regions locked.
+db.transaction(() => {
+    const detached = db.prepare('SELECT page_import_id, region_id FROM page_import_items WHERE mistake_id IS NULL').all();
+    const pages = new Map();
+    for (const item of detached) {
+        if (!pages.has(item.page_import_id)) pages.set(item.page_import_id, new Set());
+        pages.get(item.page_import_id).add(item.region_id);
+    }
+    for (const [pageId, regionIds] of pages) {
+        const page = db.prepare('SELECT regions_json FROM page_imports WHERE id = ?').get(pageId);
+        const regions = JSON.parse(page.regions_json).map((region) => {
+            if (!regionIds.has(region.id)) return region;
+            const { mistakeId, jobId, status, applyStatus, error, mistakeDeleted, ...box } = region;
+            return { ...box, selected: false };
+        });
+        db.prepare('UPDATE page_imports SET regions_json = ? WHERE id = ?').run(JSON.stringify(regions), pageId);
+    }
+    db.prepare('DELETE FROM page_import_items WHERE mistake_id IS NULL').run();
+})();
 
 const initialDirectory = [
     ['math', '数学', [

@@ -10,12 +10,18 @@ const { requestCompletion } = require('./ai-request');
 const { parseRecognitionJson } = require('./ai-output');
 const { imagePath, uploadsDirectory } = require('./images');
 const { updateCachedMistake } = require('./search');
+const { createTaskScheduler, retryDelay } = require('./ai-scheduler');
 
 const activeStates = ['queued', 'running', 'retrying'];
 const controllers = new Map();
-const scheduled = new Set();
 const preparing = new Set();
 let stopped = false;
+const scheduled = createTaskScheduler({
+    getTask: (id) => db.prepare('SELECT * FROM page_imports WHERE id = ? AND deleted_at IS NULL').get(id),
+    getRunner: (userId) => require('./ai').runtimeForJobs(userId),
+    run: runPage,
+    onError: (id) => db.prepare("UPDATE page_imports SET status = 'failed', error = '分题任务无法启动，请重试', finished_at = ? WHERE id = ? AND status IN ('queued','running','retrying') AND deleted_at IS NULL").run(now(), id)
+});
 const now = () => new Date().toISOString();
 const multipart = multer({ storage: multer.memoryStorage(), limits: { fileSize: 4 * 1024 * 1024, files: 1, fields: 3 } }).single('file');
 
@@ -68,60 +74,39 @@ async function requestSegmentation({ bytes, signal, context = {} }) {
 }
 
 async function runPage(id, runner) {
-    let page = db.prepare('SELECT * FROM page_imports WHERE id = ?').get(id);
+    const page = db.prepare('SELECT * FROM page_imports WHERE id = ?').get(id);
     if (stopped || !page || page.deleted_at || !activeStates.includes(page.status)) return;
     const controller = new AbortController();
     controllers.set(id, controller);
-    const wait = (ms) => new Promise((resolve) => {
-        const done = () => { clearTimeout(timer); controller.signal.removeEventListener('abort', done); resolve(); };
-        const timer = setTimeout(done, ms);
-        controller.signal.addEventListener('abort', done, { once: true });
-    });
     try {
-        if (page.next_attempt_at) await wait(Math.max(0, Date.parse(page.next_attempt_at) - Date.now()));
-        while (!controller.signal.aborted && !stopped) {
-            page = db.prepare('SELECT * FROM page_imports WHERE id = ?').get(id);
-            if (!page || page.deleted_at || !activeStates.includes(page.status)) return;
-            if (page.attempts >= 3) throw Object.assign(new Error('分题已达到最大尝试次数，请重试'), { status: 400 });
-            db.prepare("UPDATE page_imports SET status = 'running', attempts = attempts + 1, started_at = COALESCE(started_at, ?), next_attempt_at = NULL, error = NULL WHERE id = ?").run(now(), id);
-            try {
-                const result = await requestSegmentation({ bytes: fs.readFileSync(imagePath(page.image_path)), signal: controller.signal,
-                    context: { pageImportId: id, attempt: page.attempts + 1 } });
-                if (stopped || controller.signal.aborted) return;
-                db.prepare("UPDATE page_imports SET status = 'succeeded', regions_json = ?, result_json = ?, finished_at = ?, error = NULL WHERE id = ?")
-                    .run(JSON.stringify(result.regions), JSON.stringify(result.raw), now(), id);
-                return;
-            } catch (error) {
-                if (controller.signal.aborted || stopped) return;
-                const attempts = page.attempts + 1;
-                if (attempts >= 3 || !require('./ai').canRetry(error, attempts)) throw error;
-                const retryAfter = error.headers?.get?.('retry-after');
-                const serverWait = retryAfter ? (Number.isFinite(Number(retryAfter)) ? Number(retryAfter) * 1000 : Date.parse(retryAfter) - Date.now()) : 0;
-                const ms = Math.max(2000 * 2 ** (attempts - 1), Math.min(serverWait || 0, 120000));
-                db.prepare("UPDATE page_imports SET status = 'retrying', error = ?, next_attempt_at = ? WHERE id = ?")
-                    .run(safeAiError(error), new Date(Date.now() + ms).toISOString(), id);
-                await wait(ms);
+        if (page.attempts >= 3) throw Object.assign(new Error('分题已达到最大尝试次数，请重试'), { status: 400 });
+        db.prepare("UPDATE page_imports SET status = 'running', attempts = attempts + 1, started_at = COALESCE(started_at, ?), next_attempt_at = NULL, error = NULL WHERE id = ?").run(now(), id);
+        const result = await requestSegmentation({ bytes: fs.readFileSync(imagePath(page.image_path)), signal: controller.signal,
+            context: { pageImportId: id, attempt: page.attempts + 1 } });
+        if (stopped || controller.signal.aborted) return;
+        db.prepare("UPDATE page_imports SET status = 'succeeded', regions_json = ?, result_json = ?, finished_at = ?, error = NULL WHERE id = ?")
+            .run(JSON.stringify(result.regions), JSON.stringify(result.raw), now(), id);
+    } catch (error) {
+        if (!stopped && !controller.signal.aborted) {
+            const current = db.prepare('SELECT status, attempts, deleted_at FROM page_imports WHERE id = ?').get(id);
+            if (current && !current.deleted_at && activeStates.includes(current.status)) {
+                if (current.attempts < 3 && require('./ai').canRetry(error, current.attempts)) {
+                    db.prepare("UPDATE page_imports SET status = 'retrying', error = ?, next_attempt_at = ? WHERE id = ?")
+                        .run(safeAiError(error), new Date(Date.now() + retryDelay(error, current.attempts)).toISOString(), id);
+                } else db.prepare("UPDATE page_imports SET status = 'failed', error = ?, finished_at = ?, next_attempt_at = NULL WHERE id = ?")
+                    .run(safeAiError(error), now(), id);
             }
         }
-    } catch (error) {
-        if (!stopped && !controller.signal.aborted) db.prepare("UPDATE page_imports SET status = 'failed', error = ?, finished_at = ?, next_attempt_at = NULL WHERE id = ?")
-            .run(safeAiError(error), now(), id);
     } finally { controllers.delete(id); }
 }
 
 function schedulePage(id) {
-    if (stopped || scheduled.has(id)) return;
-    scheduled.add(id);
-    void require('./ai').runtimeForJobs(db.prepare('SELECT user_id FROM page_imports WHERE id = ?').get(id)?.user_id).then(async (runner) => {
-        try { await runner.queue.add(() => runPage(id, runner)); } finally { scheduled.delete(id); }
-    }).catch(() => {
-        scheduled.delete(id);
-        if (!stopped) db.prepare("UPDATE page_imports SET status = 'failed', error = '分题任务无法启动，请重试', finished_at = ? WHERE id = ?").run(now(), id);
-    });
+    if (!stopped) scheduled.schedule(id);
 }
 
 function recoverPageImports() {
     stopped = false;
+    scheduled.resume();
     db.prepare("UPDATE page_imports SET status = 'queued' WHERE status = 'running' AND deleted_at IS NULL").run();
     for (const row of db.prepare("SELECT id FROM page_imports WHERE status IN ('queued','retrying') AND deleted_at IS NULL ORDER BY id").all()) schedulePage(row.id);
     for (const row of db.prepare("SELECT page_import_id, region_id FROM page_import_items WHERE job_id IS NULL AND status = 'preparing'").all()) schedulePreparation(row.page_import_id, row.region_id);
@@ -130,6 +115,7 @@ function recoverPageImports() {
 function stopPageImports() {
     stopped = true;
     for (const controller of controllers.values()) controller.abort();
+    return scheduled.stop();
 }
 
 function saveRegions(page, values) {
@@ -152,21 +138,23 @@ function saveRegions(page, values) {
 }
 
 function schedulePreparation(pageId, regionId) {
-    const key = `${pageId}:${regionId}`;
+    const item = db.prepare('SELECT mistake_id, job_id, status FROM page_import_items WHERE page_import_id = ? AND region_id = ?').get(pageId, regionId);
+    if (!item || item.job_id || item.status !== 'preparing') return;
+    const key = `${pageId}:${regionId}:${item.mistake_id}`;
     if (stopped || preparing.has(key)) return;
     preparing.add(key);
     void require('./ai').runtimeForJobs(db.prepare('SELECT user_id FROM page_imports WHERE id = ?').get(pageId)?.user_id).then(async (runner) => {
-        try { await runner.queue.add(() => prepareRegion(pageId, regionId)); }
+        try { await runner.queue.add(() => prepareRegion(pageId, regionId, item.mistake_id)); }
         finally { preparing.delete(key); }
     }).catch(() => {
         preparing.delete(key);
-        if (!stopped) db.prepare("UPDATE page_import_items SET status = 'failed', error = '图片准备失败，请重试' WHERE page_import_id = ? AND region_id = ? AND job_id IS NULL").run(pageId, regionId);
+        if (!stopped) db.prepare("UPDATE page_import_items SET status = 'failed', error = '图片准备失败，请重试' WHERE page_import_id = ? AND region_id = ? AND mistake_id = ? AND job_id IS NULL").run(pageId, regionId, item.mistake_id);
     });
 }
 
-async function prepareRegion(pageId, regionId) {
+async function prepareRegion(pageId, regionId, mistakeId) {
     const item = db.prepare('SELECT * FROM page_import_items WHERE page_import_id = ? AND region_id = ?').get(pageId, regionId);
-    if (stopped || !item || item.job_id || item.status !== 'preparing') return;
+    if (stopped || !item || item.mistake_id !== mistakeId || item.job_id || item.status !== 'preparing') return;
     const page = db.prepare('SELECT * FROM page_imports WHERE id = ?').get(pageId);
     const mistake = db.prepare('SELECT * FROM mistakes WHERE id = ?').get(item.mistake_id);
     if (!page || !mistake || mistake.deleted_at) {
@@ -177,18 +165,18 @@ async function prepareRegion(pageId, regionId) {
     try {
         const [x, y, width, height] = region.box;
         const left = Math.floor(x * page.width), top = Math.floor(y * page.height);
-        await sharp(imagePath(page.image_path)).extract({ left, top,
+        const crop = await sharp(imagePath(page.image_path)).extract({ left, top,
             width: Math.max(1, Math.min(page.width - left, Math.ceil(width * page.width))),
-            height: Math.max(1, Math.min(page.height - top, Math.ceil(height * page.height))) }).jpeg({ quality: 94 }).toFile(imagePath(item.crop_path));
+            height: Math.max(1, Math.min(page.height - top, Math.ceil(height * page.height))) }).jpeg({ quality: 94 }).toBuffer();
         if (stopped) return;
         db.transaction(() => {
             const latest = db.prepare('SELECT * FROM page_import_items WHERE page_import_id = ? AND region_id = ?').get(pageId, regionId);
             const current = db.prepare('SELECT * FROM mistakes WHERE id = ?').get(item.mistake_id);
-            if (!latest || latest.job_id || !current || current.deleted_at) {
-                fs.rmSync(imagePath(item.crop_path), { force: true });
-                if (latest && !latest.job_id) db.prepare("UPDATE page_import_items SET status = 'cancelled', error = '草稿已删除' WHERE page_import_id = ? AND region_id = ?").run(pageId, regionId);
+            if (!latest || latest.mistake_id !== item.mistake_id || latest.job_id || !current || current.deleted_at) {
+                if (latest?.mistake_id === item.mistake_id && !latest.job_id) db.prepare("UPDATE page_import_items SET status = 'cancelled', error = '草稿已删除' WHERE page_import_id = ? AND region_id = ?").run(pageId, regionId);
                 return;
             }
+            fs.writeFileSync(imagePath(item.crop_path), crop);
             const insertImage = db.prepare(`INSERT INTO mistake_images
                 (mistake_id, user_id, purpose, client_id, original_name, original_path, crop_path, page_import_id, created_at)
                 VALUES (?, ?, 'question', ?, ?, ?, ?, ?, ?)`);
@@ -200,8 +188,8 @@ async function prepareRegion(pageId, regionId) {
             db.prepare("UPDATE page_import_items SET job_id = ?, status = 'queued', error = NULL WHERE page_import_id = ? AND region_id = ?").run(job.id, pageId, regionId);
         })();
     } catch (error) {
-        if (!stopped) db.prepare("UPDATE page_import_items SET status = 'failed', error = ? WHERE page_import_id = ? AND region_id = ? AND job_id IS NULL")
-            .run(error.status ? safeAiError(error) : '题目裁图失败，请重试', pageId, regionId);
+        if (!stopped) db.prepare("UPDATE page_import_items SET status = 'failed', error = ? WHERE page_import_id = ? AND region_id = ? AND mistake_id = ? AND job_id IS NULL")
+            .run(error.status ? safeAiError(error) : '题目裁图失败，请重试', pageId, regionId, item.mistake_id);
     }
 }
 
@@ -304,12 +292,14 @@ function mountPageImportRoutes(router, { success }) {
         if (activeStates.includes(row.status)) {
             db.prepare("UPDATE page_imports SET status = 'cancelled', finished_at = ?, next_attempt_at = NULL WHERE id = ?").run(now(), row.id);
             controllers.get(row.id)?.abort();
+            scheduled.cancel(row.id);
         }
         success(res, serializePage(ownPage(row.id, req.user.id)));
     });
     router.delete('/page-imports/:id', (req, res) => {
         const row = ownPage(req.params.id, req.user.id);
         controllers.get(row.id)?.abort();
+        scheduled.cancel(row.id);
         db.prepare("UPDATE page_imports SET deleted_at = ?, status = CASE WHEN status IN ('queued','running','retrying') THEN 'cancelled' ELSE status END WHERE id = ?").run(now(), row.id);
         if (!db.prepare('SELECT 1 FROM mistake_images WHERE page_import_id = ?').get(row.id)
             && !db.prepare('SELECT 1 FROM page_import_items WHERE page_import_id = ? AND mistake_id IS NOT NULL').get(row.id)) {

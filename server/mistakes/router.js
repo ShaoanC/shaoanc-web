@@ -2,7 +2,7 @@ const crypto = require('node:crypto');
 const express = require('express');
 const { db } = require('./database');
 const { generateTestMistakes } = require('./test-data');
-const { searchMistakes, updateCachedMistake, invalidateUser, invalidateAll } = require('./search');
+const { searchMistakes, updateCachedMistake, invalidateUser, invalidateAll, previewMarkdown } = require('./search');
 const { cleanupExpiredTrash } = require('./trash');
 const { enqueueAutomatic, cancelMistakeJobs, analysisNoticeFor } = require('./ai');
 const { deleteMistakeFiles, questionForMistake } = require('./images');
@@ -36,7 +36,7 @@ function idNumber(value) {
     return id;
 }
 
-function serializeMistake(row) {
+function serializeMistake(row, summary = false) {
     return {
         id: row.id,
         subjectId: row.subject_id,
@@ -45,11 +45,11 @@ function serializeMistake(row) {
         lifecycle: row.lifecycle,
         isTest: Boolean(row.is_test),
         rating: row.rating,
-        question: questionForMistake(row),
-        answer: row.answer,
-        analysis: row.analysis,
-        analysisNotice: analysisNoticeFor(row),
-        note: row.note,
+        question: summary ? previewMarkdown(row.question) : questionForMistake(row),
+        answer: summary ? '' : row.answer,
+        analysis: summary ? '' : row.analysis,
+        ...(summary ? { summary: true } : { analysisNotice: analysisNoticeFor(row) }),
+        note: summary ? '' : row.note,
         latestReviewResult: row.latest_review_result,
         reviewsCount: row.reviews_count,
         createdAt: row.created_at,
@@ -413,27 +413,58 @@ router.get('/mistakes', (req, res) => {
         fail(400, '关键词须为文本');
     }
     const order = deleted ? 'm.deleted_at DESC, m.id DESC' : 'm.updated_at DESC, m.id DESC';
-    const rows = db.prepare(`${mistakeSelect} WHERE ${where.join(' AND ')} ORDER BY ${order}`).all(...parameters);
-    if (req.query.keyword?.trim()) {
-        const matches = searchMistakes(req.user.id, rows, req.query.keyword);
-        return success(res, matches.map(({ row, search }) => ({ ...serializeMistake(row), search })));
+    const paginated = req.query.page !== undefined;
+    const requestedPage = paginated ? Number(req.query.page) : 1;
+    const pageSize = req.query.pageSize === undefined ? 24 : Number(req.query.pageSize);
+    if (!Number.isSafeInteger(requestedPage) || requestedPage < 1 || !Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 100) {
+        fail(400, '分页参数无效');
     }
-    success(res, rows.map(serializeMistake));
+    const summary = req.query.summary === 'true';
+    const condition = where.join(' AND ');
+    if (req.query.keyword?.trim()) {
+        const rows = db.prepare(`${mistakeSelect} WHERE ${condition} ORDER BY ${order}`).all(...parameters);
+        const matches = searchMistakes(req.user.id, rows, req.query.keyword);
+        const page = Math.min(requestedPage, Math.max(1, Math.ceil(matches.length / pageSize)));
+        const visible = paginated ? matches.slice((page - 1) * pageSize, page * pageSize) : matches;
+        const items = visible.map(({ row, search }) => ({ ...serializeMistake(row, summary), search }));
+        return success(res, paginated ? { items, total: matches.length, page, pageSize } : items);
+    }
+    const total = paginated ? db.prepare(`SELECT COUNT(*) AS count FROM mistakes m WHERE ${condition}`).get(...parameters).count : 0;
+    const page = Math.min(requestedPage, Math.max(1, Math.ceil(total / pageSize)));
+    const rows = db.prepare(`${mistakeSelect} WHERE ${condition} ORDER BY ${order}${paginated ? ' LIMIT ? OFFSET ?' : ''}`)
+        .all(...parameters, ...(paginated ? [pageSize, (page - 1) * pageSize] : []));
+    const items = rows.map((row) => serializeMistake(row, summary));
+    success(res, paginated ? { items, total, page, pageSize } : items);
 });
 
 router.post('/mistakes', (req, res) => {
+    const clientId = req.body?.clientId;
+    if (clientId !== undefined && (typeof clientId !== 'string' || !clientId.trim() || clientId.length > 100)) {
+        fail(400, '新建请求编号无效');
+    }
+    if (clientId) {
+        const previous = db.prepare(`${mistakeSelect} JOIN mistake_requests r ON r.mistake_id = m.id WHERE r.user_id = ? AND r.client_id = ?`)
+            .get(req.user.id, clientId);
+        if (previous) {
+            if (previous.deleted_at) fail(409, '这次新建的错题已删除，请重新录入');
+            return success(res, serializeMistake(previous), 201);
+        }
+    }
     const values = validateMistake(req.body || {}, {
         subjectId: null, primaryKnowledgePointId: null, auxiliaryKnowledgePointIds: [],
         lifecycle: 'draft', rating: 0, question: '', answer: '', analysis: '', note: ''
     }, req.user.id);
     const now = new Date().toISOString();
-    const inserted = db.prepare(`
-        INSERT INTO mistakes (user_id, subject_id, primary_knowledge_point_id, auxiliary_knowledge_point_ids,
-            lifecycle, rating, question, answer, analysis, note, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(req.user.id, values.subjectId, values.primaryKnowledgePointId, JSON.stringify(values.auxiliaryKnowledgePointIds),
-        values.lifecycle, values.rating, values.question, values.answer, values.analysis, values.note, now, now);
-    const row = db.prepare(`${mistakeSelect} WHERE m.id = ?`).get(inserted.lastInsertRowid);
+    const row = db.transaction(() => {
+        const inserted = db.prepare(`
+            INSERT INTO mistakes (user_id, subject_id, primary_knowledge_point_id, auxiliary_knowledge_point_ids,
+                lifecycle, rating, question, answer, analysis, note, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(req.user.id, values.subjectId, values.primaryKnowledgePointId, JSON.stringify(values.auxiliaryKnowledgePointIds),
+            values.lifecycle, values.rating, values.question, values.answer, values.analysis, values.note, now, now);
+        if (clientId) db.prepare('INSERT INTO mistake_requests (user_id, client_id, mistake_id) VALUES (?, ?, ?)').run(req.user.id, clientId, inserted.lastInsertRowid);
+        return db.prepare(`${mistakeSelect} WHERE m.id = ?`).get(inserted.lastInsertRowid);
+    })();
     updateCachedMistake(req.user.id, row);
     if (req.body.generateAnalysis === true) enqueueAutomatic(row);
     success(res, serializeMistake(row), 201);
@@ -491,7 +522,18 @@ router.get('/mistakes/:id', (req, res) => {
 
 router.patch('/mistakes/:id', (req, res) => {
     const row = ownMistake(req);
-    const values = validateMistake(req.body || {}, serializeMistake(row), req.user.id);
+    const existing = serializeMistake(row);
+    const expected = req.body?.expectedFields;
+    if (expected !== undefined) {
+        const editable = ['question', 'answer', 'analysis', 'note', 'rating', 'subjectId', 'primaryKnowledgePointId', 'auxiliaryKnowledgePointIds', 'lifecycle'];
+        if (!expected || typeof expected !== 'object' || Array.isArray(expected) || Object.keys(expected).some((key) => !editable.includes(key) || !Object.hasOwn(req.body, key))) {
+            fail(400, '编辑快照格式不正确');
+        }
+        if (Object.entries(expected).some(([key, value]) => JSON.stringify(existing[key]) !== JSON.stringify(value))) {
+            fail(409, '这道题的相同内容已在其他位置修改，本地编辑已保留，请重新加载后合并');
+        }
+    }
+    const values = validateMistake(req.body || {}, existing, req.user.id);
     db.prepare(`
         UPDATE mistakes SET subject_id = ?, primary_knowledge_point_id = ?, auxiliary_knowledge_point_ids = ?,
             lifecycle = ?, rating = ?, question = ?, answer = ?, analysis = ?, note = ?, updated_at = ?
@@ -534,27 +576,29 @@ router.post('/mistakes/:id/reviews', (req, res) => {
 
 router.get('/stats', (req, res) => {
     cleanupExpiredTrash(Date.now(), req.user.id);
-    const rows = db.prepare(`${mistakeSelect} WHERE m.user_id = ? AND m.deleted_at IS NULL`).all(req.user.id);
+    const totals = db.prepare(`SELECT COUNT(*) AS total,
+        COALESCE(SUM(lifecycle = 'archived'), 0) AS archived,
+        COALESCE(SUM(lifecycle = 'draft'), 0) AS drafts,
+        COALESCE(SUM(is_test = 1), 0) AS testCount
+        FROM mistakes WHERE user_id = ? AND deleted_at IS NULL`).get(req.user.id);
     const trashCount = db.prepare('SELECT COUNT(*) AS count FROM mistakes WHERE user_id = ? AND deleted_at IS NOT NULL').get(req.user.id).count;
-    const archived = rows.filter((row) => row.lifecycle === 'archived');
-    const subjects = db.prepare('SELECT id, name FROM subjects ORDER BY sort_order, id').all();
-    const points = db.prepare('SELECT id, name FROM knowledge_points WHERE owner_user_id IS NULL OR owner_user_id = ? ORDER BY subject_id, sort_order, id').all(req.user.id);
-    const byKnowledgePoint = points.map((point) => ({
-        ...point, count: archived.filter((row) => row.primary_knowledge_point_id === point.id).length
-    })).filter((point) => point.count > 0);
-    const unmarkedCount = archived.filter((row) => row.primary_knowledge_point_id === null).length;
-    if (unmarkedCount) {
-        byKnowledgePoint.push({ id: null, name: '未标注', count: unmarkedCount });
-    }
+    const reviewCount = db.prepare(`SELECT COUNT(*) AS count FROM reviews r JOIN mistakes m ON m.id = r.mistake_id
+        WHERE m.user_id = ? AND m.deleted_at IS NULL`).get(req.user.id).count;
+    const bySubject = db.prepare(`SELECT s.id, s.name, COUNT(m.id) AS count FROM subjects s
+        LEFT JOIN mistakes m ON m.subject_id = s.id AND m.user_id = ? AND m.deleted_at IS NULL AND m.lifecycle = 'archived'
+        GROUP BY s.id ORDER BY s.sort_order, s.id`).all(req.user.id);
+    const statuses = db.prepare(`SELECT COALESCE((SELECT result FROM reviews WHERE mistake_id = m.id ORDER BY id DESC LIMIT 1), 'unreviewed') AS id,
+        COUNT(*) AS count FROM mistakes m WHERE m.user_id = ? AND m.deleted_at IS NULL AND m.lifecycle = 'archived' GROUP BY 1`).all(req.user.id);
+    const byKnowledgePoint = db.prepare(`SELECT k.id, COALESCE(k.name, '未标注') AS name, COUNT(*) AS count
+        FROM mistakes m LEFT JOIN knowledge_points k ON k.id = m.primary_knowledge_point_id
+        WHERE m.user_id = ? AND m.deleted_at IS NULL AND m.lifecycle = 'archived'
+        GROUP BY k.id ORDER BY k.id IS NULL, k.subject_id, k.sort_order, k.id`).all(req.user.id);
     success(res, {
-        total: rows.length,
+        ...totals,
         trashCount,
-        archived: archived.length,
-        drafts: rows.length - archived.length,
-        testCount: rows.filter((row) => row.is_test === 1).length,
-        reviewCount: rows.reduce((total, row) => total + row.reviews_count, 0),
-        bySubject: subjects.map((subject) => ({ ...subject, count: archived.filter((row) => row.subject_id === subject.id).length })),
-        byStatus: Object.entries(STATUS_NAMES).map(([id, name]) => ({ id, name, count: archived.filter((row) => row.latest_review_result === id).length })),
+        reviewCount,
+        bySubject,
+        byStatus: Object.entries(STATUS_NAMES).map(([id, name]) => ({ id, name, count: statuses.find((item) => item.id === id)?.count || 0 })),
         byKnowledgePoint
     });
 });

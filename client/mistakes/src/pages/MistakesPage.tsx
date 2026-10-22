@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Archive, ArrowRight, BookOpen, CheckCircle2, Download, LayoutGrid, List, ListChecks, LoaderCircle, Plus, Search, SlidersHorizontal, Target, Trash2, X } from 'lucide-react';
 import { api, json } from '../api';
 import { knowledgeLabel, useApp } from '../context';
@@ -9,8 +9,9 @@ import { MobileFiltersDrawer } from '../MobileFiltersDrawer';
 import { MistakeRow } from '../MistakeRow';
 import { MistakeExport } from '../MistakeExport';
 import { RATING_OPTIONS, StarRatingPicker } from '../StarRating';
-import type { Mistake, Stats } from '../types';
+import type { Mistake, MistakePage, Stats } from '../types';
 import '../export-selection.css';
+import '../library-pagination.css';
 
 type LibraryTab = 'archived' | 'draft' | 'trash';
 type ActionState = { id: number; mode: 'confirm' | 'swipe' | 'rating' } | null;
@@ -61,6 +62,8 @@ export function MistakesPage() {
   const filterTrigger = useRef<HTMLButtonElement>(null);
   const [keyword, setKeyword] = useState('');
   const [search, setSearch] = useState('');
+  const [total, setTotal] = useState(0);
+  const [pageState, setPageState] = useState({ filters: '', page: 1 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [view, setView] = useState<'list' | 'grid'>('list');
@@ -76,6 +79,19 @@ export function MistakesPage() {
   const ratingRemovalTimers = useRef(new Set<number>());
   ratingFilter.current = rating;
   const trashed = lifecycle === 'trash';
+  const filtersQuery = useMemo(() => {
+    const query = new URLSearchParams({ lifecycle: lifecycle === 'trash' ? 'all' : lifecycle });
+    if (lifecycle === 'trash') query.set('deleted', 'true');
+    if (subjectId) query.set('subjectId', subjectId);
+    if (knowledgePointId) query.set('knowledgePointId', knowledgePointId);
+    if (status) query.set('status', status);
+    if (rating !== '') query.set('rating', rating);
+    if (search.trim()) query.set('keyword', search.trim());
+    return query.toString();
+  }, [lifecycle, subjectId, knowledgePointId, status, rating, search]);
+  const page = pageState.filters === filtersQuery ? pageState.page : 1;
+  const pageCount = Math.max(1, Math.ceil(total / 24));
+  const changePage = (next: number) => { setPageState({ filters: filtersQuery, page: next }); window.scrollTo(0, 0); };
 
   const clearRatingRemovalTimers = useCallback(() => {
     ratingRemovalTimers.current.forEach((timer) => window.clearTimeout(timer));
@@ -109,23 +125,20 @@ export function MistakesPage() {
     if (showLoading) setLoading(true);
     setError('');
     try {
-      const query = new URLSearchParams({ lifecycle: lifecycle === 'trash' ? 'all' : lifecycle });
-      if (lifecycle === 'trash') query.set('deleted', 'true');
-      if (subjectId) query.set('subjectId', subjectId);
-      if (knowledgePointId) query.set('knowledgePointId', knowledgePointId);
-      if (status) query.set('status', status);
-      if (rating !== '') query.set('rating', rating);
-      if (search.trim()) query.set('keyword', search.trim());
-      const [items, summary] = await Promise.all([api<Mistake[]>(`/mistakes?${query}`), api<Stats>('/stats')]);
+      const query = new URLSearchParams(filtersQuery);
+      query.set('page', String(page)); query.set('pageSize', '24'); query.set('summary', 'true');
+      const [result, summary] = await Promise.all([api<MistakePage>(`/mistakes?${query}`), api<Stats>('/stats')]);
       if (version !== requestVersion.current) return;
-      setMistakes(items);
+      setMistakes(result.items);
+      setTotal(result.total);
+      if (result.page !== page) setPageState({ filters: filtersQuery, page: result.page });
       setStats(summary);
     } catch (err) {
       if (version === requestVersion.current) setError((err as Error).message);
     } finally {
       if (version === requestVersion.current) setLoading(false);
     }
-  }, [lifecycle, subjectId, knowledgePointId, status, rating, search, clearRatingRemovalTimers]);
+  }, [filtersQuery, page, clearRatingRemovalTimers]);
   const reload = useRef(load);
   useEffect(() => { reload.current = load; void load(); }, [load]);
   useEffect(() => { setAction(null); }, [lifecycle, subjectId, knowledgePointId, status, rating, keyword, view]);
@@ -134,7 +147,7 @@ export function MistakesPage() {
     setArchiveError('');
     setExportOpen(false);
     if (lifecycle === 'trash') setSelectionMode(false);
-  }, [lifecycle, subjectId, knowledgePointId, status, rating, keyword]);
+  }, [lifecycle, subjectId, knowledgePointId, status, rating, keyword, page]);
 
   useEffect(() => {
     if (!action) return;
@@ -187,11 +200,13 @@ export function MistakesPage() {
           ratingRemovalTimers.current.delete(timer);
           if (ratingFilter.current !== '' && saved.rating !== Number(ratingFilter.current)) {
             setMistakes((items) => items.filter((item) => item.id !== saved.id || item.rating !== saved.rating));
+            void reload.current(false);
           }
         }, duration);
         ratingRemovalTimers.current.add(timer);
       }
       restoreRatingFocus(mistake.id);
+      if (shouldRemove && !mobile) void reload.current(false);
       notify(value ? `已标记为 ${value} 星。` : '星级标记已清除。');
     } catch (err) { setRatingError((err as Error).message); }
     finally { setBusy(null); }
@@ -289,9 +304,9 @@ export function MistakesPage() {
         <label className="search-input"><Search size={18} /><input aria-label="搜索错题" placeholder={mobile ? '搜索错题' : '搜索错题内容、学科或知识点'} value={keyword} onChange={(event) => setKeyword(event.target.value)} />{keyword && <button className="icon-button" aria-label="清除搜索" onClick={() => setKeyword('')}><X size={15} /></button>}</label>
         {mobile ? <button ref={filterTrigger} type="button" className="library-filter-trigger" data-active={filterCount > 0} aria-haspopup="dialog" aria-expanded={filterOpen} aria-label={`筛选错题${filterCount ? `，已选 ${filterCount} 项条件` : ''}`} onClick={openFilters}><SlidersHorizontal size={17} /><span>筛选</span>{filterCount > 0 && <span className="library-filter-count">{filterCount}</span>}</button> : <LibraryFilterFields filters={appliedFilters} onChange={updateFilters} />}
       </div>
-      <div className="results-toolbar"><span><SlidersHorizontal size={14} /> {searching ? '搜索结果' : hasFilters ? '筛选结果' : trashed ? '暂存的错题' : lifecycle === 'draft' ? '继续完善你的草稿' : '你的学习积累'}<strong>{loading ? '…' : mistakes.length}</strong> 道{hasFilters && <button className="reset-filter" onClick={clearFilters}>清除筛选</button>}</span><div className="library-toolbar-actions">{!trashed && !selectionMode && <button className="library-select-trigger" disabled={exportDisabled} onClick={startSelection}><ListChecks size={16} />选择题目</button>}<div className="view-switch" aria-label="展示方式"><button className={view === 'list' ? 'active' : ''} onClick={() => setView('list')} aria-label="列表视图" aria-pressed={view === 'list'}><List size={17} /></button><button className={view === 'grid' ? 'active' : ''} onClick={() => setView('grid')} aria-label="卡片视图" aria-pressed={view === 'grid'}><LayoutGrid size={16} /></button></div></div></div>
+      <div className="results-toolbar"><span><SlidersHorizontal size={14} /> {searching ? '搜索结果' : hasFilters ? '筛选结果' : trashed ? '暂存的错题' : lifecycle === 'draft' ? '继续完善你的草稿' : '你的学习积累'}<strong>{loading ? '…' : total}</strong> 道{hasFilters && <button className="reset-filter" onClick={clearFilters}>清除筛选</button>}</span><div className="library-toolbar-actions">{!trashed && !selectionMode && <button className="library-select-trigger" disabled={exportDisabled} onClick={startSelection}><ListChecks size={16} />选择题目</button>}<div className="view-switch" aria-label="展示方式"><button className={view === 'list' ? 'active' : ''} onClick={() => setView('list')} aria-label="列表视图" aria-pressed={view === 'list'}><List size={17} /></button><button className={view === 'grid' ? 'active' : ''} onClick={() => setView('grid')} aria-label="卡片视图" aria-pressed={view === 'grid'}><LayoutGrid size={16} /></button></div></div></div>
       {!trashed && selectionMode && <div className="library-selection-toolbar" aria-label="批量选择题目">
-        <label className="library-select-all"><Checkbox checked={allSelected} indeterminate={selectedIds.length > 0 && !allSelected} disabled={exportDisabled} onChange={() => setSelectedIds(allSelected ? [] : mistakes.map((mistake) => mistake.id))} /><span>全选当前结果</span></label>
+        <label className="library-select-all"><Checkbox checked={allSelected} indeterminate={selectedIds.length > 0 && !allSelected} disabled={exportDisabled} onChange={() => setSelectedIds(allSelected ? [] : mistakes.map((mistake) => mistake.id))} /><span>全选本页</span></label>
         <span className="library-selection-count" role="status">已选 <strong>{selectedIds.length}</strong> 道</span>
         <div className="library-selection-actions"><button disabled={!selectedIds.length || Boolean(busy)} onClick={() => setSelectedIds([])}>清空</button><button disabled={Boolean(busy)} onClick={exitSelection}>退出选择</button></div>
         {lifecycle === 'draft' && <div className="library-archive-dock">
@@ -317,13 +332,14 @@ export function MistakesPage() {
             onOpenChange={(open) => setAction(open ? { id: mistake.id, mode: 'swipe' } : null)} onArmedChange={(armed) => setAction(armed ? { id: mistake.id, mode: 'confirm' } : null)}
             onDelete={() => void moveOrRestore(mistake, 'delete')} onRestore={() => void moveOrRestore(mistake, 'restore')} onPermanentDelete={() => setPermanentTarget(mistake)} />)}
         </div>}</LoadingContent>
+      {total > 24 && !error && <nav className="library-pagination" aria-label="错题分页"><button className="button secondary" disabled={loading || page <= 1} onClick={() => changePage(page - 1)}>上一页</button><span aria-live="polite">第 {page} / {pageCount} 页</span><button className="button secondary" disabled={loading || page >= pageCount} onClick={() => changePage(page + 1)}>下一页</button></nav>}
     </div>
     {mobile && lifecycle === 'draft' && selectionMode && <div className="library-archive-spacer" aria-hidden="true" />}
     {mobile && <MobileFiltersDrawer open={filterOpen} onOpenChange={(open) => open ? openFilters() : setFilterOpen(false)} onApply={applyFilters} onReset={() => setDraftFilters(EMPTY_FILTERS)} triggerRef={filterTrigger}>
       {(portalContainer) => <LibraryFilterFields filters={draftFilters} onChange={setDraftFilters} portalContainer={portalContainer} withLabels />}
     </MobileFiltersDrawer>}
     {!trashed && <div className="study-tip"><span><Target size={19} /></span><p><strong>温故而知新，可以为师矣</strong></p><a href="#/review">开始一次复习<ArrowRight size={15} /></a></div>}
-    {exportOpen && !trashed && <MistakeExport mistakes={mistakes} selectedIds={selectedIds} onClose={() => setExportOpen(false)} />}
+    {exportOpen && !trashed && <MistakeExport mistakes={mistakes} selectedIds={selectedIds} totalCount={total} loadMistakes={() => api<Mistake[]>(`/mistakes?${filtersQuery}`)} onClose={() => setExportOpen(false)} />}
     {!mobile && ratingTarget && <Modal title="设置星级" onClose={() => openRating(ratingTarget, false)}><StarRatingPicker value={ratingPreview} onChange={setRatingPreview} onCommit={(value) => void saveRating(ratingTarget, value)} disabled={busy?.kind === 'rating'} error={ratingError} onClose={() => openRating(ratingTarget, false)} autoFocus /></Modal>}
     {permanentTarget && <Modal title={permanentTarget === 'all' ? '清空回收站？' : '彻底删除这道错题？'} onClose={() => { if (!busy) setPermanentTarget(null); }}>
       <p className="modal-description">{permanentTarget === 'all' ? `将彻底删除回收站中的全部 ${stats?.trashCount ?? 0} 道错题及复习记录，包括当前筛选未显示的题目。` : '这道错题及对应的复习记录将被彻底删除。'}此操作无法恢复。</p>
