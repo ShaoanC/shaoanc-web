@@ -2,6 +2,14 @@ import type { Mistake } from './types';
 
 export type AiJobType = 'question' | 'answer' | 'analysis';
 export type ImagePurpose = 'question' | 'answer';
+export interface UploadedPhoto {
+  key: string;
+  mistakeId: number | null;
+  purpose: ImagePurpose | null;
+  originalName: string;
+  originalUrl: string;
+  createdAt: string;
+}
 export interface MistakeImage {
   id: number;
   mistakeId: number;

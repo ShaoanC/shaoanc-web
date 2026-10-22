@@ -8,9 +8,8 @@ import { MarkdownField, type MarkdownFieldHandle } from '../MarkdownField';
 import { SaveDock } from '../SaveDock';
 import { ScrollArea } from '../ScrollArea';
 import { StarRatingPicker } from '../StarRating';
-import { PhotoInput, type PhotoInputHandle } from '../PhotoInput';
+import { PhotoInput } from '../PhotoInput';
 import { usePhotoUploads } from '../PhotoUploads';
-import { ImageHistory } from '../ImageHistory';
 import { AiReview } from '../AiReview';
 import { isActiveJob, useAiTasks } from '../AiTasks';
 import type { AiApplyOptions, AiInput, AiJob, ImagePurpose } from '../ai-types';
@@ -56,8 +55,6 @@ export function EditorPage({ id, onCreated }: { id?: number; onCreated?: (id: nu
   const answerField = useRef<MarkdownFieldHandle>(null);
   const analysisField = useRef<MarkdownFieldHandle>(null);
   const subjectField = useRef<HTMLSelectElement>(null);
-  const questionPhotos = useRef<PhotoInputHandle>(null);
-  const answerPhotos = useRef<PhotoInputHandle>(null);
   const currentJobs = jobs.filter((job) => job.mistakeId === recordId);
   const actionParams = new URLSearchParams(actionQuery);
   const requestedJob = currentJobs.find((job) => job.id === Number(actionParams.get('aiJob')));
@@ -232,21 +229,20 @@ export function EditorPage({ id, onCreated }: { id?: number; onCreated?: (id: nu
   }
 
   return <div className="editor-workbench">
-    <a className="back-link" href={recordId ? `#/mistakes/${recordId}` : '#/mistakes'}><ArrowLeft size={16} />{recordId ? '返回错题详情' : '返回我的错题'}</a>
+    <nav className="editor-navigation" aria-label="录题导航"><a className="back-link" href={recordId ? `#/mistakes/${recordId}` : '#/mistakes'}><ArrowLeft size={16} />{recordId ? '返回错题详情' : '返回我的错题'}</a>{!recordId && <a className="table-button editor-batch-entry" href="#/page-imports"><Layers size={15} />按页批量录入</a>}</nav>
     <header className="editor-workbench-header"><div><h1>{id ? '编辑错题' : '录入错题'}</h1>{recordId && <span className="editor-record-id">记录 #{recordId}</span>}</div><div className="editor-workbench-state"><DataTypeBadge isTest={isTest} /><span className="editor-mode"><Pencil size={14} />正在编辑</span></div></header>
-    {!recordId && <p className="ai-notice"><a className="button secondary" href="#/page-imports">按页批量录入</a> 上传整页，选中题目后自动建立草稿并识别蓝笔答案。</p>}
     <LoadingContent loading={loading} kind="editor">{loadError ? <ErrorState message={loadError} /> : <form onSubmit={(event) => { event.preventDefault(); void save('archived'); }}>
       {error && <div className="form-error editor-validation" role="alert">{error}</div>}
-      <div className="editor-uploaded"><ImageHistory mistakeId={recordId} onRecrop={(image) => { setTab(image.purpose === 'question' ? 'question' : 'answers'); void (image.purpose === 'question' ? questionPhotos : answerPhotos).current?.reuse(image); }} onRecognize={recognize} />{currentJobs.length > 0 && <button type="button" className="table-button" onClick={openTasks}><Sparkles size={16} />{currentJobs.filter(isActiveJob).length ? `${currentJobs.filter(isActiveJob).length} 项 AI 操作正在进行` : '查看 AI 任务'}</button>}</div>
+      {currentJobs.length > 0 && <div className="editor-uploaded"><button type="button" className="table-button" onClick={openTasks}><Sparkles size={16} />{currentJobs.filter(isActiveJob).length ? `${currentJobs.filter(isActiveJob).length} 项 AI 操作正在进行` : '查看 AI 任务'}</button></div>}
       {config && !aiAvailable && <p className="ai-notice">{user.role === 'admin' ? <a href="#/settings">AI 尚未启用，前往设置配置。图片可以先保存。</a> : 'AI 尚未启用，可先保存图片或手动填写。'}</p>}
       <div className="editor-mobile-tabs"><SlidingTabs tabs={tabs} value={tab} onChange={(value) => setTab(value as EditorTab)} ariaLabel="编辑内容" /></div>
       <div className="editor-layout"><div className="editor-main">
         <section className="editor-block editor-question-block" {...panelProps('question')}><div className="editor-block-heading"><FileText size={18} /><h2>题目</h2><span>必填</span></div>
-          <PhotoInput ref={questionPhotos} purpose="question" recordId={recordId} ensureSaved={ensureSaved} aiAvailable={aiAvailable} />{candidates('question')}
+          <PhotoInput purpose="question" recordId={recordId} ensureSaved={ensureSaved} aiAvailable={aiAvailable} />{candidates('question')}
           <MarkdownField ref={questionField} name="题干" label={<>题干 <em>*</em></>} textareaClassName="question-editor" value={data.question} onChange={(question) => update({ question })} placeholder="输入题目内容，包括题目条件、问题和选项…" />
         </section>
         <section className="editor-block editor-answers-block" {...panelProps('answers')}><div className="editor-block-heading"><FileText size={18} /><h2>答案与分析</h2></div>
-          <PhotoInput ref={answerPhotos} purpose="answer" recordId={recordId} ensureSaved={ensureSaved} aiAvailable={aiAvailable} actions={<button type="button" className="button secondary" disabled={!questionPhotoCount || !aiAvailable || reusingQuestionPhotos || Boolean(questionBatch?.reuseRequested) || (!questionBatch && (Boolean(saving) || Boolean(applying) || currentJobs.some((job) => job.type === 'answer' && isActiveJob(job))))} title={questionPhotoCount ? '按原顺序复用题干图片；上传中会先记录请求，完成后自动识别答案' : '先在题干中添加并提交图片'} onClick={() => void reuseQuestionPhotos()}><Copy size={16} />{reuseQueued ? '已记录，后台处理中…' : questionBatch?.reuseStatus === 'failed' ? '复用待重试' : questionBatch?.reuseRequested ? '已提交答案识别' : reusingQuestionPhotos ? '正在提交…' : `复用题干图片${questionPhotoCount ? `（${questionPhotoCount} 张）` : ''}`}</button>} />{candidates('answer')}
+          <PhotoInput purpose="answer" recordId={recordId} ensureSaved={ensureSaved} aiAvailable={aiAvailable} actions={<button type="button" className="button secondary" disabled={!questionPhotoCount || !aiAvailable || reusingQuestionPhotos || Boolean(questionBatch?.reuseRequested) || (!questionBatch && (Boolean(saving) || Boolean(applying) || currentJobs.some((job) => job.type === 'answer' && isActiveJob(job))))} title={questionPhotoCount ? '按原顺序复用题干图片；上传中会先记录请求，完成后自动识别答案' : '先在题干中添加并提交图片'} onClick={() => void reuseQuestionPhotos()}><Copy size={16} />{reuseQueued ? '已记录，后台处理中…' : questionBatch?.reuseStatus === 'failed' ? '复用待重试' : questionBatch?.reuseRequested ? '已提交答案识别' : reusingQuestionPhotos ? '正在提交…' : `复用题干图片${questionPhotoCount ? `（${questionPhotoCount} 张）` : ''}`}</button>} />{candidates('answer')}
           {reuseQueued && <p className="ai-notice" role="status">复用请求已记录，将在题干图片全部上传后自动识别答案。</p>}
           <MarkdownField ref={answerField} name="正确答案" label={<>正确答案 <span className="optional-label">选填</span></>} rows={3} value={data.answer} onChange={(answer) => update({ answer })} placeholder="直接输入答案，或拍照识别后修改…" />
           <p className="ai-notice">{analysisAvailable ? '手动输入的短答案会在保存时自动生成解析；图片识别的短答案会在填入后生成。' : user.role === 'admin' ? <a href="#/settings">生成解析服务尚未启用，前往设置独立配置。</a> : '生成解析服务尚未启用，题干和答案可以正常保存。'}</p>

@@ -158,6 +158,8 @@ async function run() {
         assert.equal(segmentCalls, 1, 'Lost upload responses do not repeat segmentation');
         await other('GET', `/page-imports/${page.id}`, null, 404);
         await other('GET', `/page-imports/${page.id}/image`, null, 404);
+        assert.ok((await user('GET', '/photos')).some((image) => image.key === `page-${page.id}`), 'Unselected uploaded pages are available to reuse as complete photos');
+        assert.equal((await other('GET', '/photos')).some((image) => image.key === `page-${page.id}`), false, 'Uploaded page choices remain private to their owner');
         const regions = page.regions.map((region) => ({ id: region.id, label: region.label, box: region.box, selected: true }));
         await user('PATCH', `/page-imports/${page.id}`, { regions });
         const before = recognitionCalls;

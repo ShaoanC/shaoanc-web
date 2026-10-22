@@ -1,18 +1,18 @@
-import { useCallback, useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import ReactCrop, { type PercentCrop } from 'react-image-crop';
 import imageCompression from 'browser-image-compression';
 import { ArrowLeft, ArrowRight, Camera, Crop, ImagePlus, RotateCcw, RotateCw, Trash2 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { AiDialog } from './AiDialog';
+import { UploadedPhotoPicker } from './UploadedPhotoPicker';
 import { usePhotoUploads } from './PhotoUploads';
 import { compressJpeg } from './photo-compression';
 import type { PreparedPhoto } from './photo-upload-queue';
-import type { ImagePurpose, MistakeImage } from './ai-types';
+import type { ImagePurpose, UploadedPhoto } from './ai-types';
 import type { Mistake } from './types';
 import 'react-image-crop/dist/ReactCrop.css';
 
 type Entry = { key: string; clientId: string; file: File; url: string; crop: PercentCrop };
-export interface PhotoInputHandle { reuse: (image: MistakeImage) => Promise<void> }
 const fullCrop: PercentCrop = { unit: '%', x: 0, y: 0, width: 100, height: 100 };
 // The compression library's PNG helper quantizes colors; native PNG preserves the canvas pixels.
 const losslessFile = (canvas: HTMLCanvasElement, name: string) => new Promise<File>((resolve, reject) => {
@@ -39,7 +39,7 @@ async function jpeg(file: File) {
   } finally { URL.revokeObjectURL(url); }
 }
 
-export function PhotoInput({ purpose, recordId, ensureSaved, actions, aiAvailable, ref }: { purpose: ImagePurpose; recordId?: number; ensureSaved: () => Promise<Mistake>; actions?: ReactNode; aiAvailable: boolean; ref?: Ref<PhotoInputHandle> }) {
+export function PhotoInput({ purpose, recordId, ensureSaved, actions, aiAvailable }: { purpose: ImagePurpose; recordId?: number; ensureSaved: () => Promise<Mistake>; actions?: ReactNode; aiAvailable: boolean }) {
   const { queue, batches } = usePhotoUploads();
   const uploads = batches.filter((batch) => batch.mistakeId === recordId && batch.purpose === purpose && batch.status !== 'completed');
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -70,13 +70,15 @@ export function PhotoInput({ purpose, recordId, ensureSaved, actions, aiAvailabl
     const added = valid.map((file) => ({ key: crypto.randomUUID(), clientId: crypto.randomUUID(), file, url: objectUrl(file), crop: { ...fullCrop } }));
     setEntries((items) => [...items, ...added]); setSelected(entries.length); setOpen(true);
   }
-  useImperativeHandle(ref, () => ({ async reuse(image: MistakeImage) {
+  async function reuse(image: UploadedPhoto) {
+    setBusy(true);
     try {
       const response = await fetch(image.originalUrl, { credentials: 'same-origin' });
-      if (!response.ok) throw new Error('无法读取历史图片');
-      add([new File([await response.blob()], image.originalName, { type: 'image/jpeg' })]);
-    } catch (err) { toast.error((err as Error).message); }
-  } }));
+      if (!response.ok) throw new Error('无法读取照片，请重新选择。');
+      const blob = await response.blob();
+      add([new File([blob], image.originalName, { type: blob.type || 'image/jpeg', lastModified: Date.now() })]);
+    } finally { setBusy(false); }
+  }
   function changeCrop(crop: PercentCrop) { setEntries((items) => items.map((entry, index) => index === selected ? { ...entry, crop, clientId: crypto.randomUUID() } : entry)); }
   async function rotate(direction: -1 | 1) {
     if (!current || busy) return;
@@ -145,7 +147,7 @@ export function PhotoInput({ purpose, recordId, ensureSaved, actions, aiAvailabl
     <p>{purpose === 'question' ? '选中错题部分，多张图片按顺序一起识别。' : '题目和答案在同一张图里时，可直接复用题干图片识别答案。'}</p>
     <input ref={camera} type="file" accept="image/jpeg,image/png,image/webp" capture="environment" hidden onChange={fileInput} disabled={busy} />
     <input ref={album} type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onChange={fileInput} disabled={busy} />
-    <div className="photo-actions"><button type="button" className="button secondary" disabled={busy} onClick={() => camera.current?.click()}><Camera size={16} />拍照{purpose === 'answer' ? '识别答案' : ''}</button><button type="button" className="button secondary" disabled={busy} onClick={() => album.current?.click()}><ImagePlus size={16} />选择图片</button>{actions}{entries.length > 0 && <button type="button" className="table-button" onClick={() => setOpen(true)}><Crop size={15} />{entries.length} 张待选图片</button>}</div>
+    <div className="photo-actions"><button type="button" className="button secondary" disabled={busy} onClick={() => camera.current?.click()}><Camera size={16} />拍照{purpose === 'answer' ? '识别答案' : ''}</button><button type="button" className="button secondary" disabled={busy} onClick={() => album.current?.click()}><ImagePlus size={16} />选择图片</button><UploadedPhotoPicker disabled={busy} onSelect={reuse} />{actions}{entries.length > 0 && <button type="button" className="table-button" onClick={() => setOpen(true)}><Crop size={15} />{entries.length} 张待选图片</button>}</div>
     {uploads.map((batch) => <div className="photo-upload-status" role="status" key={batch.id}><span>{batch.message}</span>{batch.status === 'failed' && <button type="button" className="table-button" onClick={() => queue.retry(batch.id)}>重试</button>}</div>)}
     <AiDialog open={open} onClose={() => { if (!busy) setOpen(false); }} title={`裁剪${label}图片`} wide>
       <div className="photo-thumbnails">{entries.map((entry, index) => <div className={`photo-thumbnail${selected === index ? ' active' : ''}`} key={entry.key}>

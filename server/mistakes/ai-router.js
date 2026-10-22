@@ -17,6 +17,17 @@ module.exports = function mountAiRoutes(router, { success, ownMistake, serialize
             res.status(400).json({ success: false, message: safeAiError(error) });
         }
     });
+    router.get('/photos', (req, res) => {
+        cleanupExpiredTrash(Date.now(), req.user.id);
+        res.set('Cache-Control', 'no-store');
+        const images = db.prepare(`SELECT i.* FROM mistake_images i JOIN mistakes m ON m.id = i.mistake_id
+            WHERE i.user_id = ? AND m.deleted_at IS NULL AND i.source_image_id IS NULL AND i.page_import_id IS NULL`).all(req.user.id)
+            .map((image) => ({ key: `image-${image.id}`, ...serializeImage(image) }));
+        const pages = db.prepare('SELECT * FROM page_imports WHERE user_id = ? AND deleted_at IS NULL').all(req.user.id)
+            .map((page) => ({ key: `page-${page.id}`, mistakeId: null, purpose: null, originalName: page.original_name,
+                originalUrl: `/api/mistakes/page-imports/${page.id}/image`, createdAt: page.created_at }));
+        success(res, [...images, ...pages].sort((left, right) => right.createdAt.localeCompare(left.createdAt) || right.key.localeCompare(left.key)));
+    });
     router.get('/mistakes/:id/images', (req, res) => {
         const row = ownMistake(req, true);
         success(res, db.prepare('SELECT * FROM mistake_images WHERE mistake_id = ? ORDER BY id').all(row.id).map(serializeImage));
