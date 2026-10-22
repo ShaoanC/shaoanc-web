@@ -5,6 +5,7 @@ import { api, json } from './api';
 import { useApp } from './context';
 import { AiDialog } from './AiDialog';
 import { PageLoadBoundary } from './PageLoadBoundary';
+import { LoadingContent } from './motion';
 import { toastDestination } from './toast-navigation';
 import type { AiApplyOptions, AiApplyResult, AiConfig, AiJob, AiJobRequest } from './ai-types';
 
@@ -184,7 +185,7 @@ export function AiTasksProvider({ children }: { children: ReactNode }) {
   return <Context.Provider value={{ jobs, config, error, loaded, refreshing, updatedAt, busyIds, refresh, createJob, applyJob, actJobs, openTasks: () => setOpen(true), closeTasks: () => setOpen(false) }}>
     {children}
     <AiDialog open={open} onClose={() => setOpen(false)} title="AI 任务" description="离开页面后任务会继续处理，结果保留在这里。" wide>
-      {open && <PageLoadBoundary><Suspense fallback={<p role="status">正在加载 AI 任务…</p>}><AiTaskManager compact /></Suspense></PageLoadBoundary>}
+      {open && <PageLoadBoundary><Suspense fallback={<LoadingContent loading kind="rows">{null}</LoadingContent>}><AiTaskManager compact /></Suspense></PageLoadBoundary>}
     </AiDialog>
   </Context.Provider>;
 }
