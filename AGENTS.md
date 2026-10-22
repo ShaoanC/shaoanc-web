@@ -29,6 +29,10 @@ Use the Express static server for local browser checks. Production can serve `pu
 
 Match existing files: four-space indentation, single quotes, semicolons, and `const` for server JavaScript; two-space indentation for HTML. Use CommonJS `require`, descriptive camelCase identifiers, and uppercase environment constants such as `PORT`. Keep page directories lowercase, retain `index.html` entry points, and preserve `lang="zh-CN"` for Chinese pages.
 
+## Mobile-First Development
+
+Prioritize the mobile experience when building or changing user-facing pages. Start with narrow-screen layouts and interactions, then adapt them for larger screens. Keep text readable, controls comfortable to tap, and primary actions easy to reach; prevent horizontal overflow and ensure dialogs, forms, tables, and navigation work on small screens. When checking a page change, inspect at a mobile viewport as well as desktop when practical.
+
 ## Testing Guidelines
 
 No external test framework or coverage threshold is configured. For server changes, check syntax and run the core smoke script. For page changes, run `npm run build` and inspect rendering and navigation in a browser. Keep verification focused on changed behavior. New smoke scripts use the `scripts/*-smoke.cjs` naming convention and Node's built-in assertions; document their commands here.
