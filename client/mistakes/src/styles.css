@@ -2391,3 +2391,7 @@ input:focus, textarea:focus, select:focus { outline: 2px solid rgba(23,100,72,.1
 @media (prefers-reduced-motion: reduce) {
   .save-dock .save-dock-option, .save-dock-trigger > .save-dock-save-icon, .save-dock-trigger > .save-dock-close-icon { transition-duration: 40ms; transition-delay: 0ms; transform: none; }
 }
+
+.admin-table.admin-users-table { min-width: 980px; }
+.admin-users-table th, .admin-users-table td { white-space: nowrap; }
+.admin-users-table .table-user strong { overflow-wrap: normal; }

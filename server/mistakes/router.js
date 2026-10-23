@@ -639,7 +639,7 @@ router.post('/admin/invites', (req, res) => {
 
 router.get('/admin/users', (req, res) => {
     const users = db.prepare('SELECT * FROM users ORDER BY id DESC').all();
-    success(res, users.map((user) => ({ ...publicUser(user), createdAt: user.created_at })));
+    success(res, users.map((user) => ({ ...publicUser(user), createdAt: user.created_at, aiCallCount: user.ai_call_count, lastSeenAt: user.last_seen_at })));
 });
 
 router.patch('/admin/users/:id', (req, res) => {

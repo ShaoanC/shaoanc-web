@@ -270,7 +270,7 @@ async function requestResult(job, signal) {
         if (!image.id) throw Object.assign(new Error('Missing image'), { status: 400 });
         return { id: image.id, bytes: fs.readFileSync(imagePath(image[`${image.variant}_path`])) };
     });
-    const context = { jobId: job.id, type: job.type, mode: job.mode, attempt: job.attempts + 1, imageCount: images.length };
+    const context = { userId: job.user_id, jobId: job.id, type: job.type, mode: job.mode, attempt: job.attempts + 1, imageCount: images.length };
     if (job.type === 'analysis') return normalizeResult(job, await requestAnalysis({ input, images, signal, context }));
     let target;
     if (job.mode === 'page-entry') {

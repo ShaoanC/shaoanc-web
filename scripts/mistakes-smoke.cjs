@@ -78,6 +78,11 @@ async function main() {
     assert.equal(login.user.role, 'admin');
     await secondAdmin('POST', '/auth/login', { username: 'smoke_second_admin', password: initialPassword });
 
+    const accounts = await admin('GET', '/admin/users');
+    const adminAccount = accounts.find((account) => account.id === login.user.id);
+    assert.equal(adminAccount.aiCallCount, 0);
+    assert.ok(Date.now() - Date.parse(adminAccount.lastSeenAt) < 5000, 'Authenticated visits update last online');
+
     const inviteAlice = await admin('POST', '/admin/invites', { maxUses: 1 }, 201);
     const inviteBob = await admin('POST', '/admin/invites', { maxUses: 1 }, 201);
     const registrationAlice = await alice('POST', '/auth/register', {

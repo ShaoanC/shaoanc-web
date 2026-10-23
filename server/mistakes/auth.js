@@ -64,6 +64,7 @@ function createSession(userId, res) {
     db.prepare('INSERT INTO sessions (token_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)').run(
         tokenHash(token), userId, new Date(now.getTime() + SESSION_SECONDS * 1000).toISOString(), now.toISOString()
     );
+    db.prepare('UPDATE users SET last_seen_at = ? WHERE id = ?').run(now.toISOString(), userId);
     res.cookie(COOKIE_NAME, token, { ...cookieOptions, maxAge: SESSION_SECONDS * 1000 });
 }
 
@@ -86,6 +87,10 @@ function loadSession(req, res, next) {
         `).get(hashedToken);
         if (session && session.active && session.expires_at > new Date().toISOString()) {
             req.user = session;
+            if (!isReadOnly()) {
+                const seenAt = new Date().toISOString();
+                db.prepare('UPDATE users SET last_seen_at = ? WHERE id = ?').run(seenAt, session.id);
+            }
         } else {
             if (!isReadOnly()) db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(hashedToken);
             res.clearCookie(COOKIE_NAME, cookieOptions);

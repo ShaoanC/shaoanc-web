@@ -76,6 +76,11 @@ db.exec(`
 `);
 
 // Upgrade existing accounts without changing their data.
+for (const [name, definition] of [['ai_call_count', 'INTEGER NOT NULL DEFAULT 0'], ['last_seen_at', 'TEXT']]) {
+    if (!db.prepare('PRAGMA table_info(users)').all().some((column) => column.name === name)) {
+        db.exec(`ALTER TABLE users ADD COLUMN ${name} ${definition}`);
+    }
+}
 if (!db.prepare('PRAGMA table_info(users)').all().some((column) => column.name === 'avatar')) {
     db.exec('ALTER TABLE users ADD COLUMN avatar TEXT');
 }

@@ -1,4 +1,9 @@
 const { requireAiConfig } = require('./ai-config');
+const { db } = require('./database');
+
+function countAiCall(context) {
+    if (context?.userId) db.prepare('UPDATE users SET ai_call_count = ai_call_count + 1 WHERE id = ?').run(context.userId);
+}
 
 function aiErrorCategory(error) {
     if (error.code === 'AI_REFUSAL') return 'refusal';
@@ -38,6 +43,7 @@ async function requestCompletion({ messages, responseFormat, signal, context, in
         let category = null;
         try {
             const timeout = AbortSignal.timeout(90000);
+            countAiCall(context);
             const httpResponse = await fetch(endpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'x-goog-api-key': config.apiKey },
@@ -87,6 +93,7 @@ async function requestAnalysis({ input = {}, images = [], signal, context, onMet
     let category = null;
     try {
         const timeout = AbortSignal.timeout(90000);
+        countAiCall(context);
         const httpResponse = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },

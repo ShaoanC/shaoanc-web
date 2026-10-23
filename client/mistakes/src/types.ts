@@ -8,6 +8,8 @@ export interface User {
   role: 'admin' | 'user';
   active: boolean;
   avatar: string | null;
+  aiCallCount?: number;
+  lastSeenAt?: string | null;
 }
 
 export interface Subject {

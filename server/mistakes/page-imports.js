@@ -84,7 +84,7 @@ async function runPage(id, runner) {
         if (page.attempts >= 3) throw Object.assign(new Error('分题已达到最大尝试次数，请重试'), { status: 400 });
         db.prepare("UPDATE page_imports SET status = 'running', attempts = attempts + 1, started_at = COALESCE(started_at, ?), next_attempt_at = NULL, error = NULL WHERE id = ?").run(now(), id);
         const result = await requestSegmentation({ bytes: fs.readFileSync(imagePath(page.image_path)), signal: controller.signal,
-            context: { pageImportId: id, attempt: page.attempts + 1 } });
+            context: { userId: page.user_id, pageImportId: id, attempt: page.attempts + 1 } });
         if (stopped || controller.signal.aborted) return;
         db.prepare("UPDATE page_imports SET status = 'succeeded', regions_json = ?, result_json = ?, finished_at = ?, error = NULL WHERE id = ?")
             .run(JSON.stringify(result.regions), JSON.stringify(result.raw), now(), id);

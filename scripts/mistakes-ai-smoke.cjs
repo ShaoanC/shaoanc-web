@@ -220,6 +220,9 @@ async function runAiSmoke() {
         visionReply = 'READ-5827'; includeUsage = true;
         failureStatus = 400; failures = 1;
         assert.match((await admin('POST', '/admin/ai/test', {}, 400)).message, /不支持此请求/);
+        const accountUsage = await admin('GET', '/admin/users');
+        assert.equal(accountUsage.find((account) => account.id === users.admin).aiCallCount, 5, 'Count successful and failed AI test requests');
+        assert.equal(accountUsage.find((account) => account.id === users.alice).aiCallCount, 0, 'Usage belongs to the caller');
         failureStatus = 500;
         const mistake = await alice('POST', '/mistakes', {}, 201);
         const input = (item) => ({ question: item.question, answer: item.answer, analysis: item.analysis, subjectId: item.subjectId, primaryKnowledgePointId: item.primaryKnowledgePointId, auxiliaryKnowledgePointIds: item.auxiliaryKnowledgePointIds });

@@ -13,7 +13,7 @@ module.exports = function mountAiRoutes(router, { success, ownMistake, serialize
     router.patch('/admin/ai/config', requireAdmin, (req, res) => { res.set('Cache-Control', 'no-store'); success(res, saveConfig(req.body || {}, req.query.profile || 'general')); });
     router.post('/admin/ai/test', requireAdmin, async (req, res) => {
         try {
-            success(res, await testVision(req.query.profile || 'general'));
+            success(res, await testVision(req.query.profile || 'general', req.user.id));
         } catch (error) {
             res.status(400).json({ success: false, message: safeAiError(error) });
         }

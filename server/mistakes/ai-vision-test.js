@@ -3,14 +3,14 @@ const path = require('node:path');
 const { requestCompletion, requestAnalysis } = require('./ai-request');
 const { parseRecognitionJson } = require('./ai-output');
 
-async function testVision(profile = 'general') {
+async function testVision(profile = 'general', userId) {
     if (profile === 'analysis') {
-        await requestAnalysis({ input: { question: '计算 1 + 1。', answer: '2' }, context: { type: 'analysis_test', imageCount: 0 } });
+        await requestAnalysis({ input: { question: '计算 1 + 1。', answer: '2' }, context: { userId, type: 'analysis_test', imageCount: 0 } });
         return { message: '生成解析 API 连接测试通过。' };
     }
     const bytes = fs.readFileSync(path.join(__dirname, 'fixtures', 'vision-test.jpg'));
     const segmentation = profile === 'segmentation';
-    return requestCompletion({ profile, context: { type: segmentation ? 'segmentation_test' : 'vision_test', imageCount: 1 }, messages: { contents: [{ role: 'user', parts: [
+    return requestCompletion({ profile, context: { userId, type: segmentation ? 'segmentation_test' : 'vision_test', imageCount: 1 }, messages: { contents: [{ role: 'user', parts: [
         { text: segmentation ? '请对图片中的文字区域执行 Segmentation。仅返回 JSON 对象 {"regions":[{"label":"文字","box_2d":[ymin,xmin,ymax,xmax],"mask":"Base64 PNG 分割蒙版"}]}。box_2d 为 0–1000 归一化整数坐标，至少返回一个有效文字区域。' : '请仅输出图片中的一行英文和数字字符串，保留短横线，不加引号、解释或代码围栏。' },
         { inlineData: { mimeType: 'image/jpeg', data: bytes.toString('base64') } }
     ] }] }, interpret: (raw) => {
