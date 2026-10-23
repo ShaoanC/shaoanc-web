@@ -63,6 +63,10 @@ export function AiReview({ job, input, busy, onApply, onDismiss }: { job: AiJob;
   const changedDuringReview = reviewFields.some((field) => JSON.stringify(input[field]) !== JSON.stringify(draft.expectedInput[field]));
   function update(patch: Partial<ReviewDraft>) { draftRef.current = { ...draftRef.current, ...patch }; setDraft(draftRef.current); }
   useEffect(() => {
+    // Compare against the editor when review opens, not when the result card first mounted.
+    if (open) update({ expectedInput: structuredClone(input) });
+  }, [open]);
+  useEffect(() => {
     function openRequestedReview() {
       const params = new URLSearchParams(window.location.hash.split('?')[1] || '');
       const requestedId = params.get('aiJob');

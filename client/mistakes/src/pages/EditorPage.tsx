@@ -316,6 +316,7 @@ export function EditorPage({ id, onCreated }: { id?: number; onCreated?: (id: nu
   const tabs = (['question', 'answers', 'note', 'classification'] as const).map((name, index) => ({ id: name, label: ['题干', '解答', '笔记', '归类'][index], panelId: `${panelPrefix}-${name}` }));
   const panelProps = (name: EditorTab) => ({ id: `${panelPrefix}-${name}`, hidden: mobile && tab !== name, role: mobile ? 'tabpanel' : undefined, 'aria-labelledby': mobile ? `${panelPrefix}-${name}-tab` : undefined });
   function candidates(type: AiJob['type']) {
+    if (loading || loadError) return null;
     return currentJobs.filter((job) => job.type === type && job.status === 'succeeded' && job.result && (job.applyStatus !== 'applied' || localConflicts.includes(job.id)) && !dismissed.includes(job.id)).map((job) => <AiReview key={job.id} job={job} input={inputOf(data)} busy={Boolean(applying) || Boolean(saving)} onApply={(options) => fill(job, Boolean(options.force), options.mode || 'replace', options)} onDismiss={() => setDismissed((items) => [...items, job.id])} />);
   }
 

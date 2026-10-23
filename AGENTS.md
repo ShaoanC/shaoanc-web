@@ -19,6 +19,7 @@
 - `npm run test:ai`: run `scripts/mistakes-ai-smoke.cjs` with a local mock AI and isolated database/uploads to check photo entry, knowledge ownership, automatic analysis, retries, recovery, conflicts and cleanup.
 - `npm run test:pages`: check page segmentation, per-question blue-answer entry, independent API profiles, figure review, background preparation, retries/recovery and shared-source cleanup using local mock Gemini/OpenAI services and an isolated database.
 - `npm run test:client`: check editor saving/draft recovery/conflicts, page upload cancellation/retry batches and review response ordering with local mocks.
+- `node scripts/mistakes-ai-review-smoke.cjs`: after building, check first-click AI review filling and concurrent-edit conflicts for question/answer/analysis on desktop and mobile using real Chromium and an isolated database.
 - `npm run test:export`: check complete filtered/selected/single PDF exports, Chinese text, appendix pagination and image ownership with real Chromium and an isolated database/uploads. Install the matching Chromium first; see `docs/mistakes-export.md`.
 - `npm run test:export-preview`: check desktop/mobile PDF preview, retry, export settings and homepage layout after closing using real Chromium and an isolated database.
 - `npm run test:backup`: check WAL snapshots, complete data/image/config restoration, graceful AI pause, read-only protection, administrator access, scheduling/retention and restore rollback using isolated local data and a mock AI.

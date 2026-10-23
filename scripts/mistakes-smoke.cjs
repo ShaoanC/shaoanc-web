@@ -379,7 +379,13 @@ async function main() {
                 '答案'.repeat(500), '解析'.repeat(500), '笔记'.repeat(500), new Date().toISOString(), new Date().toISOString());
         }
     })();
+    // Editing an older record must not move it ahead of newly created records.
+    app.db.prepare('UPDATE mistakes SET updated_at = ? WHERE id = ?').run(new Date(Date.now() + 60_000).toISOString(), reliable.id);
     const allResults = await alice('GET', '/mistakes?lifecycle=all');
+    assert.equal(allResults.at(-1).id, reliable.id, 'Recently updated older records stay in creation order');
+    assert.deepEqual(allResults.map((item) => item.id), [...allResults]
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt) || right.id - left.id)
+        .map((item) => item.id), 'Mistakes are ordered newest creation first, including ties');
     const firstPage = await alice('GET', '/mistakes?lifecycle=all&page=1&pageSize=24&summary=true');
     const lastPage = await alice('GET', '/mistakes?lifecycle=all&page=999&pageSize=24&summary=true');
     assert.deepEqual(firstPage.items.map((item) => item.id), allResults.slice(0, 24).map((item) => item.id));

@@ -415,7 +415,7 @@ function listMistakes(query, userId) {
     if (query.keyword !== undefined && typeof query.keyword !== 'string') {
         fail(400, '关键词须为文本');
     }
-    const order = deleted ? 'm.deleted_at DESC, m.id DESC' : 'm.updated_at DESC, m.id DESC';
+    const order = deleted ? 'm.deleted_at DESC, m.id DESC' : 'm.created_at DESC, m.id DESC';
     const paginated = query.page !== undefined;
     const requestedPage = paginated ? Number(query.page) : 1;
     const pageSize = query.pageSize === undefined ? 24 : Number(query.pageSize);
