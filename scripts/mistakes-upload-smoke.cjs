@@ -91,11 +91,13 @@ async function run() {
             return response({ id: jobs.length });
         });
 
-        const batchId = queue.enqueue({ mistakeId: 1, purpose: 'question', input, files: [photo('first'), photo('second')], recognize: true });
+        const questionRequest = { mistakeId: 1, purpose: 'question', input, files: [photo('first'), photo('second')], recognize: true, recognitionPrompt: '  只包含第 2 问  ' };
+        const batchId = queue.enqueue(questionRequest);
+        questionRequest.recognitionPrompt = '后续编辑的题目提示词';
         assert.equal(queue.getSnapshot(), queue.getSnapshot(), 'Snapshot stays stable between updates');
         assert.equal(runtime.api.getActiveApiRequestCount(), 0, 'Uploads do not block foreground requests');
-        assert.equal(queue.reuse(batchId, input), true);
-        assert.equal(queue.reuse(batchId, input), false, 'Repeated reuse is deduplicated');
+        assert.equal(queue.reuse(batchId, input, '  只识别第 2 问的蓝色答案  '), true);
+        assert.equal(queue.reuse(batchId, input, '不应替换原提示词'), false, 'Repeated reuse is deduplicated');
         assert.equal(queue.getSnapshot()[0].reuseStatus, 'waiting', 'Reuse is recorded before uploads finish');
         assert.deepEqual(jobs, []);
         releaseFirst();
@@ -103,6 +105,7 @@ async function run() {
         assert.deepEqual(uploads, ['first', 'first', 'second'], 'Retry preserves the image client ID and upload order');
         assert.deepEqual([...queue.getSnapshot()[0].imageIds], [101, 102]);
         assert.deepEqual(jobs.map((job) => job.type), ['question', 'answer']);
+        assert.deepEqual(jobs.map((job) => job.recognitionPrompt), ['只包含第 2 问', '只识别第 2 问的蓝色答案'], 'Question and answer reuse keep independent, trimmed prompt snapshots');
         assert.ok(jobs.every((job) => job.clientId && job.imageIds.join(',') === '101,102'));
         assert.notEqual(jobs[0].clientId, jobs[1].clientId);
         assert.equal(queue.getSnapshot()[0].reuseStatus, 'submitted');
@@ -126,7 +129,9 @@ async function run() {
             resumedJobs.push(JSON.parse(options.body));
             return response({ id: 3 });
         });
-        const resumeId = queue.enqueue({ mistakeId: 2, purpose: 'question', input, files: [photo('saved'), photo('remaining')], recognize: true });
+        const resumeRequest = { mistakeId: 2, purpose: 'question', input, files: [photo('saved'), photo('remaining')], recognize: true, recognitionPrompt: '  只包含第 3 问  ' };
+        const resumeId = queue.enqueue(resumeRequest);
+        resumeRequest.recognitionPrompt = '重试前修改的提示词';
         assert.equal(queue.getSnapshot()[0].id, resumeId, 'Newest batch is listed first');
         assert.equal(queue.reuse(resumeId, input), true);
         await waitFor(queue, (batches) => batches[0].status === 'failed');
@@ -141,6 +146,7 @@ async function run() {
         await waitFor(queue, (batches) => batches[0].status === 'completed');
         assert.deepEqual(resumedUploads, ['saved', 'remaining', 'remaining', 'remaining', 'remaining', 'remaining'], 'Manual retry only uploads the unfinished image');
         assert.deepEqual(resumedJobs.map((job) => job.type), ['question', 'answer']);
+        assert.deepEqual(resumedJobs.map((job) => job.recognitionPrompt), ['只包含第 3 问', undefined], 'Manual upload retry keeps the captured prompt without inheriting it for answer reuse');
         assert.ok(resumedJobs.every((job) => job.imageIds.join(',') === '201,202'));
         assert.equal(new Set(resumedSignals).size, 5, 'Automatic and manual retries each get a fresh request signal');
         assert.equal(resumedSignals.at(-1).aborted, false, 'Manual retry succeeds without reusing an aborted signal');
@@ -168,11 +174,12 @@ async function run() {
             interruptedJobs.push(JSON.parse(options.body));
             return interruptedJobs.length === 1 ? disconnectedResponse() : response({ id: 501 }, 201);
         });
-        queue.enqueue({ mistakeId: 4, purpose: 'answer', input, files: [photo('recognition-body-disconnected')], recognize: true });
+        queue.enqueue({ mistakeId: 4, purpose: 'answer', input, files: [photo('recognition-body-disconnected')], recognize: true, recognitionPrompt: '  只包含第 4 问的答案  ' });
         await waitFor(queue, (batches) => batches[0].status === 'completed');
         assert.equal(recognitionUploads, 1, 'Retrying an accepted recognition request does not reupload its image');
         assert.equal(interruptedJobs.length, 2);
         assert.deepEqual(interruptedJobs[0], interruptedJobs[1], 'A lost AI response retries the identical submission and client ID');
+        assert.equal(interruptedJobs[0].recognitionPrompt, '只包含第 4 问的答案', 'Automatic recognition retry preserves the trimmed prompt');
         assert.ok(interruptedJobs[0].clientId);
 
         let aborted = false;

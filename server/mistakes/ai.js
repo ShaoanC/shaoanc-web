@@ -103,8 +103,10 @@ function inputFor(row) {
 
 function serializeJob(row) {
     const imageIds = JSON.parse(row.image_ids);
+    const recognitionPrompt = JSON.parse(row.source_json || '{}').recognitionPrompt;
     const result = row.result_json ? normalizeResult(row, JSON.parse(row.result_json)) : null;
     return { id: row.id, mistakeId: row.mistake_id, type: row.type, mode: row.mode || 'single', status: row.status, applyStatus: row.apply_status,
+        ...(recognitionPrompt ? { recognitionPrompt } : {}),
         input: JSON.parse(row.input_json), imageIds, result, mistakeDeleted: Boolean(row.mistake_deleted_at),
         error: row.error, attempts: row.attempts, maxAttempts: row.max_attempts, createdAt: row.created_at,
         startedAt: row.started_at, finishedAt: row.finished_at, nextAttemptAt: row.next_attempt_at };
@@ -179,6 +181,11 @@ function createJob(userId, body) {
         const page = db.prepare('SELECT id FROM page_imports WHERE id = ? AND user_id = ?').get(body.source?.pageImportId, userId);
         if (!page || typeof body.source?.label !== 'string') fail(400, '按页录题来源无效');
         source = { pageImportId: page.id, label: body.source.label, regionId: body.source.regionId };
+    }
+    if (body.type !== 'analysis' && body.recognitionPrompt !== undefined) {
+        const prompt = z.string().trim().max(2000).safeParse(body.recognitionPrompt);
+        if (!prompt.success) fail(400, '识别补充要求须为不超过 2000 字的文字');
+        if (prompt.data) source.recognitionPrompt = prompt.data;
     }
     const clientId = body.clientId === undefined ? null : body.clientId;
     if (body.clientId !== undefined && (typeof clientId !== 'string' || !clientId.trim() || clientId.length > 100)) fail(400, '请提供有效的 AI 提交编号');
@@ -273,7 +280,8 @@ async function requestResult(job, signal) {
         if (images.length !== 2) throw Object.assign(new Error('Missing page image'), { status: 400 });
         context.imageCount = images.length;
     }
-    return requestCompletion({ messages: recognitionMessages({ type: job.type, mode: job.mode, target, input, subjects, directory, images }), responseFormat: recognitionFormat(job.type, job.mode), signal,
+    return requestCompletion({ messages: recognitionMessages({ type: job.type, mode: job.mode, target, input, subjects, directory, images,
+        recognitionPrompt: JSON.parse(job.source_json || '{}').recognitionPrompt }), responseFormat: recognitionFormat(job.type, job.mode), signal,
         context,
         interpret: (raw) => parseResult(job, raw) });
 }

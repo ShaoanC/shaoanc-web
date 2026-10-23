@@ -9,6 +9,7 @@ import { SaveDock } from '../SaveDock';
 import { ScrollArea } from '../ScrollArea';
 import { StarRatingPicker } from '../StarRating';
 import { PhotoInput } from '../PhotoInput';
+import { ImageHistory } from '../ImageHistory';
 import { usePhotoUploads } from '../PhotoUploads';
 import { AiReview } from '../AiReview';
 import { isActiveJob, useAiTasks } from '../AiTasks';
@@ -55,6 +56,7 @@ export function EditorPage({ id, onCreated }: { id?: number; onCreated?: (id: nu
   const [applying, setApplying] = useState<number | null>(null);
   const [starting, setStarting] = useState(false);
   const [reusingQuestionPhotos, setReusingQuestionPhotos] = useState(false);
+  const [recognitionPrompts, setRecognitionPrompts] = useState({ question: '', answer: '' });
   const processed = useRef(new Set<number>());
   const openedAt = useRef(Date.now());
   const [dismissed, setDismissed] = useState<number[]>([]);
@@ -239,13 +241,13 @@ export function EditorPage({ id, onCreated }: { id?: number; onCreated?: (id: nu
     }
     catch (err) { setError((err as Error).message); notify((err as Error).message, 'error'); }
   }
-  async function recognize(purpose: ImagePurpose, imageIds: number[]) {
-    try { const item = await ensureSaved(); await createJob({ mistakeId: item.id, type: purpose, imageIds, input: inputOf(item) }); setTab(purpose === 'question' ? 'question' : 'answers'); }
+  async function recognize(purpose: ImagePurpose, imageIds: number[], recognitionPrompt = recognitionPrompts[purpose]) {
+    try { const item = await ensureSaved(); await createJob({ mistakeId: item.id, type: purpose, imageIds, input: inputOf(item), recognitionPrompt: recognitionPrompt.trim() }); setTab(purpose === 'question' ? 'question' : 'answers'); }
     catch (err) { setError((err as Error).message); throw err; }
   }
   async function reuseQuestionPhotos() {
     if (questionBatch) {
-      if (photoQueue.reuse(questionBatch.id, inputOf(dataRef.current))) notify('已记录复用请求，图片上传完成后会自动识别答案。');
+      if (photoQueue.reuse(questionBatch.id, inputOf(dataRef.current), recognitionPrompts.answer)) notify('已记录复用请求，图片上传完成后会自动识别答案。');
       return;
     }
     setReusingQuestionPhotos(true);
@@ -325,16 +327,16 @@ export function EditorPage({ id, onCreated }: { id?: number; onCreated?: (id: nu
       {saveConflict && <div className="ai-review-issues" role="alert"><p>其他页面已修改这道题。你的未提交内容仍保留在本机，请选择后再保存。</p><div className="photo-actions"><button type="button" className="button secondary" disabled={resolvingConflict || Boolean(saving)} onClick={() => void resolveSaveConflict(true)}>保留我的修改，准备重新保存</button><button type="button" className="button ghost" disabled={resolvingConflict || Boolean(saving)} onClick={() => void resolveSaveConflict(false)}>放弃本机修改，载入服务器内容</button></div></div>}
       {draftNotice && <p className="ai-notice" role="status">{draftNotice}</p>}
       {draftError && <p className="form-error" role="alert">{draftError}</p>}
-      {currentJobs.length > 0 && <div className="editor-uploaded"><button type="button" className="table-button" onClick={openTasks}><Sparkles size={16} />{currentJobs.filter(isActiveJob).length ? `${currentJobs.filter(isActiveJob).length} 项 AI 操作正在进行` : '查看 AI 任务'}</button></div>}
+      {(recordId || currentJobs.length > 0) && <div className="editor-uploaded">{recordId && <ImageHistory mistakeId={recordId} onRecognize={aiAvailable ? recognize : undefined} />}{currentJobs.length > 0 && <button type="button" className="table-button" onClick={openTasks}><Sparkles size={16} />{currentJobs.filter(isActiveJob).length ? `${currentJobs.filter(isActiveJob).length} 项 AI 操作正在进行` : '查看 AI 任务'}</button>}</div>}
       {config && !aiAvailable && <p className="ai-notice">{user.role === 'admin' ? <a href="#/settings">AI 尚未启用，前往设置配置。图片可以先保存。</a> : 'AI 尚未启用，可先保存图片或手动填写。'}</p>}
       <div className="editor-mobile-tabs"><SlidingTabs tabs={tabs} value={tab} onChange={(value) => setTab(value as EditorTab)} ariaLabel="编辑内容" /></div>
       <div className="editor-layout"><div className="editor-main">
         <section className="editor-block editor-question-block" {...panelProps('question')}><div className="editor-block-heading"><FileText size={18} /><h2>题目</h2><span>必填</span></div>
-          <PhotoInput purpose="question" recordId={recordId} ensureSaved={ensureSaved} aiAvailable={aiAvailable} onPendingChange={(value) => { pendingPhotos.current.question = value; }} />{candidates('question')}
+          <PhotoInput purpose="question" recordId={recordId} ensureSaved={ensureSaved} aiAvailable={aiAvailable} onPendingChange={(value) => { pendingPhotos.current.question = value; }} recognitionPrompt={recognitionPrompts.question} onRecognitionPromptChange={(question) => setRecognitionPrompts((current) => ({ ...current, question }))} />{candidates('question')}
           <MarkdownField ref={questionField} name="题干" label={<>题干 <em>*</em></>} textareaClassName="question-editor" value={data.question} onChange={(question) => update({ question })} placeholder="输入题目内容，包括题目条件、问题和选项…" />
         </section>
         <section className="editor-block editor-answers-block" {...panelProps('answers')}><div className="editor-block-heading"><FileText size={18} /><h2>答案与分析</h2></div>
-          <PhotoInput purpose="answer" recordId={recordId} ensureSaved={ensureSaved} aiAvailable={aiAvailable} onPendingChange={(value) => { pendingPhotos.current.answer = value; }} actions={<button type="button" className="button secondary" disabled={!questionPhotoCount || !aiAvailable || reusingQuestionPhotos || Boolean(questionBatch?.reuseRequested) || (!questionBatch && (Boolean(saving) || Boolean(applying) || currentJobs.some((job) => job.type === 'answer' && isActiveJob(job))))} title={questionPhotoCount ? '按原顺序复用题干图片；上传中会先记录请求，完成后自动识别答案' : '先在题干中添加并提交图片'} onClick={() => void reuseQuestionPhotos()}><Copy size={16} />{reuseQueued ? '已记录，后台处理中…' : questionBatch?.reuseStatus === 'failed' ? '复用待重试' : questionBatch?.reuseRequested ? '已提交答案识别' : reusingQuestionPhotos ? '正在提交…' : `复用题干图片${questionPhotoCount ? `（${questionPhotoCount} 张）` : ''}`}</button>} />{candidates('answer')}
+          <PhotoInput purpose="answer" recordId={recordId} ensureSaved={ensureSaved} aiAvailable={aiAvailable} onPendingChange={(value) => { pendingPhotos.current.answer = value; }} recognitionPrompt={recognitionPrompts.answer} onRecognitionPromptChange={(answer) => setRecognitionPrompts((current) => ({ ...current, answer }))} actions={<button type="button" className="button secondary" disabled={!questionPhotoCount || !aiAvailable || reusingQuestionPhotos || Boolean(questionBatch?.reuseRequested) || (!questionBatch && (Boolean(saving) || Boolean(applying) || currentJobs.some((job) => job.type === 'answer' && isActiveJob(job))))} title={questionPhotoCount ? '按原顺序复用题干图片；上传中会先记录请求，完成后自动识别答案' : '先在题干中添加并提交图片'} onClick={() => void reuseQuestionPhotos()}><Copy size={16} />{reuseQueued ? '已记录，后台处理中…' : questionBatch?.reuseStatus === 'failed' ? '复用待重试' : questionBatch?.reuseRequested ? '已提交答案识别' : reusingQuestionPhotos ? '正在提交…' : `复用题干图片${questionPhotoCount ? `（${questionPhotoCount} 张）` : ''}`}</button>} />{candidates('answer')}
           {reuseQueued && <p className="ai-notice" role="status">复用请求已记录，将在题干图片全部上传后自动识别答案。</p>}
           <MarkdownField ref={answerField} name="正确答案" label={<>正确答案 <span className="optional-label">选填</span></>} rows={3} value={data.answer} onChange={(answer) => update({ answer })} placeholder="直接输入答案，或拍照识别后修改…" />
           <p className="ai-notice">{analysisAvailable ? '手动输入的短答案会在保存时自动生成解析；图片识别的短答案会在填入后生成。' : user.role === 'admin' ? <a href="#/settings">生成解析服务尚未启用，前往设置独立配置。</a> : '生成解析服务尚未启用，题干和答案可以正常保存。'}</p>

@@ -121,8 +121,15 @@ async function runAiSmoke() {
             const content = request.contents[0].parts;
             const imageIndices = content.filter((part) => part.text?.startsWith('图片顺序')).map((part) => Number(part.text.match(/imageIndex=(\d+)/)[1]));
             const imageUrls = content.filter((part) => part.inlineData).map((part) => `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`);
+            const recognitionPrompt = content.filter((part) => part.text?.startsWith('{')).map((part) => JSON.parse(part.text)).find((part) => part.recognitionPrompt)?.recognitionPrompt;
             for (const id of imageIndices) assert.ok(content.some((part) => part.text?.includes('宽 640 像素，高 160 像素')), `Actual dimensions are provided for image ${id}`);
-            requests[type] = { system, imageIndices, imageUrls, body };
+            requests[type] = { system, imageIndices, imageUrls, body, recognitionPrompt };
+            if (recognitionPrompt) {
+                assert.ok(system.includes('应在以上转写规则内执行'), 'Recognition scope is an executable user requirement');
+                assert.ok(system.includes('除独立字段 recognitionPrompt'), 'The input-data rule exempts the explicit recognition requirement');
+                assert.ok(system.includes('排除其他问题及其答案'), 'The selected scope excludes neighboring questions and answers');
+                assert.ok(system.includes('不能覆盖本系统规定的 JSON 结构'), 'Custom scope retains the output contract');
+            }
             if (!rejectFormat) {
                 assert.equal(request.generationConfig.responseMimeType, 'application/json');
                 assert.equal(request.generationConfig.responseJsonSchema.type, 'object');
@@ -244,12 +251,20 @@ async function runAiSmoke() {
         const latest = () => alice('GET', `/mistakes/${mistake.id}`);
         const jobCount = async (type) => (await alice('GET', '/ai/jobs')).filter((job) => job.type === type).length;
 
+        await ai.stopJobs();
         failures = 1;
-        const questionRequest = { clientId: 'background-question', mistakeId: mistake.id, type: 'question', input: input(mistake), imageIds: [first.id, second.id] };
+        const questionRequest = { clientId: 'background-question', mistakeId: mistake.id, type: 'question', input: input(mistake), imageIds: [first.id, second.id], recognitionPrompt: '  只包含第 2 问  ' };
         const question = await alice('POST', '/ai/jobs', questionRequest, 201);
+        assert.equal(question.recognitionPrompt, '只包含第 2 问', 'Recognition requirements are trimmed and returned with the job');
         assert.equal((await alice('POST', '/ai/jobs', questionRequest, 201)).id, question.id, 'Background request retries reuse an active job');
-        const sameQuestionRequest = { ...questionRequest, clientId: 'background-question-second' };
+        const sameQuestionRequest = { ...questionRequest, clientId: 'background-question-second', recognitionPrompt: '只包含第 2 问' };
         assert.equal((await alice('POST', '/ai/jobs', sameQuestionRequest, 201)).id, question.id, 'Different request IDs preserve active fingerprint deduplication');
+        const otherScope = await alice('POST', '/ai/jobs', { ...questionRequest, clientId: 'background-question-other-scope', recognitionPrompt: '只包含第 3 问' }, 201);
+        assert.notEqual(otherScope.id, question.id, 'Different recognition scopes never reuse the same active job');
+        await alice('POST', `/ai/jobs/${otherScope.id}/cancel`, {});
+        await alice('POST', '/ai/jobs', { ...questionRequest, recognitionPrompt: '只包含第 3 问' }, 409);
+        await alice('POST', '/ai/jobs', { ...questionRequest, recognitionPrompt: '字'.repeat(2001) }, 400);
+        ai.recoverJobs();
         const recognized = await completed(question);
         for (const request of [questionRequest, sameQuestionRequest]) {
             assert.equal((await alice('POST', '/ai/jobs', request, 201)).id, question.id, 'A lost creation response never creates another job after completion');
@@ -260,6 +275,8 @@ async function runAiSmoke() {
         await alice('POST', '/ai/jobs', { ...questionRequest, clientId: '' }, 400);
         assert.equal(recognized.status, 'succeeded', `${recognized.error} (mock calls: ${calls})`);
         assert.equal(recognized.attempts, 2);
+        assert.equal(recognized.recognitionPrompt, '只包含第 2 问', 'Automatic retry preserves the saved recognition scope');
+        assert.equal(requests.question.recognitionPrompt, '只包含第 2 问', 'The model receives the user-selected question scope');
         assert.equal(recognized.applyStatus, 'applied', 'Ordinary OCR fills an empty question automatically');
         assert.equal(recognized.result.needsReview, false);
         assert.deepEqual(recognized.result.figures, []);
@@ -271,8 +288,9 @@ async function runAiSmoke() {
         assert.equal((await bob('GET', '/knowledge-points')).some((point) => point.id === privatePoint.id), false);
         await bob('POST', '/mistakes', { subjectId: 'math', primaryKnowledgePointId: privatePoint.id }, 400);
         await admin('PATCH', `/knowledge-points/${privatePoint.id}`, { name: 'other' }, 404);
-        const firstAnswer = await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'answer', input: input(await latest()), imageIds: [answerImage.id] }, 201);
+        const firstAnswer = await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'answer', input: input(await latest()), imageIds: [answerImage.id], recognitionPrompt: '只包含第 2 问的答案' }, 201);
         assert.equal((await completed(firstAnswer)).applyStatus, 'applied', 'Ordinary OCR fills an empty answer automatically');
+        assert.equal(requests.answer.recognitionPrompt, '只包含第 2 问的答案', 'Answer OCR also receives the independent recognition scope');
         const auto = (await alice('GET', '/ai/jobs')).find((job) => job.type === 'analysis');
         assert.ok(auto, 'Short recognized answer queues analysis');
         assert.equal((await completed(auto)).applyStatus, 'applied');
@@ -551,14 +569,17 @@ async function runAiSmoke() {
         assert.ok(metrics.every((entry) => entry.elapsedMs >= 0));
         assert.equal(/test-secret|analysis-secret|segmentation-secret|data:image|私密/.test(JSON.stringify(metrics)), false, 'Request logs contain metadata only');
         failures = 3;
-        const failed = await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'answer', input: input(await latest()), imageIds: [answerImage.id] }, 201);
+        const failed = await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'answer', input: input(await latest()), imageIds: [answerImage.id], recognitionPrompt: '只包含第 2 问' }, 201);
         const failedResult = await completed(failed);
         assert.equal(failedResult.status, 'failed'); assert.equal(failedResult.attempts, 3);
         await bob('POST', `/ai/jobs/${failed.id}/cancel`, {}, 404);
         assert.equal((await alice('POST', `/ai/jobs/${failed.id}/cancel`, {})).status, 'cancelled', 'Failed tasks can be dismissed');
         assert.equal((await alice('POST', `/ai/jobs/${failed.id}/cancel`, {})).status, 'cancelled', 'Cancellation is idempotent');
         await alice('POST', `/ai/jobs/${failed.id}/retry`, {});
-        assert.equal((await completed(failed)).status, 'succeeded');
+        const retriedScope = await completed(failed);
+        assert.equal(retriedScope.status, 'succeeded');
+        assert.equal(retriedScope.recognitionPrompt, '只包含第 2 问', 'Manual retries preserve recognition scope');
+        assert.equal(requests.answer.recognitionPrompt, '只包含第 2 问');
 
         const beforeDiscard = input(await latest());
         const dismissed = await alice('POST', '/ai/jobs/batch', { action: 'cancel', ids: [badSchema.id, multipart.id, conflict.id, question.id] });
@@ -574,10 +595,13 @@ async function runAiSmoke() {
         assert.equal(freshConflict.applyStatus, 'pending', 'Retry resets the previous conflict');
         assert.equal((await completed(conflict)).applyStatus, 'conflict');
         await ai.stopJobs();
-        const recovery = await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'answer', input: input(await latest()), imageIds: [answerImage.id] }, 201);
+        const recovery = await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'answer', input: input(await latest()), imageIds: [answerImage.id], recognitionPrompt: '只包含第 2 问' }, 201);
         app.db.prepare("UPDATE ai_jobs SET status = 'running', attempts = 1 WHERE id = ?").run(recovery.id);
         ai.recoverJobs();
-        assert.equal((await completed(recovery)).attempts, 2, 'Recovery preserves consumed attempts');
+        const recoveredScope = await completed(recovery);
+        assert.equal(recoveredScope.attempts, 2, 'Recovery preserves consumed attempts');
+        assert.equal(recoveredScope.recognitionPrompt, '只包含第 2 问', 'Recovery retains the saved recognition scope');
+        assert.equal(requests.answer.recognitionPrompt, '只包含第 2 问');
         hold = 250;
         const cancelled = await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'answer', input: input(await latest()), imageIds: [answerImage.id] }, 201);
         await alice('POST', `/ai/jobs/${cancelled.id}/cancel`, {});

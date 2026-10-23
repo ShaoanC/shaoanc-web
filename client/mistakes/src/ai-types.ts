@@ -43,6 +43,7 @@ export interface AiJob {
   applyStatus: 'pending' | 'applied' | 'conflict';
   input: AiInput;
   imageIds: number[];
+  recognitionPrompt?: string;
   result: AiReviewResult | null;
   error: string | null;
   attempts: number;
@@ -58,6 +59,7 @@ export interface AiJobRequest {
   type: AiJobType;
   mode?: 'single' | 'page-entry';
   imageIds?: number[];
+  recognitionPrompt?: string;
   input: AiInput;
   automatic?: boolean;
 }

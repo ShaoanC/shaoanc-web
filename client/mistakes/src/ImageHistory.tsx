@@ -3,9 +3,10 @@ import { ArrowDown, ArrowUp, Images } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { api, formatDate } from './api';
 import { AiDialog } from './AiDialog';
+import { RecognitionPrompt } from './RecognitionPrompt';
 import type { MistakeImage, ImagePurpose } from './ai-types';
 
-export function ImageHistory({ mistakeId, onRecrop, onRecognize }: { mistakeId?: number; onRecrop?: (image: MistakeImage) => void; onRecognize?: (purpose: ImagePurpose, ids: number[]) => Promise<void> }) {
+export function ImageHistory({ mistakeId, onRecrop, onRecognize }: { mistakeId?: number; onRecrop?: (image: MistakeImage) => void; onRecognize?: (purpose: ImagePurpose, ids: number[], recognitionPrompt?: string) => Promise<void> }) {
   const [open, setOpen] = useState(false);
   const [images, setImages] = useState<MistakeImage[]>([]);
   const [error, setError] = useState('');
@@ -13,6 +14,7 @@ export function ImageHistory({ mistakeId, onRecrop, onRecognize }: { mistakeId?:
   const [selected, setSelected] = useState<number[]>([]);
   const [full, setFull] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [prompts, setPrompts] = useState({ question: '', answer: '' });
   useEffect(() => {
     if (!open || !mistakeId) return;
     setLoading(true); setError('');
@@ -21,7 +23,7 @@ export function ImageHistory({ mistakeId, onRecrop, onRecognize }: { mistakeId?:
   async function recognize(purpose: ImagePurpose) {
     if (!onRecognize) return;
     setBusy(true);
-    try { await onRecognize(purpose, images.filter((image) => selected.includes(image.id) && image.purpose === purpose).map((image) => image.id)); setOpen(false); }
+    try { await onRecognize(purpose, images.filter((image) => selected.includes(image.id) && image.purpose === purpose).map((image) => image.id), prompts[purpose].trim()); setOpen(false); }
     catch (err) { toast.error((err as Error).message); } finally { setBusy(false); }
   }
   function move(id: number, direction: -1 | 1) {
@@ -48,7 +50,7 @@ export function ImageHistory({ mistakeId, onRecrop, onRecognize }: { mistakeId?:
           <div className="photo-history-pair">{[['整图', image.originalUrl], ['裁剪图', image.cropUrl]].map(([label, url]) => <figure key={url}><button type="button" className="photo-thumbnail" onClick={() => setFull(url)} aria-label={`放大${label} ${image.id}`}><img src={url} alt={label} loading="lazy" /></button><figcaption>{label}</figcaption></figure>)}</div>
           {onRecrop && <div className="photo-actions"><button type="button" className="table-button" onClick={() => { setOpen(false); onRecrop(image); }}>重新裁剪</button></div>}
         </article>)}
-        {onRecognize && <div className="photo-actions"><button type="button" className="button primary" disabled={busy || !selected.some((id) => images.find((image) => image.id === id)?.purpose === purpose)} onClick={() => void recognize(purpose)}>识别所选{purpose === 'question' ? '题干' : '答案'}图片</button></div>}
+        {onRecognize && <><RecognitionPrompt purpose={purpose} value={prompts[purpose]} onChange={(value) => setPrompts((current) => ({ ...current, [purpose]: value }))} disabled={busy} /><div className="photo-actions"><button type="button" className="button primary" disabled={busy || !selected.some((id) => images.find((image) => image.id === id)?.purpose === purpose)} onClick={() => void recognize(purpose)}>识别所选{purpose === 'question' ? '题干' : '答案'}图片</button></div></>}
       </section>)}
     </AiDialog>
     <AiDialog open={Boolean(full)} onClose={() => setFull(null)} title="查看图片" wide>{full && <img className="photo-full-image" src={full} alt="上传的图片" />}</AiDialog>

@@ -4,6 +4,7 @@ import imageCompression from 'browser-image-compression';
 import { ArrowLeft, ArrowRight, Camera, Crop, ImagePlus, RotateCcw, RotateCw, Trash2 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { AiDialog } from './AiDialog';
+import { RecognitionPrompt } from './RecognitionPrompt';
 import { UploadedPhotoPicker } from './UploadedPhotoPicker';
 import { usePhotoUploads } from './PhotoUploads';
 import { compressJpeg } from './photo-compression';
@@ -39,7 +40,7 @@ async function jpeg(file: File) {
   } finally { URL.revokeObjectURL(url); }
 }
 
-export function PhotoInput({ purpose, recordId, ensureSaved, actions, aiAvailable, onPendingChange }: { purpose: ImagePurpose; recordId?: number; ensureSaved: () => Promise<Mistake>; actions?: ReactNode; aiAvailable: boolean; onPendingChange?: (pending: boolean) => void }) {
+export function PhotoInput({ purpose, recordId, ensureSaved, actions, aiAvailable, onPendingChange, recognitionPrompt, onRecognitionPromptChange }: { purpose: ImagePurpose; recordId?: number; ensureSaved: () => Promise<Mistake>; actions?: ReactNode; aiAvailable: boolean; onPendingChange?: (pending: boolean) => void; recognitionPrompt: string; onRecognitionPromptChange: (value: string) => void }) {
   const { queue, batches } = usePhotoUploads();
   const uploads = batches.filter((batch) => batch.mistakeId === recordId && batch.purpose === purpose && batch.status !== 'completed');
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -138,6 +139,7 @@ export function PhotoInput({ purpose, recordId, ensureSaved, actions, aiAvailabl
     if (!entries.length || busy) return;
     setBusy(true);
     const snapshot = [...entries];
+    const prompt = recognitionPrompt.trim();
     try {
       setStage('正在保存草稿…');
       const item = await ensureSaved();
@@ -150,7 +152,7 @@ export function PhotoInput({ purpose, recordId, ensureSaved, actions, aiAvailabl
         if (!mounted.current) return;
         files.push({ clientId: entry.clientId, original, crop, originalName: entry.file.name.replace(/\.[^.]+$/, '') + '.jpg' });
       }
-      queue.enqueue({ mistakeId: item.id, purpose, input: { question: item.question, answer: item.answer, analysis: item.analysis, subjectId: item.subjectId, primaryKnowledgePointId: item.primaryKnowledgePointId, auxiliaryKnowledgePointIds: item.auxiliaryKnowledgePointIds }, files, recognize });
+      queue.enqueue({ mistakeId: item.id, purpose, input: { question: item.question, answer: item.answer, analysis: item.analysis, subjectId: item.subjectId, primaryKnowledgePointId: item.primaryKnowledgePointId, auxiliaryKnowledgePointIds: item.auxiliaryKnowledgePointIds }, files, recognize, recognitionPrompt: prompt });
       setOpen(false);
       setEntries([]); setSelected(0);
       snapshot.forEach((entry) => { URL.revokeObjectURL(entry.url); urls.current.delete(entry.url); });
@@ -161,6 +163,7 @@ export function PhotoInput({ purpose, recordId, ensureSaved, actions, aiAvailabl
   return <div className="photo-entry">
     <div className="photo-entry-title"><Camera size={18} />{purpose === 'question' ? '从图片录入题目' : '也可以拍下答案'}</div>
     <p>{purpose === 'question' ? '选中错题部分，多张图片按顺序一起识别。' : '题目和答案在同一张图里时，可直接复用题干图片识别答案。'}</p>
+    <RecognitionPrompt purpose={purpose} value={recognitionPrompt} onChange={onRecognitionPromptChange} disabled={busy} />
     <input ref={camera} type="file" accept="image/jpeg,image/png,image/webp" capture="environment" hidden onChange={fileInput} disabled={busy} />
     <input ref={album} type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onChange={fileInput} disabled={busy} />
     <div className="photo-actions"><button type="button" className="button secondary" disabled={busy} onClick={() => camera.current?.click()}><Camera size={16} />拍照{purpose === 'answer' ? '识别答案' : ''}</button><button type="button" className="button secondary" disabled={busy} onClick={() => album.current?.click()}><ImagePlus size={16} />选择图片</button><UploadedPhotoPicker disabled={busy} onSelect={reuse} />{actions}{entries.length > 0 && <button type="button" className="table-button" onClick={() => setOpen(true)}><Crop size={15} />{entries.length} 张待选图片</button>}</div>
@@ -175,6 +178,7 @@ export function PhotoInput({ purpose, recordId, ensureSaved, actions, aiAvailabl
         <img key={current.url} ref={previewRef} src={current.url} onLoad={(event) => { if (photo.current === event.currentTarget) setLoadedUrl(event.currentTarget.src); }} onError={(event) => { if (photo.current === event.currentTarget) { setLoadedUrl(null); toast.error('图片无法读取，请移除后重新选择。'); } }} alt={`裁剪第 ${selected + 1} 张${label}图片`} />
       </ReactCrop></div> : <p className="ai-empty">添加图片开始裁剪。</p>}
       <div className="photo-crop-footer"><button type="button" className="button ghost" disabled={busy} onClick={() => album.current?.click()}><ImagePlus size={16} />追加图片</button><p>{stage || '旋转会重置选框。按显示方向备份整图与裁剪图，保留彩色笔迹。'}</p></div>
+      <RecognitionPrompt purpose={purpose} value={recognitionPrompt} onChange={onRecognitionPromptChange} disabled={busy} />
       {!aiAvailable && <p className="ai-notice">AI 尚未启用，可以先保存图片。</p>}
       <div className="photo-actions"><button type="button" className="button primary" disabled={busy || !entries.length || !imageReady || !aiAvailable} onClick={() => void upload(true)}>{busy ? '正在处理…' : `上传并识别${label}`}</button><button type="button" className="button secondary" disabled={busy || !entries.length || !imageReady} onClick={() => void upload(false)}>仅保存图片</button></div>
     </AiDialog>

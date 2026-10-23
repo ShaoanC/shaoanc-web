@@ -26,6 +26,7 @@ export interface PhotoUploadRequest {
   input: AiInput;
   files: PreparedPhoto[];
   recognize: boolean;
+  recognitionPrompt?: string;
 }
 
 interface PendingBatch {
@@ -33,10 +34,12 @@ interface PendingBatch {
   files: PreparedPhoto[];
   input: AiInput;
   recognize: boolean;
+  recognitionPrompt?: string;
   recognitionSubmitted: boolean;
   recognitionError?: string;
   recognitionClientId: string;
   reuseInput?: AiInput;
+  reuseRecognitionPrompt?: string;
   reuseError?: string;
   reuseClientId: string;
   running: boolean;
@@ -67,13 +70,14 @@ export class PhotoUploadQueue {
 
   getSnapshot = (): PhotoUploadBatch[] => this.snapshot;
 
-  enqueue({ mistakeId, purpose, input, files, recognize }: PhotoUploadRequest): string {
+  enqueue({ mistakeId, purpose, input, files, recognize, recognitionPrompt }: PhotoUploadRequest): string {
     const id = crypto.randomUUID();
     const batch: PendingBatch = {
       view: { id, mistakeId, purpose, total: files.length, imageIds: [], status: 'uploading', message: '图片已压缩，正在后台上传…', reuseRequested: false },
       files: [...files],
       input: copyInput(input),
       recognize,
+      recognitionPrompt: recognitionPrompt?.trim() || undefined,
       recognitionSubmitted: false,
       recognitionClientId: crypto.randomUUID(),
       reuseClientId: crypto.randomUUID(),
@@ -86,10 +90,11 @@ export class PhotoUploadQueue {
     return id;
   }
 
-  reuse(batchId: string, input: AiInput): boolean {
+  reuse(batchId: string, input: AiInput, recognitionPrompt?: string): boolean {
     const batch = this.batches.get(batchId);
     if (!batch || batch.view.purpose !== 'question' || batch.view.reuseRequested) return false;
     batch.reuseInput = copyInput(input);
+    batch.reuseRecognitionPrompt = recognitionPrompt?.trim() || undefined;
     this.update(batch, { reuseRequested: true, reuseStatus: 'waiting' });
     // A failed upload stays available for manual retry; the answer intent is retained.
     if (batch.view.imageIds.length === batch.view.total) void this.run(batch);
@@ -152,7 +157,7 @@ export class PhotoUploadQueue {
 
       if (batch.recognize && !batch.recognitionSubmitted && !batch.recognitionError) {
         try {
-          await this.submitRecognition(batch, batch.view.purpose, batch.input, batch.recognitionClientId);
+          await this.submitRecognition(batch, batch.view.purpose, batch.input, batch.recognitionClientId, batch.recognitionPrompt);
           batch.recognitionSubmitted = true;
         } catch (error) {
           if (batch.controller.signal.aborted) return;
@@ -164,7 +169,7 @@ export class PhotoUploadQueue {
       if (batch.reuseInput && batch.view.reuseStatus === 'waiting') {
         this.update(batch, { reuseStatus: 'submitting' });
         try {
-          await this.submitRecognition(batch, 'answer', batch.reuseInput, batch.reuseClientId);
+          await this.submitRecognition(batch, 'answer', batch.reuseInput, batch.reuseClientId, batch.reuseRecognitionPrompt);
           this.update(batch, { reuseStatus: 'submitted' });
         } catch (error) {
           if (batch.controller.signal.aborted) return;
@@ -187,9 +192,9 @@ export class PhotoUploadQueue {
     }
   }
 
-  private submitRecognition(batch: PendingBatch, type: ImagePurpose, input: AiInput, clientId: string): Promise<AiJob> {
+  private submitRecognition(batch: PendingBatch, type: ImagePurpose, input: AiInput, clientId: string, recognitionPrompt?: string): Promise<AiJob> {
     return this.request(batch, 'processing', `正在后台提交${type === 'question' ? '题目' : '答案'}识别…`, 30000, (signal) => api<AiJob>('/ai/jobs', {
-      ...json({ clientId, mistakeId: batch.view.mistakeId, type, imageIds: batch.view.imageIds, input }),
+      ...json({ clientId, mistakeId: batch.view.mistakeId, type, imageIds: batch.view.imageIds, input, recognitionPrompt }),
       signal,
     }, { background: true }));
   }
