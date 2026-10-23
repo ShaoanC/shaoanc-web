@@ -1,6 +1,7 @@
 const crypto = require('node:crypto');
 const express = require('express');
 const { db } = require('./database');
+const { assertWritable } = require('./backup-coordination');
 const { generateTestMistakes } = require('./test-data');
 const { searchMistakes, updateCachedMistake, invalidateUser, invalidateAll, previewMarkdown } = require('./search');
 const { cleanupExpiredTrash } = require('./trash');
@@ -153,6 +154,7 @@ router.post('/auth/register', registrationLimit, async (req, res) => {
         fail(400, '请填写邀请码');
     }
     await verifyCaptcha(req.body.captchaResponse, 'register');
+    assertWritable();
     const passwordHash = hashPassword(password);
     const user = db.transaction(() => {
         const now = new Date().toISOString();
@@ -179,6 +181,7 @@ router.post('/auth/login', loginIpLimit, loginFailureLimit, async (req, res) => 
         fail(400, '请填写有效的用户名和密码');
     }
     await verifyCaptcha(req.body.captchaResponse, 'login');
+    assertWritable();
     const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
     if (!user || !verifyPassword(password, user.password_hash)) {
         fail(401, '用户名或密码错误');

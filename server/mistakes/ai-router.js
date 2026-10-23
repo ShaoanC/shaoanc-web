@@ -1,4 +1,5 @@
 const { db } = require('./database');
+const { assertWritable } = require('./backup-coordination');
 const { fail, requireAdmin } = require('./auth');
 const { uploadImages, saveImages, serializeImage, uploadsDirectory } = require('./images');
 const { publicConfig, saveConfig, safeAiError } = require('./ai-config');
@@ -33,6 +34,7 @@ module.exports = function mountAiRoutes(router, { success, ownMistake, serialize
         success(res, db.prepare('SELECT * FROM mistake_images WHERE mistake_id = ? ORDER BY id').all(row.id).map(serializeImage));
     });
     router.post('/mistakes/:id/images', (req, res, next) => { req.mistake = ownMistake(req); next(); }, uploadImages, (req, res) => {
+        assertWritable();
         // The record may have been deleted while the upload was in flight.
         success(res, saveImages(req, ownMistake(req)), 201);
     });

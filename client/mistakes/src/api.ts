@@ -26,7 +26,7 @@ function updateApiActivity(change: number): void {
 }
 
 export class ApiError extends Error {
-  constructor(message: string, public status: number) { super(message); }
+  constructor(message: string, public status: number, public code?: string) { super(message); }
 }
 
 export async function api<T>(path: string, options: RequestInit = {}, activity: { background?: boolean } = {}): Promise<T> {
@@ -44,7 +44,8 @@ export async function api<T>(path: string, options: RequestInit = {}, activity: 
       throw error;
     });
     if (!response.ok || !result?.success) {
-      throw new ApiError(result?.message || '请求失败，请稍后重试。', response.status);
+      if (result?.code === 'BACKUP_READ_ONLY') window.dispatchEvent(new CustomEvent('mistakes:backup-status', { detail: { readOnly: true } }));
+      throw new ApiError(result?.message || '请求失败，请稍后重试。', response.status, result?.code);
     }
     if (options.method && options.method !== 'GET') window.dispatchEvent(new Event('mistakes:updated'));
     return result.data as T;

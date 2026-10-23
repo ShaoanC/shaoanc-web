@@ -14,8 +14,10 @@
     "test:client": "node scripts/mistakes-editor-smoke.cjs && node scripts/mistakes-page-upload-smoke.cjs",
     "test:export": "node scripts/mistakes-export-smoke.cjs",
     "test:export-preview": "node scripts/mistakes-export-preview-smoke.cjs",
+    "test:backup": "node scripts/mistakes-backup-smoke.cjs",
     "baseline:ai": "node scripts/mistakes-ai-baseline.cjs",
-    "admin:create": "node server/mistakes/create-admin.js"
+    "admin:create": "node server/mistakes/create-admin.js",
+    "backup:restore": "node scripts/mistakes-backup-restore.cjs"
   },
   "keywords": [],
   "author": "",
@@ -54,6 +56,7 @@
     "remark-math": "^6.0.0",
     "remark-parse": "^11.0.0",
     "sharp": "^0.35.5",
+    "tar": "^7.5.22",
     "unified": "^11.0.5",
     "zod": "^4.6.7"
   },

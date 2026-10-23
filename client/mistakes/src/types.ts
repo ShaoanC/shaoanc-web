@@ -90,6 +90,26 @@ export interface Invite {
   createdAt: string;
 }
 
+export interface Backup {
+  id: string;
+  createdAt: string;
+  source: 'manual' | 'automatic' | 'pre-restore';
+  status: 'running' | 'completed' | 'failed' | 'interrupted';
+  stage: 'waiting' | 'snapshot' | 'copying' | 'compressing' | 'completed' | 'failed' | 'interrupted';
+  size: number | null;
+  error: string | null;
+  filename: string | null;
+}
+
+export interface BackupSettings {
+  enabled: boolean;
+  time: string;
+  retention: number;
+  timezone: string;
+  nextRunAt: string | null;
+  lastRun: { status: string; at: string; message: string } | null;
+}
+
 export const STATUS_LABELS: Record<KnowledgeStatus, string> = {
   unreviewed: '未复习',
   unknown: '不会',

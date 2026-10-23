@@ -1,10 +1,20 @@
-require('dotenv').config();
-
 const path = require('node:path');
+require('dotenv').config({ path: process.env.MISTAKES_ENV_PATH || path.join(__dirname, '..', '.env') });
+
 const express = require('express');
+const { acquireRuntimeLock } = require('./mistakes/runtime-lock');
+if (require.main === module) {
+    const release = acquireRuntimeLock(process.env.MISTAKES_DB_PATH || path.join(__dirname, '..', 'data', 'mistakes.sqlite'));
+    process.on('exit', release);
+}
 const { db } = require('./mistakes/database');
 const mistakesRouter = require('./mistakes/router');
 const { cleanupExpiredTrash } = require('./mistakes/trash');
+const { assertWritable } = require('./mistakes/backup-coordination');
+const { createBackupService } = require('./mistakes/backups');
+const { createBackupRouter } = require('./mistakes/backup-router');
+const ai = require('./mistakes/ai');
+let backups;
 const app = express();
 
 const PORT = process.env.PORT || 3000;
@@ -19,7 +29,16 @@ app.get('/api/hello', (req, res) => {
     });
 });
 
-app.use('/api/mistakes', mistakesRouter);
+// Construct lazily: unrelated API reads do not create a backup directory.
+const backupService = () => {
+    if (!backups) backups = createBackupService({ db, pauseJobs: ai.pauseJobs, resumeJobs: ai.resumeJobs });
+    return backups;
+};
+const backupRouter = createBackupRouter(backupService);
+app.use('/api/mistakes', (req, res, next) => {
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && !/^\/admin\/backups(?:\/|$)/.test(req.path)) assertWritable();
+    next();
+}, backupRouter, mistakesRouter);
 app.use(express.static(path.join(__dirname, '..', 'public')));
 app.use('/api', (req, res) => {
     res.status(404).json({ success: false, message: '接口不存在' });
@@ -41,7 +60,8 @@ app.use((error, req, res, next) => {
 
 if (require.main === module) {
     cleanupExpiredTrash();
-    require('./mistakes/ai').recoverJobs();
+    ai.recoverJobs();
+    backupService().start();
     setInterval(() => {
         try {
             cleanupExpiredTrash();
@@ -56,3 +76,4 @@ if (require.main === module) {
 
 module.exports = app;
 module.exports.db = db;
+module.exports.getBackupService = backupService;

@@ -1,1 +1,0 @@
-import{n as e}from"./rolldown-runtime-8BhlS34s.js";import{t}from"./jsx-runtime-3OoRnB7b.js";function n({axis:e=`vertical`,className:t=``,...n}){return(0,r.jsx)(`div`,{...n,className:`scroll-area scroll-area--${e} ${t}`.trim()})}var r,i=e((()=>{r=t()}));export{i as n,n as t};

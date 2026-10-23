@@ -1,4 +1,5 @@
 const { db } = require('./database');
+const { isReadOnly } = require('./backup-coordination');
 const { invalidateUser } = require('./search');
 const { deleteMistakeFiles } = require('./images');
 const { cancelMistakeJobs } = require('./ai');
@@ -6,6 +7,7 @@ const { cancelMistakeJobs } = require('./ai');
 const TRASH_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 function cleanupExpiredTrash(now = Date.now(), userId) {
+    if (isReadOnly()) return 0;
     const cutoff = new Date(now - TRASH_RETENTION_MS).toISOString();
     const where = 'deleted_at IS NOT NULL AND deleted_at <= ?' + (userId === undefined ? '' : ' AND user_id = ?');
     const parameters = userId === undefined ? [cutoff] : [cutoff, userId];

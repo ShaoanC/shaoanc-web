@@ -1,5 +1,6 @@
 const crypto = require('node:crypto');
 const { db } = require('./database');
+const { isReadOnly } = require('./backup-coordination');
 
 const COOKIE_NAME = 'mistakes_session';
 const SESSION_SECONDS = 7 * 24 * 60 * 60;
@@ -86,7 +87,7 @@ function loadSession(req, res, next) {
         if (session && session.active && session.expires_at > new Date().toISOString()) {
             req.user = session;
         } else {
-            db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(hashedToken);
+            if (!isReadOnly()) db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(hashedToken);
             res.clearCookie(COOKIE_NAME, cookieOptions);
         }
     }

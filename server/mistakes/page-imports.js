@@ -11,11 +11,13 @@ const { parseRecognitionJson } = require('./ai-output');
 const { imagePath, uploadsDirectory } = require('./images');
 const { updateCachedMistake } = require('./search');
 const { createTaskScheduler, retryDelay } = require('./ai-scheduler');
+const { assertWritable } = require('./backup-coordination');
 
 const activeStates = ['queued', 'running', 'retrying'];
 const controllers = new Map();
-const preparing = new Set();
+const preparing = new Map();
 let stopped = false;
+let paused = false;
 const scheduled = createTaskScheduler({
     getTask: (id) => db.prepare('SELECT * FROM page_imports WHERE id = ? AND deleted_at IS NULL').get(id),
     getRunner: (userId) => require('./ai').runtimeForJobs(userId),
@@ -106,16 +108,22 @@ function schedulePage(id) {
 
 function recoverPageImports() {
     stopped = false;
+    paused = false;
     scheduled.resume();
     db.prepare("UPDATE page_imports SET status = 'queued' WHERE status = 'running' AND deleted_at IS NULL").run();
     for (const row of db.prepare("SELECT id FROM page_imports WHERE status IN ('queued','retrying') AND deleted_at IS NULL ORDER BY id").all()) schedulePage(row.id);
     for (const row of db.prepare("SELECT page_import_id, region_id FROM page_import_items WHERE job_id IS NULL AND status = 'preparing'").all()) schedulePreparation(row.page_import_id, row.region_id);
 }
 
-function stopPageImports() {
+async function stopPageImports() {
     stopped = true;
     for (const controller of controllers.values()) controller.abort();
-    return scheduled.stop();
+    await Promise.all([scheduled.stop(), ...preparing.values()]);
+}
+
+async function pausePageImports() {
+    paused = true;
+    await Promise.all([scheduled.pause(), ...preparing.values()]);
 }
 
 function saveRegions(page, values) {
@@ -141,20 +149,18 @@ function schedulePreparation(pageId, regionId) {
     const item = db.prepare('SELECT mistake_id, job_id, status FROM page_import_items WHERE page_import_id = ? AND region_id = ?').get(pageId, regionId);
     if (!item || item.job_id || item.status !== 'preparing') return;
     const key = `${pageId}:${regionId}:${item.mistake_id}`;
-    if (stopped || preparing.has(key)) return;
-    preparing.add(key);
-    void require('./ai').runtimeForJobs(db.prepare('SELECT user_id FROM page_imports WHERE id = ?').get(pageId)?.user_id).then(async (runner) => {
-        try { await runner.queue.add(() => prepareRegion(pageId, regionId, item.mistake_id)); }
-        finally { preparing.delete(key); }
+    if (stopped || paused || preparing.has(key)) return;
+    const preparation = require('./ai').runtimeForJobs(db.prepare('SELECT user_id FROM page_imports WHERE id = ?').get(pageId)?.user_id).then(async (runner) => {
+        if (!stopped && !paused) await runner.queue.add(() => prepareRegion(pageId, regionId, item.mistake_id));
     }).catch(() => {
-        preparing.delete(key);
         if (!stopped) db.prepare("UPDATE page_import_items SET status = 'failed', error = '图片准备失败，请重试' WHERE page_import_id = ? AND region_id = ? AND mistake_id = ? AND job_id IS NULL").run(pageId, regionId, item.mistake_id);
-    });
+    }).finally(() => preparing.delete(key));
+    preparing.set(key, preparation);
 }
 
 async function prepareRegion(pageId, regionId, mistakeId) {
     const item = db.prepare('SELECT * FROM page_import_items WHERE page_import_id = ? AND region_id = ?').get(pageId, regionId);
-    if (stopped || !item || item.mistake_id !== mistakeId || item.job_id || item.status !== 'preparing') return;
+    if (stopped || paused || !item || item.mistake_id !== mistakeId || item.job_id || item.status !== 'preparing') return;
     const page = db.prepare('SELECT * FROM page_imports WHERE id = ?').get(pageId);
     const mistake = db.prepare('SELECT * FROM mistakes WHERE id = ?').get(item.mistake_id);
     if (!page || !mistake || mistake.deleted_at) {
@@ -236,6 +242,7 @@ function mountPageImportRoutes(router, { success }) {
         if (!file || file.mimetype !== 'image/jpeg' || file.buffer[0] !== 0xff || file.buffer[1] !== 0xd8) fail(400, '请上传压缩后的 JPEG 页面图片');
         let metadata;
         try { metadata = await sharp(file.buffer).metadata(); } catch { fail(400, '页面图片无法读取'); }
+        assertWritable();
         if (!metadata.width || !metadata.height) fail(400, '页面图片尺寸无效');
         fs.mkdirSync(uploadsDirectory, { recursive: true });
         const filename = `${crypto.randomUUID()}-page.jpg`;
@@ -310,4 +317,4 @@ function mountPageImportRoutes(router, { success }) {
     });
 }
 
-module.exports = { mountPageImportRoutes, recoverPageImports, stopPageImports, requestSegmentation };
+module.exports = { mountPageImportRoutes, recoverPageImports, stopPageImports, pausePageImports, requestSegmentation };

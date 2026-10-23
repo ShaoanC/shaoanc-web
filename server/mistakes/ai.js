@@ -472,4 +472,16 @@ async function stopJobs() {
     }
 }
 
-module.exports = { createJob, serializeJob, ownJob, applyJob, retryJob, cancelJob, cancelMistakeJobs, recoverJobs, stopJobs, enqueueAutomatic, inputFor, isShortAnswer, analysisNoticeFor, runtimeForJobs, canRetry };
+async function pauseJobs() {
+    await Promise.all([scheduled.pause(), require('./page-imports').pausePageImports()]);
+    if (runtime) {
+        const runner = await runtime;
+        await Promise.all([runner.queue.onIdle(), runner.adminQueue.onIdle()]);
+    }
+}
+
+function resumeJobs() {
+    recoverJobs();
+}
+
+module.exports = { createJob, serializeJob, ownJob, applyJob, retryJob, cancelJob, cancelMistakeJobs, recoverJobs, stopJobs, pauseJobs, resumeJobs, enqueueAutomatic, inputFor, isShortAnswer, analysisNoticeFor, runtimeForJobs, canRetry };

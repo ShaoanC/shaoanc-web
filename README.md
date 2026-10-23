@@ -38,6 +38,7 @@ npm start
 - `data/mistakes.sqlite`：运行数据库，使用 WAL，不纳入 Git。
 - `uploads/mistakes/`：压缩后的整图与裁剪图，按登录账号鉴权读取，运行文件不纳入 Git。
 - `.env.ai`：管理员保存的 AI 配置与密钥，不纳入 Git。
+- 管理员“设置 → 数据备份”：完整备份 SQLite、业务图片和存在的 `.env` / `.env.ai`，可下载，也可开启每天北京时间 03:00 的自动备份（默认关闭，默认保留 7 份自动备份）。创建时短暂只读，恢复需先停服。备份和密钥保管、恢复命令见 [全站备份与停服恢复](docs/mistakes-backup.md)。
 - `docs/development.md`：本次任务完成状态与验证记录。
 
 ```powershell
@@ -47,6 +48,7 @@ npm test
 npm run test:ai
 npm run test:pages
 npm run test:client
+npm run test:backup
 ```
 
 `npm run test:client` 聚焦保存期间编辑、响应丢失重试、本机草稿与冲突处理、整页上传取消、部分失败后的批次重试和复习筛选请求竞态，不调用外部服务。
@@ -100,4 +102,4 @@ location /api/mistakes/ {
 }
 ```
 
-生产环境配置 `NODE_ENV=production` 并使用 HTTPS；会话 Cookie 使用 HttpOnly、SameSite=Lax，生产环境启用 Secure。后端目录、`.env`、`data/` 和 `uploads/` 位于静态目录之外。数据库路径可通过 `MISTAKES_DB_PATH` 调整，默认为仓库的 `data/mistakes.sqlite`。AI 队列也运行在这个单进程内，重启会恢复未完成任务。发布时保留 `data/`、`uploads/` 和 `.env.ai`，服务账号须有写权限。备份时同时保留数据库、图片目录和 AI 配置；SQLite 应连同 WAL 状态备份，或先停止服务再复制。应用保存的图片是本机持久存储，异机灾备仍由部署环境负责。
+生产环境配置 `NODE_ENV=production` 并使用 HTTPS；会话 Cookie 使用 HttpOnly、SameSite=Lax，生产环境启用 Secure。后端目录、`.env`、`data/` 和 `uploads/` 位于静态目录之外。数据库路径可通过 `MISTAKES_DB_PATH` 调整，默认为仓库的 `data/mistakes.sqlite`。AI 队列也运行在这个单进程内，重启会恢复未完成任务。发布时保留 `data/`、`uploads/` 和 `.env.ai`，服务账号须有写权限。管理员可通过“数据备份”创建包含 WAL 数据的一致性快照、图片与配置的完整归档；停服后执行 `npm run backup:restore -- "备份包绝对路径.tar.gz" --confirm` 恢复。默认本机备份目录 `data/backups/` 可通过 `MISTAKES_BACKUPS_PATH` 调整，必须位于静态目录之外；备份包含服务密钥，应下载到可信设备另存，异机灾备仍由部署环境负责。

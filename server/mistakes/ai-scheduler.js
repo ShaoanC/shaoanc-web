@@ -2,9 +2,10 @@
 function createTaskScheduler({ getTask, getRunner, run, onError }) {
     const entries = new Map();
     let stopped = false;
+    let paused = false;
 
     function schedule(id) {
-        if (stopped || entries.has(id)) return;
+        if (stopped || paused || entries.has(id)) return;
         const task = getTask(id);
         if (!task || !['queued', 'retrying'].includes(task.status)) return;
         const entry = { timer: null, promise: null };
@@ -18,14 +19,16 @@ function createTaskScheduler({ getTask, getRunner, run, onError }) {
         entry.promise = (async () => {
             try {
                 const task = getTask(id);
-                if (stopped || !task || !['queued', 'retrying'].includes(task.status)) return;
+                if (stopped || paused || !task || !['queued', 'retrying'].includes(task.status)) return;
                 const runner = await getRunner(task.user_id);
-                if (!stopped) await runner.queue.add(() => run(id, runner));
+                if (!stopped && !paused) await runner.queue.add(() => {
+                    if (!stopped && !paused) return run(id, runner);
+                });
             } catch (error) {
                 if (!stopped) onError(id, error);
             } finally {
                 if (entries.get(id) === entry) entries.delete(id);
-                if (!stopped && getTask(id)?.status === 'retrying') schedule(id);
+                if (!stopped && !paused && getTask(id)?.status === 'retrying') schedule(id);
             }
         })();
     }
@@ -44,7 +47,13 @@ function createTaskScheduler({ getTask, getRunner, run, onError }) {
         await Promise.all([...entries.values()].map((entry) => entry.promise));
     }
 
-    return { schedule, cancel, stop, resume: () => { stopped = false; }, has: (id) => entries.has(id) };
+    async function pause() {
+        paused = true;
+        for (const id of entries.keys()) cancel(id);
+        await Promise.all([...entries.values()].map((entry) => entry.promise));
+    }
+
+    return { schedule, cancel, stop, pause, resume: () => { stopped = false; paused = false; }, has: (id) => entries.has(id) };
 }
 
 function retryDelay(error, attempts) {
