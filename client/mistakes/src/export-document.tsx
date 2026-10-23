@@ -96,7 +96,7 @@ function ExportDocument({ data }: { data: ExportDocumentData }) {
         <p className="export-question-meta">{subjects.find((subject) => subject.id === mistake.subjectId)?.name || '未选学科'} · {knowledgeLabel(knowledgePoints, mistake.primaryKnowledgePointId)} · {ratingLabel(mistake.rating)}</p>
         {mistake.auxiliaryKnowledgePointIds.length > 0 && <p className="export-question-meta">辅助知识点：{mistake.auxiliaryKnowledgePointIds.map((id) => knowledgeLabel(knowledgePoints, id)).join('；')}</p>}
         <MarkdownContent className="export-question-text" emptyText="题干暂未填写">{mistake.question}</MarkdownContent>
-        {complete ? !appendix && <Answers mistake={mistake} options={options} /> : <div className="export-answer-space" aria-label="答题空白" />}
+        {complete ? !appendix && <Answers mistake={mistake} options={options} /> : options.layout === 'continuous' && <div className="export-answer-space" aria-label="答题空白" />}
       </section>)}
     </div>
     {appendix && <section className="export-appendix">

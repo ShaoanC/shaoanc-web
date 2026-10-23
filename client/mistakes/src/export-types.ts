@@ -11,7 +11,7 @@ export interface ExportOptions {
 }
 
 export const defaultExportOptions: ExportOptions = {
-  title: '拾题错题本', version: 'complete', includeNotes: true, fontSize: 12,
+  title: '错题', version: 'complete', includeNotes: true, fontSize: 12,
   layout: 'continuous', practiceSpace: 40, answerPlacement: 'inline',
 };
 

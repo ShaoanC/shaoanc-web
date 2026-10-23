@@ -63,7 +63,11 @@ export function MistakeExport({ mistakes, totalCount, filters, selectedIds = [],
   }, [preview]);
 
   function update<K extends keyof ExportOptions>(key: K, value: ExportOptions[K]) {
-    setOptions((previous) => ({ ...previous, [key]: value }));
+    setOptions((previous) => ({
+      ...previous,
+      [key]: value,
+      ...(key === 'version' && value === 'practice' ? { includeNotes: false } : {}),
+    }));
   }
 
   async function prepare(action: 'preview' | 'download') {
@@ -125,13 +129,13 @@ export function MistakeExport({ mistakes, totalCount, filters, selectedIds = [],
               </fieldset>}
               <fieldset className="export-options"><legend>内容版本</legend>
                 <label><input type="radio" name="export-version" checked={options.version === 'complete'} onChange={() => update('version', 'complete')} /><span>完整版<small>题干、答案与解析</small></span></label>
-                <label><input type="radio" name="export-version" checked={options.version === 'practice'} onChange={() => update('version', 'practice')} /><span>练习版<small>只保留题干与答题空白</small></span></label>
+                <label><input type="radio" name="export-version" checked={options.version === 'practice'} onChange={() => update('version', 'practice')} /><span>练习版<small>只保留题干，供独立练习</small></span></label>
               </fieldset>
               <div className="export-field-grid">
-                <label className="export-field export-title-field"><span>文档标题</span><input value={options.title} maxLength={80} placeholder="拾题错题本" onChange={(event) => update('title', event.target.value)} /></label>
+                <label className="export-field export-title-field"><span>文档标题</span><input value={options.title} maxLength={80} placeholder="错题" onChange={(event) => update('title', event.target.value)} /></label>
                 <label className="export-field"><span>正文字号</span><select value={options.fontSize} onChange={(event) => update('fontSize', Number(event.target.value) as ExportOptions['fontSize'])}><option value="10.5">紧凑 · 10.5 磅</option><option value="12">标准 · 12 磅</option><option value="14">大字 · 14 磅</option></select></label>
                 <label className="export-field"><span>题目排版</span><select value={options.layout} onChange={(event) => update('layout', event.target.value as ExportOptions['layout'])}><option value="continuous">连续排题</option><option value="per-question">每题另起一页</option></select></label>
-                {options.version === 'complete' ? <label className="export-field export-title-field"><span>答案与解析位置</span><select value={options.answerPlacement} onChange={(event) => update('answerPlacement', event.target.value as ExportOptions['answerPlacement'])}><option value="inline">每道题后</option><option value="appendix">集中放在文末</option></select></label> : <label className="export-field export-title-field"><span>每题答题留白</span><select value={options.practiceSpace} onChange={(event) => update('practiceSpace', Number(event.target.value) as ExportOptions['practiceSpace'])}><option value="20">较少 · 20 毫米</option><option value="40">标准 · 40 毫米</option><option value="60">较多 · 60 毫米</option></select></label>}
+                {options.version === 'complete' ? <label className="export-field export-title-field"><span>答案与解析位置</span><select value={options.answerPlacement} onChange={(event) => update('answerPlacement', event.target.value as ExportOptions['answerPlacement'])}><option value="inline">每道题后</option><option value="appendix">集中放在文末</option></select></label> : options.layout === 'continuous' && <label className="export-field export-title-field"><span>每题答题留白</span><select value={options.practiceSpace} onChange={(event) => update('practiceSpace', Number(event.target.value) as ExportOptions['practiceSpace'])}><option value="20">较少 · 20 毫米</option><option value="40">标准 · 40 毫米</option><option value="60">较多 · 60 毫米</option></select></label>}
               </div>
               <label className="export-notes-option"><Checkbox checked={options.includeNotes} disabled={options.version === 'practice'} onChange={(event) => update('includeNotes', event.target.checked)} />包含我的笔记{options.version === 'practice' && <small>仅完整版可用</small>}</label>
             </fieldset>

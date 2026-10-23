@@ -18,7 +18,7 @@ export async function requestExportPdf(request: ExportRequest, signal: AbortSign
   }
   const disposition = response.headers.get('Content-Disposition') || '';
   const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
-  let filename = disposition.match(/filename="([^"]+)"/i)?.[1] || '拾题错题本.pdf';
+  let filename = disposition.match(/filename="([^"]+)"/i)?.[1] || '错题.pdf';
   if (encoded) {
     try { filename = decodeURIComponent(encoded); } catch { /* Keep the readable fallback. */ }
   }

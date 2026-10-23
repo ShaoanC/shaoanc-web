@@ -20,6 +20,7 @@
 - `npm run test:pages`: check page segmentation, per-question blue-answer entry, independent API profiles, figure review, background preparation, retries/recovery and shared-source cleanup using local mock Gemini/OpenAI services and an isolated database.
 - `npm run test:client`: check editor saving/draft recovery/conflicts, page upload cancellation/retry batches and review response ordering with local mocks.
 - `npm run test:export`: check complete filtered/selected/single PDF exports, Chinese text, appendix pagination and image ownership with real Chromium and an isolated database/uploads. Install the matching Chromium first; see `docs/mistakes-export.md`.
+- `npm run test:export-preview`: check desktop/mobile PDF preview, retry, export settings and homepage layout after closing using real Chromium and an isolated database.
 - `node scripts/mistakes-upload-smoke.cjs`: check background photo uploads, deferred answer reuse, automatic retries and resume using mocked requests.
 - `node scripts/mistakes-photo-preparation-smoke.cjs`: check compression worker deadlines and main-thread recovery using mocked compression.
 - `npm test`: run the core mistakes/search smoke checks and CAPTCHA authentication smoke checks with isolated temporary databases under ignored `data/`.

@@ -10,7 +10,7 @@ const { fail } = require('./auth');
 const publicDirectory = path.resolve(__dirname, '../../public/mistakes');
 const renderOrigin = 'http://mistakes-export.local';
 const defaults = {
-    title: '拾题错题本', version: 'complete', includeNotes: true, fontSize: 12,
+    title: '错题', version: 'complete', includeNotes: true, fontSize: 12,
     layout: 'continuous', practiceSpace: 40, answerPlacement: 'inline'
 };
 const filterKeys = ['lifecycle', 'subjectId', 'knowledgePointId', 'status', 'rating', 'keyword', 'dataType'];

@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { ChevronLeft, ChevronRight, LoaderCircle, RotateCcw } from 'lucide-react';
-import { getDocument, GlobalWorkerOptions, TextLayer, type PDFDocumentProxy, type RenderTask } from 'pdfjs-dist';
-import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-import 'pdfjs-dist/web/pdf_viewer.css';
+import { getDocument, GlobalWorkerOptions, TextLayer, type PDFDocumentLoadingTask, type PDFDocumentProxy, type RenderTask } from 'pdfjs-dist/legacy/build/pdf.mjs';
+import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
+import './pdf-preview.css';
 import type { ExportFile } from './export-types';
 
 GlobalWorkerOptions.workerSrc = workerUrl;
@@ -77,18 +77,23 @@ export default function PdfPreview({ file }: { file: ExportFile }) {
 
   useEffect(() => {
     let alive = true;
+    let loading: PDFDocumentLoadingTask | undefined;
     setDocument(null); setError(''); setCurrent(1); currentPage.current = 1;
-    const loading = getDocument({ url: file.url });
-    void loading.promise.then(async (pdf) => {
+    void (async () => {
+      // Give each load fresh bytes: PDF.js transfers the buffer to its worker.
+      const data = new Uint8Array(await file.blob.arrayBuffer());
+      if (!alive) return;
+      loading = getDocument({ data });
+      const pdf = await loading.promise;
       const firstPage = await pdf.getPage(1);
       if (!alive) return;
       const viewport = firstPage.getViewport({ scale: 1 });
       setSize({ width: viewport.width, height: viewport.height });
       setDocument(pdf);
       if (scroller.current) scroller.current.scrollTop = 0;
-    }).catch(() => { if (alive) setError('PDF 预览暂时无法打开。你仍可下载文件，或重试预览。'); });
-    return () => { alive = false; void loading.destroy().catch(() => {}); };
-  }, [file.url, attempt]);
+    })().catch(() => { if (alive) setError('PDF 预览暂时无法打开。你仍可下载文件，或重试预览。'); });
+    return () => { alive = false; void loading?.destroy().catch(() => {}); };
+  }, [file.blob, attempt]);
 
   useEffect(() => {
     const root = scroller.current;

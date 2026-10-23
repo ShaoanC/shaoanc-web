@@ -43,13 +43,13 @@ function client() {
     };
 }
 
-async function inspectPdf(response, expectedCount) {
+async function inspectPdf(response, expectedCount, expectedTitle = defaults.title) {
     assert.equal(response.status, 200, response.ok ? '' : await response.text());
     assert.match(response.headers.get('content-type') || '', /^application\/pdf/);
     assert.equal(Number(response.headers.get('x-export-question-count')), expectedCount);
     const disposition = response.headers.get('content-disposition') || '';
     assert.match(disposition, /filename\*=UTF-8''/i, 'Downloads expose a UTF-8 filename');
-    assert.ok(decodeURIComponent(disposition).includes(defaults.title));
+    assert.ok(decodeURIComponent(disposition).includes(expectedTitle));
     const bytes = new Uint8Array(await response.arrayBuffer());
     assert.equal(Buffer.from(bytes.subarray(0, 5)).toString(), '%PDF-');
     const { getDocument, OPS } = await import('pdfjs-dist/legacy/build/pdf.mjs');
@@ -151,8 +151,9 @@ async function main() {
 
     const selected = await inspectPdf(await alice.request('POST', '/exports/pdf', {
         source: { ids: [records[4].id, records[1].id] },
-        options: { ...defaults, includeNotes: false, answerPlacement: 'appendix', layout: 'per-question', fontSize: 10.5 }
-    }), 2);
+        options: { ...defaults, title: '', includeNotes: false, answerPlacement: 'appendix', layout: 'per-question', fontSize: 10.5 }
+    }), 2, '错题');
+    assert.ok(selected.pages[0].includes('错题'), 'An empty title uses the default document title');
     assert.ok(selected.text.indexOf('导出样本05') < selected.text.indexOf('导出样本02'), 'Explicit selection preserves the submitted display order');
     assert.ok(!selected.text.includes('导出样本01') && !selected.text.includes('笔记标记'), 'Selected export contains only its questions and respects omitted notes');
     const lastQuestionPage = selected.pages.findIndex((page) => page.includes('导出样本02'));

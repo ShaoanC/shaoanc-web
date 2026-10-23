@@ -11,6 +11,7 @@ h1, h2, h3, p { margin: 0; }
 .export-question, .export-appendix-entry { padding-bottom: 6mm; margin-bottom: 6mm; border-bottom: .5pt solid #bbb; break-inside: avoid; }
 .export-question:last-child, .export-appendix-entry:last-child { padding-bottom: 0; margin-bottom: 0; border-bottom: 0; }
 .export-question.export-long-question, .export-appendix-entry.export-long-question { break-inside: auto; }
+.export-per-question .export-question, .export-per-question .export-appendix-entry { border-bottom: 0; }
 .export-per-question .export-question + .export-question { break-before: page; }
 .export-question-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 5mm; break-inside: avoid; break-after: avoid; }
 .export-question-heading h2, .export-appendix-number { font-family: 'Noto Sans SC', sans-serif; font-size: 12pt; font-weight: 600; line-height: 1.6; }
