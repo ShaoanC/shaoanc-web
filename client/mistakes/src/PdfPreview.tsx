@@ -1,11 +1,9 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { ChevronLeft, ChevronRight, LoaderCircle, RotateCcw } from 'lucide-react';
-import { getDocument, GlobalWorkerOptions, TextLayer, type PDFDocumentLoadingTask, type PDFDocumentProxy, type RenderTask } from 'pdfjs-dist/legacy/build/pdf.mjs';
-import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
+import { getDocument, PDFWorker, TextLayer, type PDFDocumentLoadingTask, type PDFDocumentProxy, type RenderTask } from 'pdfjs-dist/legacy/build/pdf.mjs';
+import PdfJsWorker from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?worker';
 import './pdf-preview.css';
 import type { ExportFile } from './export-types';
-
-GlobalWorkerOptions.workerSrc = workerUrl;
 
 function PdfPage({ document, number, width, height, active }: { document: PDFDocumentProxy; number: number; width: number; height: number; active: boolean }) {
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -78,12 +76,33 @@ export default function PdfPreview({ file }: { file: ExportFile }) {
   useEffect(() => {
     let alive = true;
     let loading: PDFDocumentLoadingTask | undefined;
+    let worker: Worker | undefined;
+    let pdfWorker: PDFWorker | undefined;
+    const dispose = () => {
+      void loading?.destroy().catch(() => {});
+      pdfWorker?.destroy();
+      worker?.terminate();
+    };
+    const fail = () => {
+      if (!alive) return;
+      setDocument(null);
+      setError('PDF 预览暂时无法打开。你仍可下载文件，或重试预览。');
+      dispose();
+    };
     setDocument(null); setError(''); setCurrent(1); currentPage.current = 1;
     void (async () => {
       // Give each load fresh bytes: PDF.js transfers the buffer to its worker.
       const data = new Uint8Array(await file.blob.arrayBuffer());
       if (!alive) return;
-      loading = getDocument({ data });
+      // Vite emits a .js worker, including on servers without an .mjs MIME mapping.
+      // Own each worker so a failed startup cannot poison PDF.js's cached fallback.
+      worker = new PdfJsWorker();
+      worker.addEventListener('error', (event) => {
+        event.preventDefault();
+        fail();
+      });
+      pdfWorker = PDFWorker.create({ port: worker });
+      loading = getDocument({ data, worker: pdfWorker });
       const pdf = await loading.promise;
       const firstPage = await pdf.getPage(1);
       if (!alive) return;
@@ -91,8 +110,8 @@ export default function PdfPreview({ file }: { file: ExportFile }) {
       setSize({ width: viewport.width, height: viewport.height });
       setDocument(pdf);
       if (scroller.current) scroller.current.scrollTop = 0;
-    })().catch(() => { if (alive) setError('PDF 预览暂时无法打开。你仍可下载文件，或重试预览。'); });
-    return () => { alive = false; void loading?.destroy().catch(() => {}); };
+    })().catch(fail);
+    return () => { alive = false; dispose(); };
   }, [file.blob, attempt]);
 
   useEffect(() => {

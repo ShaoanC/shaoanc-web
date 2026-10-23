@@ -70,6 +70,16 @@ npm start
 
 预览回归命令：`npm run test:export-preview`。使用真实 Chromium、隔离数据库和虚构题目，完成后清理临时数据；上述构建、核心与导出烟测也已通过。
 
+2026-10-24 PC 预览加载修复验收：
+
+| 步骤 | 状态 | 内容 |
+| --- | --- | --- |
+| 修复后台脚本加载 | completed | 复现 `.mjs` 被服务器返回为 `application/octet-stream` 时预览失败；改由 Vite 构建为 `.js` worker，无需额外配置 `.mjs` MIME 类型 |
+| 修复失败后的重试 | completed | 每次预览和重试独立创建、销毁 worker，避免 PDF.js 缓存失败的备用加载结果；脚本启动错误显示可点击的重试入口 |
+| 构建与定向回归 | completed | `npm run build`、`npm run test:export-preview` 通过；模拟错误 MIME、首次读取失败和脚本首次返回 503，点击重试后恢复且复用原 PDF，桌面和手机截图检查通过 |
+
+发布时同步更新整个 `public/mistakes/` 构建目录（包括入口 HTML 和新的 `.js` worker），随后刷新页面。旧版本入口仍会请求原来的 `.mjs` 文件。
+
 2026-10-23 配图排版优化验收：
 
 | 步骤 | 状态 | 内容 |

@@ -59,11 +59,25 @@ async function checkViewport(context, base, name, forceLoadFailure) {
     const page = await context.newPage();
     const errors = [];
     let exports = 0;
+    let workerRequests = 0;
     page.on('pageerror', (error) => errors.push(error.message));
     page.on('request', (request) => {
         if (request.method() === 'POST' && request.url().endsWith('/exports/pdf')) exports += 1;
     });
     if (forceLoadFailure) {
+        // Model a static server without an .mjs JavaScript MIME mapping.
+        await page.route('**/*.mjs', async (route) => {
+            const response = await route.fetch();
+            await route.fulfill({ response, contentType: 'application/octet-stream' });
+        });
+        await page.route('**/pdf.worker*.js', async (route) => {
+            workerRequests += 1;
+            if (workerRequests === 1) {
+                await route.fulfill({ status: 503, contentType: 'text/javascript', body: '' });
+            } else {
+                await route.continue();
+            }
+        });
         // Fail only the preview's first read, after the server has returned a real PDF.
         await page.addInitScript(() => {
             // Simulate desktop browsers predating the latest Promise and URL APIs.
@@ -109,9 +123,16 @@ async function checkViewport(context, base, name, forceLoadFailure) {
             const retry = page.getByRole('button', { name: '重试预览', exact: true });
             await retry.waitFor();
             assert.equal(exports, 1);
+            const workerFailure = page.waitForResponse((response) => /\/pdf\.worker[^/]*\.js$/.test(response.url()) && response.status() === 503);
+            await retry.click({ timeout: 5000 });
+            // A worker startup failure must also recover with an ordinary click.
+            await workerFailure;
+            await retry.waitFor();
+            assert.equal(workerRequests, 1, 'The .js worker was requested and failed once');
             await retry.click({ timeout: 5000 });
         }
         await waitPdf(page);
+        if (attempt === 1 && forceLoadFailure) assert.equal(workerRequests, 2, 'Retry creates a fresh worker after a failed startup');
         if (attempt === 1) await page.screenshot({ path: path.join(screenshotsDirectory, `mistakes-export-${forceLoadFailure ? 'desktop' : 'mobile'}.png`) });
         assert.equal(exports, attempt, 'Preview retry reads the cached PDF without requesting another export');
         await page.getByRole('button', { name: '关闭导出预览', exact: true }).click();
