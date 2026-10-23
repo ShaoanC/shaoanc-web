@@ -47,6 +47,62 @@ function fitWideContent(document: HTMLElement) {
   });
 }
 
+function prepareImages(document: HTMLElement, pageHeight: number) {
+  const images = Array.from(document.querySelectorAll('img'));
+  for (const image of images) {
+    const link = image.parentElement;
+    const linkedImage = link?.tagName === 'A' && Array.from(link.childNodes).every((node) => node === image || node.nodeType === Node.TEXT_NODE && !node.textContent?.trim());
+    const content = linkedImage ? link : image;
+    const block = document.ownerDocument.createElement('span');
+    block.className = 'export-image-block';
+    content.before(block);
+    block.append(content);
+  }
+
+  function onlyImages(node: Node): boolean {
+    if (node.nodeType === Node.TEXT_NODE) return !node.textContent?.trim();
+    return node instanceof HTMLElement && (node.tagName === 'IMG' || node.tagName === 'BR' ||
+      ['SPAN', 'A', 'EM', 'STRONG', 'DEL'].includes(node.tagName) && Array.from(node.childNodes).every(onlyImages));
+  }
+
+  document.querySelectorAll('p').forEach((paragraph) => {
+    if (!paragraph.querySelector('img') || !Array.from(paragraph.childNodes).every(onlyImages)) return;
+    paragraph.classList.add('export-image-paragraph');
+    paragraph.querySelectorAll('br').forEach((lineBreak) => lineBreak.remove());
+  });
+  document.querySelectorAll('.export-question, .export-appendix-entry').forEach((entry) => {
+    entry.classList.toggle('export-has-images', Boolean(entry.querySelector('img')));
+  });
+
+  for (const image of images) {
+    const block = image.closest<HTMLElement>('.export-image-block')!;
+    let start = block;
+    // Follow only the preceding break-avoid chain. Earlier body paragraphs may
+    // continue on another page and must not reduce a later photo's size.
+    let current = block;
+    while (current !== document) {
+      if (['page', 'left', 'right', 'recto', 'verso'].includes(getComputedStyle(current).breakBefore)) break;
+      let previous = current.previousSibling;
+      while (previous && (previous.nodeType === Node.COMMENT_NODE || previous.nodeType === Node.TEXT_NODE && !previous.textContent?.trim())) {
+        previous = previous.previousSibling;
+      }
+      if (previous) {
+        if (!(previous instanceof HTMLElement) || !['avoid', 'avoid-page'].includes(getComputedStyle(previous).breakAfter)) break;
+        current = previous;
+      } else {
+        if (!current.parentElement) break;
+        current = current.parentElement;
+      }
+      start = current;
+    }
+    const precedingHeight = image.getBoundingClientRect().top - start.getBoundingClientRect().top;
+    const paragraph = block.closest('p');
+    const spacing = parseFloat(getComputedStyle(block).marginBottom) + (paragraph ? parseFloat(getComputedStyle(paragraph).marginBottom) : 0);
+    const maximum = Math.min(230 * 96 / 25.4, Math.max(1, pageHeight - precedingHeight - spacing - 1));
+    image.style.maxHeight = `${maximum}px`;
+  }
+}
+
 async function prepareDocument(document: HTMLElement) {
   // Force layout first so all font faces required by this document have begun loading.
   document.getBoundingClientRect();
@@ -66,6 +122,7 @@ async function prepareDocument(document: HTMLElement) {
   fitWideContent(document);
   // A4 content is 297mm minus its two 15mm margins. Long questions may split naturally.
   const pageHeight = 267 * 96 / 25.4;
+  prepareImages(document, pageHeight);
   document.querySelectorAll<HTMLElement>('.export-question, .export-appendix-entry').forEach((element) => {
     element.classList.toggle('export-long-question', element.getBoundingClientRect().height > pageHeight);
   });
