@@ -141,6 +141,11 @@ export function MistakesPage() {
   }, [filtersQuery, page, clearRatingRemovalTimers]);
   const reload = useRef(load);
   useEffect(() => { reload.current = load; void load(); }, [load]);
+  useEffect(() => {
+    const updated = () => { void reload.current(false); };
+    window.addEventListener('mistakes:record-view-updated', updated);
+    return () => window.removeEventListener('mistakes:record-view-updated', updated);
+  }, []);
   useEffect(() => { setAction(null); }, [lifecycle, subjectId, knowledgePointId, status, rating, keyword, view]);
   useEffect(() => {
     setSelectedIds([]);

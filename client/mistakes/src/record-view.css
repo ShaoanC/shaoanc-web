@@ -1,0 +1,13 @@
+.record-page-slot, .record-view-slot { min-width: 0; }
+.record-view-drawer > .mobile-filters-content { padding: 0 16px 20px; }
+.record-view-drawer > .mobile-filters-footer { display: block; }
+.record-view-drawer > .mobile-filters-footer:has(> .record-view-actions:empty) { display: none; }
+.record-view-actions { display: flex; justify-content: flex-end; min-width: 0; }
+.record-view-actions > .button { width: 100%; }
+.record-view-actions .save-dock { position: relative; right: auto; bottom: auto; }
+.record-view-actions .save-dock-options { position: absolute; right: 0; bottom: calc(100% + 12px); }
+.record-view-drawer .detail-page, .record-view-drawer .editor-workbench { padding-bottom: 0; }
+.record-view-drawer .detail-document { padding: 22px 14px; }
+.record-view-drawer .detail-reading-header { margin-bottom: 18px; }
+.record-view-drawer .editor-workbench-header { margin-bottom: 16px; }
+.record-view-drawer .editor-navigation .back-link { border: 0; background: transparent; padding: 0; }

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'react-toastify';
 import { ArrowRight, BookOpen, CheckCircle2, ClipboardList, DatabaseBackup, GraduationCap, LayoutGrid, LoaderCircle, LogOut, Plus, RotateCcw, Settings, ShieldCheck, Sparkles, TrendingUp } from 'lucide-react';
 import { api, json } from './api';
@@ -8,7 +8,7 @@ import { LogoMark } from './Logo';
 import { FriendlyCaptcha, type CaptchaState } from './FriendlyCaptcha';
 import { AiTasksProvider, AiTasksButton } from './AiTasks';
 import { PhotoUploadsProvider } from './PhotoUploads';
-import { PageLoadBoundary } from './PageLoadBoundary';
+import { RecordWorkspace } from './RecordWorkspace';
 import type { KnowledgePoint, Subject, User } from './types';
 
 const MistakesPage = lazy(() => import('./pages/MistakesPage').then((module) => ({ default: module.MistakesPage })));
@@ -224,6 +224,7 @@ export default function App() {
   const detailMatch = routePath.match(/^\/mistakes\/(\d+)(\/edit)?$/);
   const skeletonKind = detailMatch ? (detailMatch[2] ? 'editor' : 'detail') : (pageSkeletonKinds[routePath] || 'library');
   const activePath = detailMatch ? '/mistakes' : routePath === '/page-imports' ? '/new' : routePath;
+  const backgroundEditorId = routePath === '/new' ? newEditor.recordId : detailMatch?.[2] ? Number(detailMatch[1]) : null;
   let page;
   if (routePath === '/new') page = <EditorPage key={`new-${newEditor.session}`} onCreated={(recordId) => setNewEditor((current) => ({ ...current, recordId }))} />;
   else if (routePath === '/page-imports') page = <PageImportsPage />;
@@ -237,7 +238,7 @@ export default function App() {
 
   const workspace = user ? <AppContext.Provider value={{ user, updateUser: setUser, subjects, knowledgePoints, refreshDirectory, notify, logout }}><AiTasksProvider key={user.id}><PhotoUploadsProvider><div className="app-shell">
     <aside className="sidebar"><a className="brand" href="#/mistakes"><LogoMark /><span className="brand-text">拾题<span>把错题，学明白。</span></span></a><div className="sidebar-label">学习空间</div><SlidingNavigation value={activePath} ariaLabel="主导航" items={navItems.map(({ path: itemPath, label, icon: Icon }) => ({ id: itemPath, href: `#${itemPath}`, label: <><Icon size={19} strokeWidth={1.8} /><span>{label}</span></> }))} /><div className="sidebar-bottom"><div className="sidebar-reminder"><span className="reminder-icon"><RotateCcw size={22} /></span><strong>温故而知新，可以为师矣</strong><a href="#/review">打开复习页</a></div><div className="account"><a className="account-profile" href="#/settings"><span className="avatar">{user.avatar ? <img src={user.avatar} alt="" /> : user.username.slice(0, 1).toUpperCase()}</span><span className="account-name"><strong title={user.username}>{user.username}</strong><small>{user.role === 'admin' ? '管理员' : '我的账号'}</small></span></a><button className="icon-button" title="退出登录" aria-label="退出登录" onClick={logout}><LogOut size={17} /></button></div></div></aside>
-    <div className="main-shell"><header className="topbar"><span className="topbar-label"><BookOpen size={15} /> 个人学习空间</span><div className="topbar-right"><AiTasksButton /><a className="workspace-state" href="/"><ArrowRight size={16} /> 返回个人主页</a><a className="topbar-avatar" href="#/settings" aria-label="账号设置">{user.avatar ? <img src={user.avatar} alt="" /> : user.username.slice(0, 1).toUpperCase()}</a></div></header><main className="main-content">{backupReadOnly && <div className="backup-readonly-banner" role="status"><DatabaseBackup size={20} /><p><strong>正在备份，暂时只读</strong><span>已输入的内容会保留，请稍后重试保存。</span></p></div>}{directoryError && <div className="inline-alert" role="alert">基础目录加载失败：{directoryError}<button onClick={refreshDirectory}>重试</button></div>}<PageLoadBoundary resetKey={routePath}><Suspense fallback={<LoadingContent loading kind={skeletonKind}>{null}</LoadingContent>}>{page}</Suspense></PageLoadBoundary><footer className="page-footer"><span>拾题 · © {new Date().getFullYear()} ShaoanC</span></footer></main></div>
+    <div className="main-shell"><header className="topbar"><span className="topbar-label"><BookOpen size={15} /> 个人学习空间</span><div className="topbar-right"><AiTasksButton /><a className="workspace-state" href="/"><ArrowRight size={16} /> 返回个人主页</a><a className="topbar-avatar" href="#/settings" aria-label="账号设置">{user.avatar ? <img src={user.avatar} alt="" /> : user.username.slice(0, 1).toUpperCase()}</a></div></header><main className="main-content">{backupReadOnly && <div className="backup-readonly-banner" role="status"><DatabaseBackup size={20} /><p><strong>正在备份，暂时只读</strong><span>已输入的内容会保留，请稍后重试保存。</span></p></div>}{directoryError && <div className="inline-alert" role="alert">基础目录加载失败：{directoryError}<button onClick={refreshDirectory}>重试</button></div>}<RecordWorkspace path={path} editorId={backgroundEditorId} skeletonKind={skeletonKind}>{page}</RecordWorkspace><footer className="page-footer"><span>拾题 · © {new Date().getFullYear()} ShaoanC</span></footer></main></div>
   </div></PhotoUploadsProvider></AiTasksProvider></AppContext.Provider> : <AuthPage onLogin={(nextUser) => { setUser(nextUser); setPath('/mistakes'); window.location.hash = '/mistakes'; }} onNotify={(msg) => { pendingWelcome.current = msg; }} />;
 
   return <><GlobalLoadingProgress /><LoadingContent loading={initializing} kind="shell" className="app-entrance">{!initializing && workspace}</LoadingContent></>;

@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ArrowLeft, Copy, FileText, Layers, Pencil, Sparkles, StickyNote } from 'lucide-react';
 import { api, ApiError, json, navigate } from '../api';
 import { knowledgeLabel, useApp } from '../context';
@@ -13,6 +14,7 @@ import { ImageHistory } from '../ImageHistory';
 import { usePhotoUploads } from '../PhotoUploads';
 import { AiReview } from '../AiReview';
 import { isActiveJob, useAiTasks } from '../AiTasks';
+import { useRecordView } from '../RecordView';
 import { clearEditorDraft, editorChanges, editorForm, editorSavePayload, emptyEditorForm as empty, hasEditorChanges, readEditorDraft, reconcileEditorSave, restoreEditorDraft, sameEditorValue as same, writeEditorDraft, type EditorForm as Form } from '../editor-draft';
 import type { AiApplyOptions, AiInput, AiJob, ImagePurpose } from '../ai-types';
 import type { Lifecycle, Mistake } from '../types';
@@ -22,6 +24,9 @@ const inputOf = (value: Form | Mistake): AiInput => ({ question: value.question,
 const resultFields = (job: AiJob): (keyof Form)[] => job.type === 'question' ? ['question', ...(job.mode === 'page-entry' ? ['answer' as const] : []), 'subjectId', 'primaryKnowledgePointId', 'auxiliaryKnowledgePointIds'] : [job.type];
 
 export function EditorPage({ id, onCreated }: { id?: number; onCreated?: (id: number) => void }) {
+  const recordView = useRecordView();
+  const recordViewRef = useRef(recordView);
+  recordViewRef.current = recordView;
   const { subjects, knowledgePoints, refreshDirectory, notify, user } = useApp();
   const { jobs, config, createJob, applyJob, refresh, openTasks } = useAiTasks();
   const { queue: photoQueue, batches: photoBatches } = usePhotoUploads();
@@ -61,14 +66,14 @@ export function EditorPage({ id, onCreated }: { id?: number; onCreated?: (id: nu
   const openedAt = useRef(Date.now());
   const [dismissed, setDismissed] = useState<number[]>([]);
   const [localConflicts, setLocalConflicts] = useState<number[]>([]);
-  const [actionQuery, setActionQuery] = useState(window.location.hash.split('?')[1] || '');
+  const [actionQuery, setActionQuery] = useState(() => (recordView?.path || window.location.hash).split('?')[1] || '');
   const panelPrefix = useId();
   const questionField = useRef<MarkdownFieldHandle>(null);
   const answerField = useRef<MarkdownFieldHandle>(null);
   const analysisField = useRef<MarkdownFieldHandle>(null);
   const subjectField = useRef<HTMLSelectElement>(null);
   const currentJobs = jobs.filter((job) => job.mistakeId === recordId);
-  const actionParams = new URLSearchParams(actionQuery);
+  const actionParams = new URLSearchParams(recordView ? recordView.path.split('?')[1] || '' : actionQuery);
   const requestedJob = currentJobs.find((job) => job.id === Number(actionParams.get('aiJob')));
   const requestedPhoto = actionParams.get('photo');
   const questionBatch = photoBatches.find((batch) => batch.mistakeId === recordId && batch.purpose === 'question');
@@ -87,15 +92,16 @@ export function EditorPage({ id, onCreated }: { id?: number; onCreated?: (id: nu
     } catch { draftStored.current = false; setDraftError('浏览器未能保存本机草稿，请先保存到错题本再离开。'); }
   }
   function update(patch: Partial<Form>) { dataRef.current = { ...dataRef.current, ...patch }; setData(dataRef.current); syncDraft(); }
+  function confirmLeave() {
+    const photos = pendingPhotos.current.question || pendingPhotos.current.answer;
+    if (photos && !window.confirm('还有未上传或正在准备的图片，离开后需要重新选择。确定离开？')) return false;
+    if (!draftStored.current && hasEditorChanges(dataRef.current, baseline.current) && !window.confirm('本机草稿保存失败，离开会丢失未提交的文字。确定离开？')) return false;
+    return true;
+  }
+  useEffect(() => recordView?.registerLeaveCheck(confirmLeave), [recordView?.registerLeaveCheck]);
   useEffect(() => { syncDraft(); }, [data, recordId]);
   useEffect(() => {
     mounted.current = true;
-    function confirmLeave() {
-      const photos = pendingPhotos.current.question || pendingPhotos.current.answer;
-      if (photos && !window.confirm('还有未上传或正在准备的图片，离开后需要重新选择。确定离开？')) return false;
-      if (!draftStored.current && hasEditorChanges(dataRef.current, baseline.current) && !window.confirm('本机草稿保存失败，离开会丢失未提交的文字。确定离开？')) return false;
-      return true;
-    }
     const beforeUnload = (event: BeforeUnloadEvent) => {
       if (pendingPhotos.current.question || pendingPhotos.current.answer || hasEditorChanges(dataRef.current, baseline.current)) {
         event.preventDefault(); event.returnValue = '';
@@ -104,7 +110,8 @@ export function EditorPage({ id, onCreated }: { id?: number; onCreated?: (id: nu
     const beforeNavigate = (event: Event) => {
       const target = (event as CustomEvent<{ path: string }>).detail.path.split('?')[0];
       const ownRoute = recordRef.current ? `/mistakes/${recordRef.current}/edit` : '/new';
-      if (target !== ownRoute && !confirmLeave()) event.preventDefault();
+      const leavingDrawer = recordViewRef.current && !recordViewRef.current.retainsEditor;
+      if ((target !== ownRoute || leavingDrawer) && !confirmLeave()) event.preventDefault();
     };
     const beforeLogout = (event: Event) => { if (!confirmLeave()) event.preventDefault(); };
     const sessionEnding = () => { leaving.current = true; };
@@ -125,7 +132,7 @@ export function EditorPage({ id, onCreated }: { id?: number; onCreated?: (id: nu
   }, []);
   useEffect(() => {
     const route = () => {
-      const query = window.location.hash.split('?')[1] || '';
+      const query = (recordViewRef.current?.path || window.location.hash).split('?')[1] || '';
       const params = new URLSearchParams(query);
       const jobId = Number(params.get('aiJob'));
       setActionQuery(query);
@@ -134,16 +141,17 @@ export function EditorPage({ id, onCreated }: { id?: number; onCreated?: (id: nu
       if (job) setTab(job.type === 'question' ? 'question' : 'answers');
       else if (params.get('photo')) setTab(params.get('photo') === 'answer' ? 'answers' : 'question');
     };
+    if (recordView) { route(); return; }
     window.addEventListener('hashchange', route);
     return () => window.removeEventListener('hashchange', route);
-  }, [jobs, recordId]);
+  }, [jobs, recordId, recordView?.path, recordView?.requestId]);
   useEffect(() => {
     if (loading) return;
     if (requestedJob) {
       setTab(requestedJob.type === 'question' ? 'question' : 'answers');
       setDismissed((items) => items.includes(requestedJob.id) ? items.filter((id) => id !== requestedJob.id) : items);
     } else if (requestedPhoto === 'question' || requestedPhoto === 'answer') setTab(requestedPhoto === 'question' ? 'question' : 'answers');
-  }, [loading, requestedJob?.id, requestedPhoto]);
+  }, [loading, requestedJob?.id, requestedPhoto, recordView?.requestId]);
   useEffect(() => {
     const media = window.matchMedia('(max-width: 640px)');
     const change = () => setMobile(media.matches);
@@ -187,6 +195,7 @@ export function EditorPage({ id, onCreated }: { id?: number; onCreated?: (id: nu
     setSaving(lifecycle);
     try {
       const item = await promise;
+      recordView?.updated(item.id);
       setSaveConflict(false);
       baseline.current = item;
       setAnalysisNotice(item.analysisNotice || '');
@@ -237,7 +246,9 @@ export function EditorPage({ id, onCreated }: { id?: number; onCreated?: (id: nu
         const message = hasEditorChanges(dataRef.current, baseline.current) ? '已保存本次提交的内容，仍有较新的修改未提交，请再次保存。' : '文字已保存，还有图片未上传，请处理后再离开。';
         setDraftNotice(message); notify(message); return;
       }
-      setDraftNotice(''); notify(lifecycle === 'draft' ? '草稿已保存。' : '错题已保存。'); navigate(`/mistakes/${item.id}`);
+      setDraftNotice(''); notify(lifecycle === 'draft' ? '草稿已保存。' : '错题已保存。');
+      if (recordView) recordView.saved();
+      else navigate(`/mistakes/${item.id}`);
     }
     catch (err) { setError((err as Error).message); notify((err as Error).message, 'error'); }
   }
@@ -320,9 +331,11 @@ export function EditorPage({ id, onCreated }: { id?: number; onCreated?: (id: nu
     return currentJobs.filter((job) => job.type === type && job.status === 'succeeded' && job.result && (job.applyStatus !== 'applied' || localConflicts.includes(job.id)) && !dismissed.includes(job.id)).map((job) => <AiReview key={job.id} job={job} input={inputOf(data)} busy={Boolean(applying) || Boolean(saving)} onApply={(options) => fill(job, Boolean(options.force), options.mode || 'replace', options)} onDismiss={() => setDismissed((items) => [...items, job.id])} />);
   }
 
+  const saveDock = <SaveDock open={saveOpen} onOpenChange={setSaveOpen} saving={saving} archived={data.lifecycle === 'archived'} onSave={(lifecycle) => void save(lifecycle)} />;
+
   return <div className="editor-workbench">
-    <nav className="editor-navigation" aria-label="录题导航"><a className="back-link" href={recordId ? `#/mistakes/${recordId}` : '#/mistakes'}><ArrowLeft size={16} />{recordId ? '返回错题详情' : '返回我的错题'}</a>{!recordId && <a className="table-button editor-batch-entry" href="#/page-imports"><Layers size={15} />按页批量录入</a>}</nav>
-    <header className="editor-workbench-header"><div><h1>{id ? '编辑错题' : '录入错题'}</h1>{recordId && <span className="editor-record-id">记录 #{recordId}</span>}</div><div className="editor-workbench-state"><DataTypeBadge isTest={isTest} /><span className="editor-mode"><Pencil size={14} />正在编辑</span></div></header>
+    <nav className="editor-navigation" aria-label="录题导航">{recordView ? <button type="button" className="back-link" onClick={() => recordView.navigate(recordId ? `/mistakes/${recordId}` : '/mistakes')}><ArrowLeft size={16} />返回错题详情</button> : <><a className="back-link" href={recordId ? `#/mistakes/${recordId}` : '#/mistakes'}><ArrowLeft size={16} />{recordId ? '返回错题详情' : '返回我的错题'}</a>{!recordId && <a className="table-button editor-batch-entry" href="#/page-imports"><Layers size={15} />按页批量录入</a>}</>}</nav>
+    <header className="editor-workbench-header"><div>{!recordView && <h1>{id ? '编辑错题' : '录入错题'}</h1>}{recordId && <span className="editor-record-id">记录 #{recordId}</span>}</div><div className="editor-workbench-state"><DataTypeBadge isTest={isTest} /><span className="editor-mode"><Pencil size={14} />正在编辑</span></div></header>
     <LoadingContent loading={loading} kind="editor">{loadError ? <ErrorState message={loadError} /> : <form onSubmit={(event) => { event.preventDefault(); void save('archived'); }}>
       {error && <div className="form-error editor-validation" role="alert">{error}</div>}
       {saveConflict && <div className="ai-review-issues" role="alert"><p>其他页面已修改这道题。你的未提交内容仍保留在本机，请选择后再保存。</p><div className="photo-actions"><button type="button" className="button secondary" disabled={resolvingConflict || Boolean(saving)} onClick={() => void resolveSaveConflict(true)}>保留我的修改，准备重新保存</button><button type="button" className="button ghost" disabled={resolvingConflict || Boolean(saving)} onClick={() => void resolveSaveConflict(false)}>放弃本机修改，载入服务器内容</button></div></div>}
@@ -353,7 +366,7 @@ export function EditorPage({ id, onCreated }: { id?: number; onCreated?: (id: nu
         <div className="field"><span>辅助知识点 <span className="optional-label">可多选</span></span><ScrollArea className="knowledge-options" tabIndex={0} role="region" aria-label="辅助知识点">{points.filter((point) => point.id !== data.primaryKnowledgePointId).map((point) => <label className={`knowledge-option ${data.auxiliaryKnowledgePointIds.includes(point.id) ? 'selected' : ''}`} key={point.id}><Checkbox checked={data.auxiliaryKnowledgePointIds.includes(point.id)} onChange={(event) => update({ auxiliaryKnowledgePointIds: event.target.checked ? [...data.auxiliaryKnowledgePointIds, point.id] : data.auxiliaryKnowledgePointIds.filter((value) => value !== point.id) })} />{knowledgeLabel(knowledgePoints, point.id)}</label>)}{!points.length && <p className="muted text-muted">该学科暂未配置知识点，可先录入题目。</p>}</ScrollArea></div>
         <div className="field"><span>星级标记 <span className="optional-label">选填</span></span><StarRatingPicker value={data.rating} onChange={(rating) => update({ rating })} disabled={Boolean(saving)} /></div>
       </aside></div>
-      <SaveDock open={saveOpen} onOpenChange={setSaveOpen} saving={saving} archived={data.lifecycle === 'archived'} onSave={(lifecycle) => void save(lifecycle)} />
+      {recordView?.actionsContainer ? createPortal(saveDock, recordView.actionsContainer) : saveDock}
     </form>}</LoadingContent>
   </div>;
 }

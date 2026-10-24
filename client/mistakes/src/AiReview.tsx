@@ -3,6 +3,7 @@ import { Check, ImagePlus, Trash2, ZoomIn } from 'lucide-react';
 import { api } from './api';
 import { knowledgeLabel, useApp } from './context';
 import { AiDialog } from './AiDialog';
+import { useRecordView } from './RecordView';
 import { MarkdownContent } from './MarkdownContent';
 import { cropFigure, figureMarker, ImageRegions, validBox, type EditableFigure } from './ImageRegions';
 import type { AiApplyOptions, AiInput, AiJob, FigureBox, ImagePurpose, MistakeImage } from './ai-types';
@@ -27,6 +28,7 @@ function initialDraft(job: AiJob, input: AiInput): ReviewDraft {
 }
 
 export function AiReview({ job, input, busy, onApply, onDismiss }: { job: AiJob; input: AiInput; busy: boolean; onApply: (options: AiApplyOptions) => Promise<void>; onDismiss: () => void }) {
+  const recordView = useRecordView();
   const { subjects, knowledgePoints } = useApp();
   const pageEntry = job.mode === 'page-entry';
   const [open, setOpen] = useState(false);
@@ -68,7 +70,7 @@ export function AiReview({ job, input, busy, onApply, onDismiss }: { job: AiJob;
   }, [open]);
   useEffect(() => {
     function openRequestedReview() {
-      const params = new URLSearchParams(window.location.hash.split('?')[1] || '');
+      const params = new URLSearchParams((recordView?.path || window.location.hash).split('?')[1] || '');
       const requestedId = params.get('aiJob');
       if (requestedId !== String(job.id)) {
         if (requestedId) setOpen(false);
@@ -77,9 +79,10 @@ export function AiReview({ job, input, busy, onApply, onDismiss }: { job: AiJob;
       setPreview(true); setMobileView('result'); setOpen(true);
     }
     openRequestedReview();
+    if (recordView) return;
     window.addEventListener('hashchange', openRequestedReview);
     return () => window.removeEventListener('hashchange', openRequestedReview);
-  }, [job.id]);
+  }, [job.id, recordView?.path, recordView?.requestId]);
   useEffect(() => {
     try { sessionStorage.setItem(storeKey(job), JSON.stringify(draft)); } catch { /* The open review still retains its draft. */ }
   }, [draft, job.id, job.mistakeId]);

@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ArrowLeft, BookOpen, CalendarDays, Clock3, Download, FileText, Pencil, RotateCcw, StickyNote } from 'lucide-react';
 import { api, formatDate, json, navigate } from '../api';
 import { knowledgeLabel, useApp } from '../context';
@@ -10,10 +11,12 @@ import { DeleteButton } from '../DeleteButton';
 import { LoadingContent } from '../motion';
 import { StarRatingPicker, StarRatingDisplay } from '../StarRating';
 import { MistakeExport } from '../MistakeExport';
+import { useRecordView } from '../RecordView';
 import type { Mistake, Review } from '../types';
 import '../export-selection.css';
 
 export function DetailPage({ id }: { id: number }) {
+  const view = useRecordView();
   const { subjects, knowledgePoints, notify } = useApp();
   const { jobs } = useAiTasks();
   const appliedJobs = jobs.filter((job) => job.mistakeId === id && job.applyStatus === 'applied').map((job) => job.id).join(',');
@@ -28,10 +31,23 @@ export function DetailPage({ id }: { id: number }) {
   const [ratingSaving, setRatingSaving] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
 
+  const loadDetails = useCallback(async (background = false) => {
+    const [item, history] = await Promise.all([api<Mistake>(`/mistakes/${id}`, {}, { background }), api<Review[]>(`/mistakes/${id}/reviews`, {}, { background })]);
+    setMistake(item); setReviews(history); setRatingPreview(item.rating); setRatingError(''); setError('');
+  }, [id]);
+
   useEffect(() => {
     setExportOpen(false);
-    Promise.all([api<Mistake>(`/mistakes/${id}`), api<Review[]>(`/mistakes/${id}/reviews`)]).then(([item, history]) => { setMistake(item); setReviews(history); setRatingPreview(item.rating); setRatingError(''); }).catch((err) => setError(err.message));
-  }, [id]);
+    void loadDetails().catch((err) => setError(err.message));
+  }, [loadDetails]);
+
+  useEffect(() => {
+    const updated = (event: Event) => {
+      if ((event as CustomEvent<{ id: number }>).detail.id === id) void loadDetails(true).catch(() => { /* Keep the current detail until a later refresh succeeds. */ });
+    };
+    window.addEventListener('mistakes:record-view-updated', updated);
+    return () => window.removeEventListener('mistakes:record-view-updated', updated);
+  }, [id, loadDetails]);
 
   useEffect(() => {
     if (!appliedJobs) return;
@@ -43,7 +59,8 @@ export function DetailPage({ id }: { id: number }) {
     try {
       await api(`/mistakes/${id}`, { method: 'DELETE' });
       notify('错题已移入回收站，30 天内可恢复。');
-      navigate('/mistakes');
+      if (view) view.saved();
+      else navigate('/mistakes');
     } catch (err) { notify((err as Error).message, 'error'); setDeleting(false); }
   }
 
@@ -52,7 +69,8 @@ export function DetailPage({ id }: { id: number }) {
     try {
       await api<Mistake>(`/mistakes/${id}/restore`, { method: 'POST' });
       notify('错题及复习记录已恢复。');
-      navigate('/mistakes?trash=1');
+      if (view) view.saved();
+      else navigate('/mistakes?trash=1');
     } catch (err) { notify((err as Error).message, 'error'); setRestoring(false); }
   }
 
@@ -71,11 +89,10 @@ export function DetailPage({ id }: { id: number }) {
   const subjectName = subjects.find((subject) => subject.id === mistake?.subjectId)?.name || mistake?.subjectId;
   return <LoadingContent loading={!mistake && !error} kind="detail" className="detail-page detail-reading">
     {error ? <ErrorState message={error} /> : mistake && <>
-      <a className="back-link" href={mistake.deletedAt ? '#/mistakes?trash=1' : '#/mistakes'}><ArrowLeft size={16} /> {mistake.deletedAt ? '返回回收站' : '返回我的错题'}</a>
+      {!view && <a className="back-link" href={mistake.deletedAt ? '#/mistakes?trash=1' : '#/mistakes'}><ArrowLeft size={16} /> {mistake.deletedAt ? '返回回收站' : '返回我的错题'}</a>}
       <header className="detail-header detail-reading-header">
         <div>
-          <div className="eyebrow">浏览详情</div>
-          <h1>错题详情</h1>
+          {!view && <><div className="eyebrow">浏览详情</div><h1>错题详情</h1></>}
           <div className="detail-subtitle">
             <DataTypeBadge isTest={mistake.isTest} />
             <span className={`subject-tag subject-${mistake.subjectId}`}>{subjectName || <span className="text-muted">未选学科</span>}</span>
@@ -127,7 +144,9 @@ export function DetailPage({ id }: { id: number }) {
         <span><CalendarDays size={14} /> 录入于 {formatDate(mistake.createdAt)}</span>
         <span><Clock3 size={14} /> 更新于 {formatDate(mistake.updatedAt)}</span>
       </footer>
-      {!mistake.deletedAt && <a className="button primary detail-edit-button" href={`#/mistakes/${id}/edit`}><Pencil size={16} /> 编辑错题</a>}
+      {!mistake.deletedAt && (view
+        ? view.actionsContainer && createPortal(<a className="button primary" href={`#/mistakes/${id}/edit`}><Pencil size={16} /> 编辑错题</a>, view.actionsContainer)
+        : <a className="button primary detail-edit-button" href={`#/mistakes/${id}/edit`}><Pencil size={16} /> 编辑错题</a>)}
       {exportOpen && !mistake.deletedAt && <MistakeExport mistakes={[mistake]} single onClose={() => setExportOpen(false)} />}
     </>}
   </LoadingContent>;

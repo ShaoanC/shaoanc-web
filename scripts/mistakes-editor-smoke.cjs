@@ -29,7 +29,7 @@ function editorRuntime(tools, saved, storage = memoryStorage(), creationInput) {
         data: { ...tools.emptyEditorForm, subjectId: 'math', question: '原题', lifecycle: 'draft' },
         pendingSave: { current: null }, mounted: { current: true }, leaving: { current: false },
         recordRef: { current: saved?.id }, baseline: { current: saved }, creationInput: { current: creationInput }, clientId: { current: 'same-draft-id' },
-        saving: null, applying: null, resolvingConflict: false, pendingPhotos: { current: { question: false, answer: false } },
+        saving: null, applying: null, resolvingConflict: false, recordView: null, pendingPhotos: { current: { question: false, answer: false } },
         window: { localStorage: storage, history: { replaceState() {} } }, user: { id: 1 },
         AbortController, setTimeout, clearTimeout,
         json: (body, method) => ({ method, body }),
