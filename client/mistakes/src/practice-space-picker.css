@@ -11,7 +11,7 @@
 .practice-space-number[data-disabled] { opacity: .5; }
 .practice-space-number[data-disabled] input, .practice-space-number[data-disabled] button { opacity: 1; }
 
-.practice-space-wheel { display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; min-height: 152px; overflow: hidden; border: 1px solid var(--border-medium); border-radius: var(--radius-md); background: var(--surface-2); overscroll-behavior: none; touch-action: none; user-select: none; }
+.practice-space-wheel { display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; min-height: 152px; overflow: hidden; border: 1px solid var(--border-medium); border-radius: var(--radius-md); background: var(--surface-2); user-select: none; }
 .practice-space-wheel:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .practice-space-wheel[data-disabled] { opacity: .5; }
 .practice-space-wheel-viewport[data-rwp-wrapper] { flex: 0 1 112px; width: 112px; min-width: 0; touch-action: none; overscroll-behavior: none; }

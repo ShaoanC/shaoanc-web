@@ -14,6 +14,7 @@
     "test:client": "node scripts/mistakes-editor-smoke.cjs && node scripts/mistakes-page-upload-smoke.cjs",
     "test:export": "node scripts/mistakes-export-smoke.cjs",
     "test:export-preview": "node scripts/mistakes-export-preview-smoke.cjs",
+    "test:export-practice": "node scripts/mistakes-practice-export-smoke.cjs",
     "test:backup": "node scripts/mistakes-backup-smoke.cjs",
     "baseline:ai": "node scripts/mistakes-ai-baseline.cjs",
     "admin:create": "node server/mistakes/create-admin.js",

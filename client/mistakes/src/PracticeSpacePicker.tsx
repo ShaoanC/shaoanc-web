@@ -33,7 +33,7 @@ export function PracticeSpacePicker({ value, onChange, mobile, disabled = false 
   }, [mobile]);
 
   useEffect(() => {
-    const boundary = wheel.current;
+    const boundary = wheel.current?.querySelector<HTMLElement>('.practice-space-wheel-viewport');
     if (!boundary) return;
     function containGesture(event: Event) {
       if (event.cancelable) event.preventDefault();
