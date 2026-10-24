@@ -44,9 +44,12 @@ async function desktopControls(context, base) {
     const increase = page.getByRole('button', { name: '增加答题留白', exact: true });
     const decrease = page.getByRole('button', { name: '减少答题留白', exact: true });
     await increase.click();
-    assert.equal(await picker.inputValue(), '61');
+    assert.equal(await picker.inputValue(), '65', 'The desktop up arrow increases answer space by 5mm');
     await decrease.click();
-    assert.equal(await picker.inputValue(), '60');
+    assert.equal(await picker.inputValue(), '60', 'The desktop down arrow decreases answer space by 5mm');
+    await picker.fill('62');
+    await picker.press('Tab');
+    assert.equal(await picker.inputValue(), '60', 'Direct input snaps to the nearest 5mm option');
     for (const [value, disabledButton, key] of [[10, decrease, 'ArrowDown'], [70, increase, 'ArrowUp']]) {
         await picker.fill(String(value));
         await picker.press('Tab');
@@ -96,14 +99,17 @@ async function mobileControls(context, base) {
     await picker.scrollIntoViewIfNeeded();
     const before = await content.evaluate((element) => ({ top: element.scrollTop, page: window.scrollY }));
     const wheel = picker.locator('[data-rwp]').first();
+    assert.deepEqual(await wheel.locator('[data-rwp-highlight-item]').allTextContents(), Array.from({ length: 13 }, (_, index) => String(10 + index * 5)), 'The mobile wheel contains the 13 options from 10mm to 70mm in 5mm steps');
     const box = await wheel.boundingBox();
     assert.ok(box, 'The mobile wheel is present');
     await touchDrag(page, box, -45);
     const upValue = await wheelSettled(picker);
     assert.ok(upValue > 60 && upValue <= 70, `A real upward touch drag selects a larger value (${upValue})`);
+    assert.equal(upValue % 5, 0, 'An upward mobile drag settles on a 5mm option');
     await touchDrag(page, await wheel.boundingBox(), 45);
     const downValue = await wheelSettled(picker);
     assert.ok(downValue < upValue && downValue >= 10, `A real downward touch drag selects a smaller value (${downValue})`);
+    assert.equal(downValue % 5, 0, 'A downward mobile drag settles on a 5mm option');
     assert.equal(await dialog.isVisible(), true, 'Wheel drags keep the export drawer open');
     assert.deepEqual(await content.evaluate((element) => ({ top: element.scrollTop, page: window.scrollY })), before, 'Wheel gestures leave both the drawer content and page scroll unchanged');
 
@@ -179,7 +185,7 @@ async function printedLayout(context, base, mistakes) {
 
 async function defaultPdf(context, base, mistakes, expectedHeadingDistance) {
     const source = { ids: mistakes.map((mistake) => mistake.id) };
-    for (const practiceSpace of [9, 71, 10.5]) {
+    for (const practiceSpace of [9, 71, 10.5, 11, 61]) {
         const response = await context.request.post(`${base}/api/mistakes/exports/pdf`, { data: { source, options: { version: 'practice', practiceSpace } } });
         assert.equal(response.status(), 400, `${practiceSpace}mm is rejected without PDF generation`);
     }
@@ -236,7 +242,7 @@ async function main() {
     await defaultPdf(desktop, base, mistakes, expectedHeadingDistance);
     await mobile.close();
     await desktop.close();
-    console.log('Practice PDF smoke passed: 10–70mm controls, default 60mm, contained mobile touch scrolling, PDF spacing and practice-only divider removal.');
+    console.log('Practice PDF smoke passed: 10–70mm controls in 5mm steps, default 60mm, contained mobile touch scrolling, PDF spacing and practice-only divider removal.');
 }
 
 async function cleanup() {

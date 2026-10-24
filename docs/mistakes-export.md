@@ -4,7 +4,7 @@
 
 在“我的错题”点击“导出”，可导出当前筛选的全部结果或本页所选题目；详情页可导出单题。“下载 PDF”可直接保存文件，“预览 PDF”显示同一份文件的实际分页，再次下载不会重新生成。
 
-默认文档标题为“错题”，A4 纵向、15mm 页边距、12pt 思源宋体正文、思源黑体标题、连续排题。字号可选 10.5／12／14pt，每题可另起一页，单题分页时不添加题目分割线。完整版默认逐题附答案、解析与笔记，也可集中到文末并保留对应题号；选择练习版会取消“包含我的笔记”，隐藏答案、解析和笔记。练习版去除答题留白底线和题目分隔线，连续排题时答题空白可在10–70mm之间按1mm调节，默认60mm；手机上下滑动滚轮选择，PC点击上下箭头或输入数值。每题另起一页时隐藏留白设置，也不添加固定答题空白。
+默认文档标题为“错题”，A4 纵向、15mm 页边距、12pt 思源宋体正文、思源黑体标题、连续排题。字号可选 10.5／12／14pt，每题可另起一页，单题分页时不添加题目分割线。完整版默认逐题附答案、解析与笔记，也可集中到文末并保留对应题号；选择练习版会取消“包含我的笔记”，隐藏答案、解析和笔记。练习版去除答题留白底线和题目分隔线，连续排题时答题空白可在10–70mm之间按5mm一档调节，默认60mm；手机上下滑动滚轮选择，PC点击上下箭头或输入数值，输入会吸附到最近档位。每题另起一页时隐藏留白设置，也不添加固定答题空白。
 
 正文配图居中、保持原比例，只缩小不放大，适应所在内容宽度，常规最高230mm。首图会为必须同页的题号、元信息或小标题预留高度；有图题目和答案条目可按内容块续页，同段多图也可分别换页，每张图片始终完整。超长图整图缩至单页，因此图中文字可能较小；照片上传记录中未插入正文的图片不会自动加入导出。图片链接保留，排版处理不修改保存的正文或上传文件。
 
@@ -42,7 +42,7 @@ npm start
 
 鉴权接口 `POST /api/mistakes/exports/pdf` 接收 `{ source, options }`。`source` 为 `{ ids: number[] }` 或 `{ filters: { lifecycle, subjectId, knowledgePointId, status, rating, keyword, dataType } }`，筛选值为字符串，沿用列表筛选及排序；明确 ID 按提交顺序导出，已删除或不可访问的所选题目会提示重新选择。
 
-`options` 包含 `title`、`version`（`complete`／`practice`）、`includeNotes`、`fontSize`（10.5／12／14）、`layout`（`continuous`／`per-question`）、`practiceSpace`（10–70的整数，单位mm，默认60）、`answerPlacement`（`inline`／`appendix`）。未提供的设置使用上述默认值。
+`options` 包含 `title`、`version`（`complete`／`practice`）、`includeNotes`、`fontSize`（10.5／12／14）、`layout`（`continuous`／`per-question`）、`practiceSpace`（10–70，每5mm一档，默认60）、`answerPlacement`（`inline`／`appendix`）。未提供的设置使用上述默认值。
 
 成功响应为 `application/pdf`，通过 `Content-Disposition` 提供 UTF-8 文件名，`X-Export-Question-Count` 提供实际题数；失败返回现有 `{ success: false, message }` JSON。前端独立读取二进制响应，不派发题目更新事件。文档日期按上海时区生成。
 
@@ -95,7 +95,7 @@ npm start
 | 步骤 | 状态 | 内容 |
 | --- | --- | --- |
 | 练习版题间排版 | completed | 移除答题空白底线与题目分隔线；实际PDF中题间留白清晰，完整版保留原排版 |
-| 留白数值与两端控件 | completed | 前后端支持10–70mm整数，默认60mm；手机使用 React Wheel Picker，PC使用现有 Base UI Number Field 的上下箭头 |
+| 留白数值与两端控件 | completed | 前后端支持10–70mm，每5mm一档，默认60mm；手机使用 React Wheel Picker，PC使用现有 Base UI Number Field 的上下箭头 |
 | 构建与定向验证 | completed | `npm run build`、服务端语法检查、`npm run test:export-practice`通过；手机真实触摸、轮内滚动隔离和轮外滚动、数值边界与导出下载通过；桌面／手机截图及两份PDF渲染抽查通过 |
 
 定向烟测使用隔离数据库，只检查此次练习版相关行为。默认60mm PDF、手机70mm PDF及两端截图保存在忽略Git的 `data/practice-export-qa/` 供本地抽查。

@@ -14,13 +14,14 @@ interface PracticeSpacePickerProps {
 
 const minimum = 10;
 const maximum = 70;
-const options: WheelPickerOption<number>[] = Array.from({ length: maximum - minimum + 1 }, (_, index) => {
-  const value = minimum + index;
+const step = 5;
+const options: WheelPickerOption<number>[] = Array.from({ length: (maximum - minimum) / step + 1 }, (_, index) => {
+  const value = minimum + index * step;
   return { value, label: String(value) };
 });
 
-function integerSpace(value: number) {
-  return Math.max(minimum, Math.min(maximum, Math.round(value)));
+function snapSpace(value: number) {
+  return Math.max(minimum, Math.min(maximum, Math.round(value / step) * step));
 }
 
 export function PracticeSpacePicker({ value, onChange, mobile, disabled = false }: PracticeSpacePickerProps) {
@@ -50,23 +51,23 @@ export function PracticeSpacePicker({ value, onChange, mobile, disabled = false 
 
   function navigate(event: KeyboardEvent<HTMLDivElement>) {
     if (disabled || event.target !== event.currentTarget || event.nativeEvent.isComposing) return;
-    const next = event.key === 'ArrowUp' ? value + 1 : event.key === 'ArrowDown' ? value - 1 : event.key === 'Home' ? minimum : event.key === 'End' ? maximum : null;
+    const next = event.key === 'ArrowUp' ? value + step : event.key === 'ArrowDown' ? value - step : event.key === 'Home' ? minimum : event.key === 'End' ? maximum : null;
     if (next === null) return;
     event.preventDefault();
     event.stopPropagation();
-    onChange(integerSpace(next));
+    onChange(snapSpace(next));
   }
 
   if (mobile) return <div ref={wheel} className="practice-space-picker practice-space-wheel" role="spinbutton" tabIndex={disabled ? -1 : 0} aria-label="每题答题留白" aria-valuemin={minimum} aria-valuemax={maximum} aria-valuenow={value} aria-valuetext={`${value} 毫米`} aria-disabled={disabled} data-disabled={disabled || undefined} data-base-ui-swipe-ignore="" onKeyDown={navigate} onPointerDown={(event) => { if (!disabled) event.currentTarget.focus({ preventScroll: true }); }}>
     <div className="practice-space-wheel-viewport" data-rwp-wrapper="" aria-hidden="true" inert={disabled}>
-      <WheelPicker options={options} value={value} onValueChange={(next) => { if (!disabled) onChange(integerSpace(next)); }} visibleCount={16} optionItemHeight={30} classNames={{ optionItem: 'practice-space-wheel-option', highlightWrapper: 'practice-space-wheel-highlight', highlightItem: 'practice-space-wheel-selected' }} />
+      <WheelPicker options={options} value={value} onValueChange={(next) => { if (!disabled) onChange(snapSpace(next)); }} visibleCount={16} optionItemHeight={30} classNames={{ optionItem: 'practice-space-wheel-option', highlightWrapper: 'practice-space-wheel-highlight', highlightItem: 'practice-space-wheel-selected' }} />
     </div>
     <div className="practice-space-wheel-caption" aria-hidden="true"><span>毫米</span><small>10–70</small></div>
   </div>;
 
-  return <NumberField.Root className="practice-space-picker practice-space-number" value={value} min={minimum} max={maximum} step={1} smallStep={1} largeStep={1} snapOnStep disabled={disabled} format={{ useGrouping: false, maximumFractionDigits: 0 }} onValueChange={(next, details) => {
+  return <NumberField.Root className="practice-space-picker practice-space-number" value={value} min={minimum} max={maximum} step={step} smallStep={step} largeStep={step} snapOnStep disabled={disabled} format={{ useGrouping: false, maximumFractionDigits: 0 }} onValueChange={(next, details) => {
     if (next === null) { details.cancel(); return; }
-    onChange(integerSpace(next));
+    onChange(snapSpace(next));
   }}>
     <NumberField.Group className="practice-space-number-group">
       <NumberField.Input className="practice-space-number-input" role="spinbutton" aria-label="每题答题留白" aria-valuemin={minimum} aria-valuemax={maximum} aria-valuenow={value} aria-valuetext={`${value} 毫米`} />

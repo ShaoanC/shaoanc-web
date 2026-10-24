@@ -120,7 +120,7 @@ function readOptions(input = {}) {
     options.title = options.title.trim() || defaults.title;
     if (!['complete', 'practice'].includes(options.version) || typeof options.includeNotes !== 'boolean' ||
         ![10.5, 12, 14].includes(options.fontSize) || !['continuous', 'per-question'].includes(options.layout) ||
-        !Number.isInteger(options.practiceSpace) || options.practiceSpace < 10 || options.practiceSpace > 70 ||
+        !Number.isInteger(options.practiceSpace) || options.practiceSpace < 10 || options.practiceSpace > 70 || options.practiceSpace % 5 !== 0 ||
         !['inline', 'appendix'].includes(options.answerPlacement)) {
         fail(400, '导出设置无效，请重新选择');
     }
