@@ -2203,6 +2203,13 @@ input:focus, textarea:focus, select:focus { outline: 2px solid rgba(23,100,72,.1
 .metrics-grid.library-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .library-metrics .metric-card { min-height: 0; border-bottom: 0; }
 .library-metrics .metric-card:not(:last-child) { border-right: 1px solid var(--border-medium); }
+.skeleton-library-metric { overflow: hidden; }
+.skeleton-library-label { display: block; position: relative; flex: 0 1 auto; width: max-content; min-width: 0; max-width: calc(100% - 40px); overflow: hidden; border-radius: 2px; color: transparent; background: #E5ECE3; }
+.skeleton-library-metric .metric-icon { overflow: hidden; }
+.skeleton-metric-icon { display: block; position: relative; width: 16px; height: 16px; border-radius: 50%; background: currentColor; opacity: .24; }
+.skeleton-library-metric .metric-value > .skeleton-metric-count { display: inline-block; position: relative; width: 54px; height: 32px; margin-left: 0; border-radius: 2px; background: #E5ECE3; }
+.skeleton-library-metric .metric-value > .skeleton-metric-unit { display: inline-block; position: relative; width: 18px; height: 14px; border-radius: 2px; background: #E5ECE3; }
+.skeleton-metric-count::after, .skeleton-metric-unit::after { content: ''; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,.48) 46%, rgba(255,255,255,.56) 54%, transparent 100%); animation: shimmer 1650ms var(--motion-ease) infinite; }
 
 /* Keep title spacing compact after removing explanatory text. */
 .stats-grid .panel-title { margin-bottom: 0; }
@@ -2354,6 +2361,10 @@ input:focus, textarea:focus, select:focus { outline: 2px solid rgba(23,100,72,.1
   .editor-workbench .editor-classification { position: static; }
 }
 @media (max-width: 640px) {
+  .skeleton-library-label { max-width: calc(100% - 26px); }
+  .skeleton-library-metric .metric-icon { width: 20px; height: 22px; }
+  .skeleton-metric-icon { width: 13px; height: 13px; }
+  .skeleton-library-metric .metric-value > .skeleton-metric-count { height: 36px; }
   .detail-reading-header { gap: 16px; margin-bottom: 18px; }
   .detail-reading-header h1 { font-size: 28px; }
   .detail-reading-header .detail-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); padding-top: 0; gap: 8px; }

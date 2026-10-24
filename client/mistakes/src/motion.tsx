@@ -264,7 +264,14 @@ function SkeletonHeading() {
   return <div className="skeleton-heading"><div className="skeleton-heading-copy"><SkeletonLine size="title" /><SkeletonLine size="medium" /></div><span className="skeleton-block skeleton-shimmer" /></div>;
 }
 
-function SkeletonSummary() {
+function SkeletonSummary({ library = false }: { library?: boolean }) {
+  if (library) {
+    const metrics = [{ label: '已归档错题', tone: 'green' }, { label: '待巩固', tone: 'amber' }, { label: '已掌握', tone: 'green' }];
+    return <div className="metrics-grid library-metrics skeleton-library-metrics">{metrics.map(({ label, tone }) => <div className="metric-card skeleton-library-metric" key={label}>
+      <div className="metric-top"><span className="skeleton-library-label skeleton-shimmer">{label}</span><span className={`metric-icon ${tone}`}><span className="skeleton-metric-icon skeleton-shimmer" /></span></div>
+      <div className="metric-value"><span className="skeleton-metric-count skeleton-shimmer" /><span className="skeleton-metric-unit skeleton-shimmer" /></div>
+    </div>)}</div>;
+  }
   return <div className="skeleton-summary-grid">{Array.from({ length: 4 }, (_, index) => <div className="skeleton-summary" key={index}><SkeletonLine size="medium" /><SkeletonLine size="title" /><SkeletonLine size="long" /></div>)}</div>;
 }
 
@@ -308,7 +315,7 @@ function SkeletonReading() {
 export function Skeleton({ kind = 'library' }: { kind?: SkeletonKind }) {
   let content: ReactNode;
   switch (kind) {
-    case 'summary': content = <SkeletonSummary />; break;
+    case 'summary': content = <SkeletonSummary library />; break;
     case 'rows': content = <SkeletonRows />; break;
     case 'review': content = <SkeletonRows review />; break;
     case 'settings': content = <><div className="skeleton-toolbar"><SkeletonLine size="medium" /><SkeletonLine size="short" /></div><SkeletonRows /></>; break;
