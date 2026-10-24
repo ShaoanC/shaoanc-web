@@ -21,7 +21,7 @@
 - `npm run test:client`: check editor saving/draft recovery/conflicts, page upload cancellation/retry batches and review response ordering with local mocks.
 - `node scripts/mistakes-ai-review-smoke.cjs`: after building, check first-click AI review filling and concurrent-edit conflicts for question/answer/analysis on desktop and mobile using real Chromium and an isolated database.
 - `npm run test:export`: check complete filtered/selected/single PDF exports, Chinese text, appendix pagination and image ownership with real Chromium and an isolated database/uploads. Install the matching Chromium first; see `docs/mistakes-export.md`.
-- `npm run test:export-preview`: check desktop/mobile PDF preview, retry, export settings and homepage layout after closing using real Chromium and an isolated database.
+- `npm run test:export-preview`: check PDF preview/retry, export settings, shared desktop dialogs/mobile drawers, AI task filters and homepage layout after closing using real Chromium and an isolated database.
 - `npm run test:backup`: check WAL snapshots, complete data/image/config restoration, graceful AI pause, read-only protection, administrator access, scheduling/retention and restore rollback using isolated local data and a mock AI.
 - `npm run backup:restore -- <archive.tar.gz> --confirm`: restore a full backup after stopping the Node service; creates a pre-restore rollback backup when current data exists.
 - `node scripts/mistakes-upload-smoke.cjs`: check background photo uploads, deferred answer reuse, automatic retries and resume using mocked requests.

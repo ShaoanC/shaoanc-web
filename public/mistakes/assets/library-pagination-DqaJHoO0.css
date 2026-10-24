@@ -1,0 +1,1 @@
+.library-pagination{border-top:1px solid var(--border-subtle);justify-content:center;align-items:center;gap:16px;padding:20px 12px;display:flex}.library-pagination>span{color:var(--text-secondary);white-space:nowrap;font-size:13px}@media (width<=640px){.library-pagination{gap:12px}.library-pagination .button{min-height:44px;padding-inline:16px}}

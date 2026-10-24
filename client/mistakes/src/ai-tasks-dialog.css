@@ -1,0 +1,101 @@
+.photo-dialog-backdrop.ai-tasks-dialog-backdrop {
+  background: rgba(32, 57, 46, .35);
+  backdrop-filter: blur(2px);
+  transition: opacity 220ms var(--motion-ease);
+}
+
+.photo-dialog.ai-tasks-dialog {
+  display: flex;
+  flex-direction: column;
+  top: 50%;
+  bottom: auto;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(960px, calc(100vw - 24px));
+  max-height: calc(100dvh - 32px);
+  overflow: visible;
+  padding: 0;
+  border-radius: 4px;
+  box-shadow: 0 18px 64px rgba(32, 57, 46, .16);
+  transition: opacity 220ms var(--motion-ease), transform 220ms var(--motion-ease);
+}
+
+.ai-tasks-dialog > .photo-dialog-heading {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 20px 16px 8px;
+}
+
+.ai-tasks-dialog > .photo-dialog-heading h2 {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 22px;
+}
+
+.ai-tasks-dialog > .photo-dialog-description {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0 16px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.ai-tasks-dialog > .photo-dialog-body {
+  min-height: 0;
+  padding: 0 16px 12px;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.ai-tasks-dialog .task-manager-compact {
+  background: transparent;
+}
+
+.ai-tasks-mobile-drawer .task-manager-compact {
+  background: transparent;
+}
+
+.ai-tasks-dialog-backdrop[data-starting-style],
+.ai-tasks-dialog-backdrop[data-ending-style],
+.ai-tasks-dialog[data-starting-style],
+.ai-tasks-dialog[data-ending-style] {
+  opacity: 0;
+}
+
+.ai-tasks-dialog[data-starting-style],
+.ai-tasks-dialog[data-ending-style] {
+  transform: translate(-50%, calc(-50% + 12px)) scale(.985);
+}
+
+@media (min-width: 641px) {
+  .photo-dialog.ai-tasks-dialog {
+    width: min(960px, calc(100vw - 48px));
+    max-height: calc(100dvh - 48px);
+  }
+
+  .ai-tasks-dialog > .photo-dialog-heading {
+    padding: 24px 24px 8px;
+  }
+
+  .ai-tasks-dialog > .photo-dialog-heading h2 {
+    font-size: 24px;
+  }
+
+  .ai-tasks-dialog > .photo-dialog-description {
+    padding-inline: 24px;
+  }
+
+  .ai-tasks-dialog > .photo-dialog-body {
+    padding: 0 24px 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .photo-dialog-backdrop.ai-tasks-dialog-backdrop,
+  .photo-dialog.ai-tasks-dialog {
+    transition-duration: 40ms;
+  }
+
+  .ai-tasks-dialog[data-starting-style],
+  .ai-tasks-dialog[data-ending-style] {
+    transform: translate(-50%, -50%);
+  }
+}

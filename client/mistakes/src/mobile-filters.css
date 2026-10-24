@@ -99,3 +99,7 @@
 @media (prefers-reduced-motion: reduce) {
   .mobile-filters-popup, .mobile-filters-backdrop { transition-duration: 1ms !important; }
 }
+
+.mobile-drawer-popup:not(:has(> .mobile-filters-footer)) > .mobile-filters-content {
+  padding-bottom: calc(24px + env(safe-area-inset-bottom));
+}

@@ -1,11 +1,16 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle2, ChevronLeft, ChevronRight, Clock3, FileSearch, LoaderCircle, RefreshCw, RotateCcw, Search, Sparkles, X } from 'lucide-react';
+import { CheckCircle2, Clock3, LoaderCircle, RefreshCw, RotateCcw, Search, Sparkles, X } from 'lucide-react';
 import { formatDate } from './api';
 import { useApp } from './context';
-import { Checkbox, PageHeader } from './components';
+import { Checkbox, EmptyState, PageHeader } from './components';
+import { useAiDialogContainer } from './AiDialog';
 import { MarkdownContent } from './MarkdownContent';
+import { LoadingContent, SlidingTabs } from './motion';
+import { ScrollArea } from './ScrollArea';
+import { Select } from './Select';
 import { AI_LABELS, aiJobLabel, canCancelJob, isActiveJob, needsReview, useAiTasks, type JobAction } from './AiTasks';
 import type { AiJob, AiJobType } from './ai-types';
+import './library-pagination.css';
 
 type Filter = 'all' | 'active' | 'review' | 'failed' | 'done' | 'cancelled';
 const FILTERS: { id: Filter; label: string }[] = [
@@ -41,7 +46,9 @@ export function AiTasksPage() {
   </>;
 }
 
-export function AiTaskManager({ compact = false }: { compact?: boolean }) {
+export function AiTaskManager({ compact = false, portalContainer: drawerContainer }: { compact?: boolean; portalContainer?: HTMLElement | null }) {
+  const dialogContainer = useAiDialogContainer();
+  const portalContainer = drawerContainer ?? dialogContainer;
   const { jobs, config, error, loaded, refreshing, updatedAt, busyIds, refresh, actJobs, closeTasks } = useAiTasks();
   const { user, subjects } = useApp();
   const [filter, setFilter] = useState<Filter>('all');
@@ -101,14 +108,14 @@ export function AiTaskManager({ compact = false }: { compact?: boolean }) {
     {error && <div className="inline-alert" role="alert">{error}<button type="button" disabled={refreshing} onClick={() => void refresh()}>重新连接</button></div>}
     {config && !available && <p className="task-service-notice">{user.role === 'admin' ? <a href="#/settings">AI 服务尚未启用或配置完整，前往设置。</a> : 'AI 服务暂不可用，请联系管理员。已有结果仍可查看和校对。'}</p>}
     {targetJobId && <p className="task-row-notice">已定位任务 #{targetJobId} <button type="button" className="table-button" onClick={clearFilters}>查看全部任务</button></p>}
-    <div className="task-filters" aria-label="按任务状态筛选">{FILTERS.map((item) => <button type="button" key={item.id} aria-pressed={filter === item.id} onClick={() => { setFilter(item.id); resetSelection(); }}><span>{item.label}</span><strong>{loaded ? matching.filter((job) => matches(job, item.id)).length : '—'}</strong></button>)}</div>
+    <SlidingTabs className="task-filters" ariaLabel="按任务状态筛选" value={filter} onChange={(value) => { setFilter(value as Filter); resetSelection(); }} tabs={FILTERS.map((item) => ({ id: item.id, label: <>{item.label}<span>{loaded ? matching.filter((job) => matches(job, item.id)).length : '—'}</span></> }))} />
     <div className="task-search-bar">
-      <label className="task-search"><Search size={18} /><input type="search" aria-label="搜索 AI 任务" placeholder="搜索题目、任务编号、记录编号或失败原因" value={search} onChange={(event) => { setSearch(event.target.value); resetSelection(); }} /></label>
-      <select aria-label="任务类型" value={type} onChange={(event) => { setType(event.target.value as AiJobType | 'page-entry' | ''); resetSelection(); }}><option value="">全部类型</option><option value="page-entry">按页录题</option>{Object.entries(AI_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+      <label className="search-input task-search"><Search size={18} /><input type="search" aria-label="搜索 AI 任务" placeholder="搜索题目、任务编号或失败原因" value={search} onChange={(event) => { setSearch(event.target.value); resetSelection(); }} /></label>
+      <Select ariaLabel="任务类型" value={type} portalContainer={portalContainer} onChange={(value) => { setType(value as AiJobType | 'page-entry' | ''); resetSelection(); }} options={[{ value: '', label: '全部类型' }, { value: 'page-entry', label: '按页录题' }, ...Object.entries(AI_LABELS).map(([value, label]) => ({ value, label }))]} />
     </div>
     {actionErrors.length > 0 && <div className="task-action-errors" role="alert"><div><strong>部分操作未完成</strong><button type="button" className="icon-button" aria-label="关闭操作提示" onClick={() => setActionErrors([])}><X size={16} /></button></div><ul>{actionErrors.map((item, index) => <li key={item.id ?? index}>{item.id ? `任务 #${item.id}：` : ''}{item.message}</li>)}</ul></div>}
     {loaded && shown.length > 0 && <div className="task-selection-bar"><label><Checkbox aria-label="选择本页可操作任务" checked={selectable.length > 0 && chosen.length === selectable.length} indeterminate={chosen.length > 0 && chosen.length < selectable.length} disabled={!selectable.length} onChange={(event) => setSelected(event.target.checked ? selectable.map((job) => job.id) : [])} />{chosen.length ? `已选 ${chosen.length} 项` : '选择本页可操作任务'}</label><div><button type="button" className="table-button" disabled={!retryIds.length || !available} onClick={() => void act(retryIds, 'retry')}><RotateCcw size={14} />重试{retryIds.length ? ` (${retryIds.length})` : ''}</button><button type="button" className="table-button" disabled={!cancelIds.length} onClick={() => void act(cancelIds, 'cancel')}><X size={14} />取消{cancelIds.length ? ` (${cancelIds.length})` : ''}</button></div></div>}
-    {!loaded ? <div className="task-empty" role="status"><LoaderCircle size={26} className="spin" /><p>正在获取 AI 任务…</p></div> : !shown.length ? <div className="task-empty"><FileSearch size={32} /><h3>{error && !jobs.length ? '暂时无法加载任务' : jobs.length ? '没有符合条件的任务' : '从一张错题照片开始'}</h3><p>{error && !jobs.length ? '请重新连接后再试。' : jobs.length ? '换个关键词或筛选条件，继续查找。' : '上传题干或答案图片后，可以在这里跟进识别和解析。'}</p>{jobs.length ? <button type="button" className="button secondary" onClick={clearFilters}>清除筛选</button> : !error && <a className="button primary" href="#/new">录入错题</a>}</div> : <div className="task-rows">{shown.map((job) => {
+    <LoadingContent loading={!loaded} kind="rows">{!shown.length ? <EmptyState filtered={Boolean(jobs.length)} title={error && !jobs.length ? '暂时无法加载任务' : jobs.length ? '没有符合条件的任务' : '从一张错题照片开始'} description={error && !jobs.length ? '请重新连接后再试。' : jobs.length ? '换个关键词或筛选条件，继续查找。' : '上传题干或答案图片后，可以在这里跟进识别和解析。'} action={jobs.length ? <button type="button" className="button secondary" onClick={clearFilters}>清除筛选</button> : !error && <a className="button primary" href="#/new">录入错题</a>} /> : <div className="task-rows">{shown.map((job) => {
       const busy = busyIds.has(job.id);
       const review = needsReview(job);
       const status = job.status === 'succeeded' ? job.applyStatus === 'applied' ? '已填入' : job.applyStatus === 'conflict' ? '内容有更新，待校对' : '待校对' : STATUS[job.status];
@@ -122,11 +129,11 @@ export function AiTaskManager({ compact = false }: { compact?: boolean }) {
         {job.mistakeDeleted ? <p className="task-row-notice">错题已移入回收站，恢复后可继续操作。</p> : review && job.applyStatus === 'conflict' && <p className="task-row-notice">题目内容已修改，AI 结果尚未覆盖现有内容。请打开编辑页核对。</p>}
         {job.status === 'retrying' && <p className="task-row-notice">{job.nextAttemptAt && Date.parse(job.nextAttemptAt) > clock ? `将在 ${Math.ceil((Date.parse(job.nextAttemptAt) - clock) / 1000)} 秒后自动重试，无需重复提交。` : '等待队列继续执行，无需重复提交。'}</p>}
         {job.error && <p className="task-row-error">{job.error}</p>}
-        {job.result && <details className="task-result" open={expanded.includes(job.id)} onToggle={(event) => { const open = event.currentTarget.open; setExpanded((current) => open ? current.includes(job.id) ? current : [...current, job.id] : current.filter((id) => id !== job.id)); }}><summary>查看 AI 结果{job.result.issues?.length ? ` · ${job.result.issues.length} 项待确认` : ''}</summary>{expanded.includes(job.id) && <div><MarkdownContent>{job.result[job.type] || ''}</MarkdownContent>{job.mode === 'page-entry' && <><h4>正确答案</h4><MarkdownContent>{job.result.answer || '未识别到蓝笔答案，请补充。'}</MarkdownContent></>}{job.result.primaryPath?.length ? <p>知识点：{job.result.primaryPath.join(' / ')}</p> : null}{job.result.issues?.map((issue, index) => <p className="task-row-notice" key={index}>{issue.description}</p>)}{job.result.figures?.length ? <p className="task-row-notice">包含 {job.result.figures.length} 个配图区域，请在编辑页校对。</p> : null}</div>}</details>}
+        {job.result && <details className="task-result" open={expanded.includes(job.id)} onToggle={(event) => { const open = event.currentTarget.open; setExpanded((current) => open ? current.includes(job.id) ? current : [...current, job.id] : current.filter((id) => id !== job.id)); }}><summary>查看 AI 结果{job.result.issues?.length ? ` · ${job.result.issues.length} 项待确认` : ''}</summary>{expanded.includes(job.id) && <ScrollArea className="task-result-content"><MarkdownContent>{job.result[job.type] || ''}</MarkdownContent>{job.mode === 'page-entry' && <><h4>正确答案</h4><MarkdownContent>{job.result.answer || '未识别到蓝笔答案，请补充。'}</MarkdownContent></>}{job.result.primaryPath?.length ? <p>知识点：{job.result.primaryPath.join(' / ')}</p> : null}{job.result.issues?.map((issue, index) => <p className="task-row-notice" key={index}>{issue.description}</p>)}{job.result.figures?.length ? <p className="task-row-notice">包含 {job.result.figures.length} 个配图区域，请在编辑页校对。</p> : null}</ScrollArea>}</details>}
         <div className="task-row-actions">{busy && <span role="status"><LoaderCircle size={14} className="spin" />正在提交…</span>}{canCancelJob(job) && <button type="button" className="table-button" disabled={busy} onClick={() => void act([job.id], 'cancel')}><X size={14} />取消任务</button>}{retryable(job) && <button type="button" className="button secondary" disabled={busy || !serviceAvailable(job)} onClick={() => void act([job.id], 'retry')}><RotateCcw size={14} />重试</button>}<a className={review ? 'button primary' : 'text-link'} href={link}>{job.mistakeDeleted ? '前往回收站' : review ? '校对并填入' : job.status === 'failed' ? '修改题目' : '打开错题'}</a></div>
       </article>;
-    })}</div>}
-    <div className="task-pagination"><span>共 {filtered.length} 项{filter !== 'all' || type || search ? <button type="button" onClick={clearFilters}>清除筛选</button> : null}</span><div><button type="button" className="icon-button" aria-label="上一页" disabled={currentPage <= 1} onClick={() => { setPage(currentPage - 1); setSelected([]); }}><ChevronLeft size={18} /></button><span>{currentPage} / {pages}</span><button type="button" className="icon-button" aria-label="下一页" disabled={currentPage >= pages} onClick={() => { setPage(currentPage + 1); setSelected([]); }}><ChevronRight size={18} /></button></div></div>
+    })}</div>}</LoadingContent>
+    <nav className="task-pagination" aria-label="AI 任务分页"><span>共 {filtered.length} 项{filter !== 'all' || type || search ? <button type="button" onClick={clearFilters}>清除筛选</button> : null}</span><div className="library-pagination"><button type="button" className="button secondary" disabled={currentPage <= 1} onClick={() => { setPage(currentPage - 1); setSelected([]); }}>上一页</button><span aria-live="polite">第 {currentPage} / {pages} 页</span><button type="button" className="button secondary" disabled={currentPage >= pages} onClick={() => { setPage(currentPage + 1); setSelected([]); }}>下一页</button></div></nav>
     <p className="task-history-note">显示最近 200 项记录，以及更早仍在处理、失败或待校对的任务（不含回收站）。重试沿用提交时的内容；修改题目后请在编辑页重新发起。</p>
   </section>;
 }
