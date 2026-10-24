@@ -106,15 +106,25 @@ export function AiTasksProvider({ children }: { children: ReactNode }) {
     const focus = () => { void refresh(); };
     const visibility = () => { setVisible(!document.hidden); if (!document.hidden) void refresh(); };
     const route = () => { setOpen(false); setOnTasksPage(window.location.hash.split('?')[0] === '#/ai-tasks'); };
+    const openFromToast = (event: Event) => {
+      const path = (event as CustomEvent<{ path: string }>).detail.path;
+      const query = path.split('?')[1] || '';
+      const jobId = Number(new URLSearchParams(query).get('job')) || null;
+      if (jobId) window.dispatchEvent(new CustomEvent('mistakes:ai-task-toast-target', { detail: { jobId } }));
+      tasksTrigger.current = null;
+      setOpen(true);
+    };
     window.addEventListener('mistakes:updated', update);
     window.addEventListener('focus', focus);
     window.addEventListener('hashchange', route);
+    window.addEventListener('mistakes:open-ai-tasks', openFromToast);
     document.addEventListener('visibilitychange', visibility);
     return () => {
       mounted.current = false;
       window.removeEventListener('mistakes:updated', update);
       window.removeEventListener('focus', focus);
       window.removeEventListener('hashchange', route);
+      window.removeEventListener('mistakes:open-ai-tasks', openFromToast);
       document.removeEventListener('visibilitychange', visibility);
       toast.dismiss(toastId);
     };

@@ -67,6 +67,15 @@ export function AiTaskManager({ compact = false, portalContainer: drawerContaine
   const serviceAvailable = (job: AiJob) => job.type === 'analysis' ? analysisAvailable : generalAvailable;
   useEffect(() => { void refresh(); }, [refresh]);
   useEffect(() => {
+    if (!compact) return;
+    const target = (event: Event) => {
+      const jobId = (event as CustomEvent<{ jobId: number }>).detail.jobId;
+      setTargetJobId(jobId); setFilter('all'); setType(''); setSearch(''); setPage(1); setSelected([]);
+    };
+    window.addEventListener('mistakes:ai-task-toast-target', target);
+    return () => window.removeEventListener('mistakes:ai-task-toast-target', target);
+  }, [compact]);
+  useEffect(() => {
     if (compact) return;
     const route = () => {
       setTargetJobId(requestedJobId()); setFilter('all'); setType(''); setSearch(''); setPage(1); setSelected([]);
