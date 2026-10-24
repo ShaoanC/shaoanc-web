@@ -272,7 +272,7 @@ function SkeletonSummary({ library = false }: { library?: boolean }) {
       <div className="metric-value"><span className="skeleton-metric-count skeleton-shimmer" /><span className="skeleton-metric-unit skeleton-shimmer" /></div>
     </div>)}</div>;
   }
-  return <div className="skeleton-summary-grid">{Array.from({ length: 4 }, (_, index) => <div className="skeleton-summary" key={index}><SkeletonLine size="medium" /><SkeletonLine size="title" /><SkeletonLine size="long" /></div>)}</div>;
+  return <div className="skeleton-summary-grid">{Array.from({ length: 4 }, (_, index) => <div className="skeleton-summary-card" key={index}><SkeletonLine size="medium" /><SkeletonLine size="title" /><SkeletonLine size="long" /></div>)}</div>;
 }
 
 function SkeletonRows({ review = false }: { review?: boolean }) {
@@ -322,8 +322,8 @@ export function Skeleton({ kind = 'library' }: { kind?: SkeletonKind }) {
     case 'stats': content = <><SkeletonSummary /><div className="skeleton-columns"><SkeletonPanel chart /><SkeletonPanel chart /></div><SkeletonPanel chart /></>; break;
     case 'editor': content = <SkeletonWorkbench />; break;
     case 'detail': content = <SkeletonReading />; break;
-    case 'shell': content = <><SkeletonHeading /><SkeletonSummary /><SkeletonRows /></>; break;
-    default: content = <><SkeletonHeading /><SkeletonSummary /><div className="skeleton-toolbar"><SkeletonLine size="medium" /><SkeletonLine size="short" /></div><SkeletonRows /></>;
+    case 'shell': content = <><SkeletonHeading /><SkeletonSummary library /><SkeletonRows /></>; break;
+    default: content = <><SkeletonHeading /><SkeletonSummary library /><div className="skeleton-toolbar"><SkeletonLine size="medium" /><SkeletonLine size="short" /></div><SkeletonRows /></>;
   }
   return <div className={`skeleton-screen skeleton-${kind}`} aria-hidden="true">{content}</div>;
 }
