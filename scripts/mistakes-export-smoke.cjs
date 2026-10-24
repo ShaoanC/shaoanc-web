@@ -10,7 +10,7 @@ const temporaryDirectory = fs.mkdtempSync(path.join(dataDirectory, 'export-smoke
 const password = 'ExportSmoke2026!';
 const defaults = {
     title: '中文错题导出验收', version: 'complete', includeNotes: true, fontSize: 12,
-    layout: 'continuous', practiceSpace: 40, answerPlacement: 'inline'
+    layout: 'continuous', practiceSpace: 60, answerPlacement: 'inline'
 };
 let app;
 let server;

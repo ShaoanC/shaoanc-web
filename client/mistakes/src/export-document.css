@@ -12,7 +12,7 @@ h1, h2, h3, p { margin: 0; }
 .export-question:last-child, .export-appendix-entry:last-child { padding-bottom: 0; margin-bottom: 0; border-bottom: 0; }
 .export-question.export-long-question, .export-appendix-entry.export-long-question,
 .export-question.export-has-images, .export-appendix-entry.export-has-images { break-inside: auto; }
-.export-per-question .export-question, .export-per-question .export-appendix-entry { border-bottom: 0; }
+.export-practice .export-question, .export-per-question .export-question, .export-per-question .export-appendix-entry { border-bottom: 0; }
 .export-per-question .export-question + .export-question { break-before: page; }
 .export-question-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 5mm; break-inside: avoid; break-after: avoid; }
 .export-question-heading h2, .export-appendix-number { font-family: 'Noto Sans SC', sans-serif; font-size: 12pt; font-weight: 600; line-height: 1.6; }
@@ -23,7 +23,7 @@ h1, h2, h3, p { margin: 0; }
 .export-answer { margin-top: 4mm; }
 .export-answer h3 { margin-bottom: 1.5mm; font-family: 'Noto Sans SC', sans-serif; font-size: .9em; font-weight: 600; break-after: avoid; }
 .export-note { padding-left: 3mm; border-left: 1pt solid #999; }
-.export-answer-space { height: var(--practice-space); margin-top: 4mm; border-bottom: .5pt solid #ccc; break-inside: avoid; }
+.export-answer-space { height: var(--practice-space); margin-top: 4mm; break-inside: avoid; }
 .export-appendix { break-before: page; }
 .export-appendix-heading { margin-bottom: 6mm; padding-bottom: 4mm; border-bottom: 1pt solid #333; break-inside: avoid; break-after: avoid; }
 .export-appendix-heading h2 { font-family: 'Noto Sans SC', sans-serif; font-size: 18pt; font-weight: 600; }

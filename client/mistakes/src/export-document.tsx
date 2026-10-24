@@ -142,7 +142,7 @@ function ExportDocument({ data }: { data: ExportDocumentData }) {
     }).catch(reportError);
   }, [options.title]);
 
-  return <article ref={paper} className={`export-document${options.layout === 'per-question' ? ' export-per-question' : ''}`} style={{ fontSize: `${options.fontSize}pt`, '--practice-space': `${options.practiceSpace}mm` } as CSSProperties}>
+  return <article ref={paper} className={`export-document${complete ? '' : ' export-practice'}${options.layout === 'per-question' ? ' export-per-question' : ''}`} style={{ fontSize: `${options.fontSize}pt`, '--practice-space': `${options.practiceSpace}mm` } as CSSProperties}>
     <header className="export-document-heading">
       <h1>{options.title}</h1>
       <div><span>{date}</span><span>{complete ? '完整版' : '练习版'}</span><span>共 {mistakes.length} 道题</span></div>

@@ -11,7 +11,7 @@ const publicDirectory = path.resolve(__dirname, '../../public/mistakes');
 const renderOrigin = 'http://mistakes-export.local';
 const defaults = {
     title: '错题', version: 'complete', includeNotes: true, fontSize: 12,
-    layout: 'continuous', practiceSpace: 40, answerPlacement: 'inline'
+    layout: 'continuous', practiceSpace: 60, answerPlacement: 'inline'
 };
 const filterKeys = ['lifecycle', 'subjectId', 'knowledgePointId', 'status', 'rating', 'keyword', 'dataType'];
 const contentTypes = {
@@ -120,7 +120,8 @@ function readOptions(input = {}) {
     options.title = options.title.trim() || defaults.title;
     if (!['complete', 'practice'].includes(options.version) || typeof options.includeNotes !== 'boolean' ||
         ![10.5, 12, 14].includes(options.fontSize) || !['continuous', 'per-question'].includes(options.layout) ||
-        ![20, 40, 60].includes(options.practiceSpace) || !['inline', 'appendix'].includes(options.answerPlacement)) {
+        !Number.isInteger(options.practiceSpace) || options.practiceSpace < 10 || options.practiceSpace > 70 ||
+        !['inline', 'appendix'].includes(options.answerPlacement)) {
         fail(400, '导出设置无效，请重新选择');
     }
     return options;

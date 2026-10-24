@@ -6,13 +6,13 @@ export interface ExportOptions {
   includeNotes: boolean;
   fontSize: 10.5 | 12 | 14;
   layout: 'continuous' | 'per-question';
-  practiceSpace: 20 | 40 | 60;
+  practiceSpace: number;
   answerPlacement: 'inline' | 'appendix';
 }
 
 export const defaultExportOptions: ExportOptions = {
   title: '错题', version: 'complete', includeNotes: true, fontSize: 12,
-  layout: 'continuous', practiceSpace: 40, answerPlacement: 'inline',
+  layout: 'continuous', practiceSpace: 60, answerPlacement: 'inline',
 };
 
 export type ExportSource = { ids: number[] } | { filters: Record<string, string> };
