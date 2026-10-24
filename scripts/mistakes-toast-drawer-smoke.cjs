@@ -62,6 +62,36 @@ async function closeDrawer(page, swipe = false) {
     await drawer.waitFor({ state: 'detached' });
 }
 
+async function completeDetailAfterClose(page, base, recordId, method, suffix, trigger) {
+    const url = `${base}/api/mistakes/mistakes/${recordId}${suffix}`;
+    let release, started;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const ready = new Promise((resolve) => { started = resolve; });
+    await page.route(url, async (route) => {
+        if (route.request().method() !== method) { await route.continue(); return; }
+        const response = await route.fetch();
+        started();
+        await gate;
+        await route.fulfill({ response });
+    });
+    try {
+        await page.evaluate((id) => window.dispatchEvent(new CustomEvent('mistakes:open-toast-record', { detail: { path: `/mistakes/${id}` } })), recordId);
+        const drawer = page.locator('.record-view-drawer');
+        await drawer.locator('.detail-document').waitFor();
+        await trigger(drawer);
+        await ready;
+        await closeDrawer(page);
+        const completed = page.waitForResponse((response) => response.url() === url && response.request().method() === method);
+        const refreshed = page.waitForResponse((response) => response.url().startsWith(`${base}/api/mistakes/mistakes?`) && response.request().method() === 'GET');
+        release();
+        assert.equal((await completed).status(), 200);
+        await refreshed;
+    } finally {
+        release();
+        await page.unroute(url);
+    }
+}
+
 async function mobileChecks(context, base) {
     const record = await api(context, base, 'POST', '/mistakes', { subjectId: 'math', lifecycle: 'archived', question: '抽屉保留：求解方程 x + 1 = 3', answer: 'x = 2' });
     const page = await context.newPage();
@@ -124,6 +154,28 @@ async function mobileChecks(context, base) {
     assert.equal(new URL(page.url()).hash, originalHash);
     assert.equal(await page.getByRole('textbox', { name: '搜索错题', exact: true }).inputValue(), '抽屉保留');
     await page.unroute(recordUrl);
+
+    // Each detail mutation must refresh the filtered background after its drawer unmounts.
+    const row = page.locator(`.mistake-row[data-mistake-id="${record.id}"]`);
+    const detailMutations = [
+        { method: 'PATCH', suffix: '', trigger: async (detail) => {
+            const rating = detail.getByRole('slider', { name: '星级标记', exact: true });
+            await rating.press('End');
+            await rating.press('Enter');
+        }, verify: () => row.getByRole('img', { name: '5 星', exact: true }).waitFor() },
+        { method: 'DELETE', suffix: '', trigger: async (detail) => {
+            await detail.getByRole('button', { name: '删除错题', exact: true }).click();
+            await detail.getByRole('button', { name: '确认删除', exact: true }).click();
+        }, verify: () => row.waitFor({ state: 'detached' }) },
+        { method: 'POST', suffix: '/restore', trigger: (detail) => detail.getByRole('button', { name: '恢复错题', exact: true }).click(), verify: () => row.waitFor() },
+    ];
+    for (const mutation of detailMutations) {
+        await completeDetailAfterClose(page, base, record.id, mutation.method, mutation.suffix, mutation.trigger);
+        await mutation.verify();
+        assert.equal(new URL(page.url()).hash, originalHash);
+        assert.equal(await page.getByRole('textbox', { name: '搜索错题', exact: true }).inputValue(), '抽屉保留');
+        assert.equal(await page.locator('.library-filter-count').textContent(), '1');
+    }
 
     const reviewRecord = await api(context, base, 'POST', '/mistakes', { subjectId: 'math', question: '校对题目的题干', answer: '' });
     const reviewToast = await completeJobToast(page, reviewRecord, 'answer', true);
@@ -205,7 +257,7 @@ async function main() {
     assert.equal(new URL(page.url()).hash, `#/mistakes/${record.id}`, 'Desktop toast keeps standard route navigation');
     assert.equal(await page.locator('.record-view-drawer').count(), 0);
     await desktop.close();
-    console.log('Toast drawer smoke passed: real mobile/desktop toast links, filter-preserving save including late responses after close, first-click nested review, photo targets, same-editor and adopted /new node retention, nested image dialog and swipe close.');
+    console.log('Toast drawer smoke passed: real mobile/desktop toast links, filter-preserving save/delete/restore/rating including late responses after close, first-click nested review, photo targets, same-editor and adopted /new node retention, nested image dialog and swipe close.');
 }
 
 async function cleanup() {

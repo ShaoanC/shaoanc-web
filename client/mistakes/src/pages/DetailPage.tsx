@@ -58,6 +58,7 @@ export function DetailPage({ id }: { id: number }) {
     setDeleting(true);
     try {
       await api(`/mistakes/${id}`, { method: 'DELETE' });
+      view?.updated(id);
       notify('错题已移入回收站，30 天内可恢复。');
       if (view) view.saved();
       else navigate('/mistakes');
@@ -68,6 +69,7 @@ export function DetailPage({ id }: { id: number }) {
     setRestoring(true);
     try {
       await api<Mistake>(`/mistakes/${id}/restore`, { method: 'POST' });
+      view?.updated(id);
       notify('错题及复习记录已恢复。');
       if (view) view.saved();
       else navigate('/mistakes?trash=1');
@@ -79,6 +81,7 @@ export function DetailPage({ id }: { id: number }) {
     setRatingError('');
     try {
       const item = await api<Mistake>(`/mistakes/${id}`, json({ rating }, 'PATCH'));
+      view?.updated(id);
       setMistake(item);
       setRatingPreview(item.rating);
     } catch (err) {
