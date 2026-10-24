@@ -1,7 +1,7 @@
 import { useEffect, useRef, type CSSProperties } from 'react';
 import { createRoot } from 'react-dom/client';
 import { MarkdownContent } from './MarkdownContent';
-import { figureLineCount } from './figure-layout';
+import { FIGURE_HEIGHT_SCALE, figureLineCount } from './figure-layout';
 import { knowledgeLabel } from './context';
 import { ratingLabel } from './StarRating';
 import type { ExportDocumentData, ExportOptions } from './export-types';
@@ -104,9 +104,47 @@ function prepareImages(document: HTMLElement, pageHeight: number) {
     const lines = figureLineCount(image.naturalWidth, image.naturalHeight);
     const text = image.closest<HTMLElement>('.markdown-content')!;
     const lineHeight = parseFloat(getComputedStyle(text).lineHeight);
-    const figureHeight = lines === null ? 230 * 96 / 25.4 : lines * lineHeight;
+    const figureHeight = lines === null ? 230 * 96 / 25.4 : lines * lineHeight * FIGURE_HEIGHT_SCALE;
     const maximum = Math.min(figureHeight, Math.max(1, pageHeight - precedingHeight - spacing - 1));
     image.style.maxHeight = `${maximum}px`;
+  }
+  arrangeImageRows(document);
+}
+
+function arrangeImageRows(document: HTMLElement) {
+  const gap = 4 * 96 / 25.4;
+  function imageParagraph(element: Element | null): element is HTMLParagraphElement {
+    return Boolean(element?.matches('p.export-image-paragraph') && Array.from(element.childNodes).every((node) =>
+      node.nodeType === Node.TEXT_NODE && !node.textContent?.trim() ||
+      node instanceof HTMLElement && node.classList.contains('export-image-block')));
+  }
+
+  for (const paragraph of Array.from(document.querySelectorAll<HTMLParagraphElement>('p.export-image-paragraph'))) {
+    if (!paragraph.isConnected || !imageParagraph(paragraph)) continue;
+    const paragraphs = [paragraph];
+    let next = paragraph.nextElementSibling;
+    while (imageParagraph(next)) { paragraphs.push(next); next = next.nextElementSibling; }
+    const blocks = paragraphs.flatMap((item) => Array.from(item.children) as HTMLElement[]);
+    const available = paragraph.clientWidth;
+    let row: HTMLDivElement | undefined;
+    let used = 0;
+    for (const block of blocks) {
+      const image = block.querySelector('img')!;
+      const width = image.getBoundingClientRect().width;
+      const sourcePhoto = figureLineCount(image.naturalWidth, image.naturalHeight) === null;
+      if (!row || sourcePhoto || used + gap + width > available + .5) {
+        row = document.ownerDocument.createElement('div');
+        row.className = 'export-image-row';
+        paragraph.before(row);
+        used = 0;
+      }
+      // Fix the already-scaled width so flex layout cannot enlarge or squeeze a figure.
+      block.style.width = `${width}px`;
+      row.append(block);
+      used += (used ? gap : 0) + width;
+      if (sourcePhoto) row = undefined;
+    }
+    paragraphs.forEach((item) => item.remove());
   }
 }
 

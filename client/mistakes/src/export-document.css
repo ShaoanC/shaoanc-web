@@ -39,8 +39,10 @@ h1, h2, h3, p { margin: 0; }
 .markdown-content li > p { margin-bottom: .2em; }
 .markdown-content blockquote { margin: .7em 0; padding: .2em 0 .2em 1em; border-left: 1pt solid #888; color: #444; }
 .markdown-content a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
-.markdown-content img { display: block; max-width: 100%; max-height: 8.5em; width: auto; height: auto; margin-inline: 0; object-fit: contain; break-inside: avoid; }
+.markdown-content img { display: block; max-width: 100%; max-height: 9.775em; width: auto; height: auto; margin-inline: 0; object-fit: contain; break-inside: avoid; }
 .export-image-block { display: block; margin-block: 2mm; line-height: 0; break-inside: avoid; }
+.export-image-row { display: flex; align-items: flex-start; gap: 4mm; margin: 2mm 0 .7em; break-inside: avoid; }
+.export-image-row > .export-image-block { flex: 0 0 auto; max-width: 100%; margin: 0; }
 .markdown-content p.export-image-paragraph { line-height: 0; orphans: 1; widows: 1; }
 .export-image-paragraph > .export-image-block:first-child { margin-top: 0; }
 .export-image-paragraph > .export-image-block:last-child { margin-bottom: 0; }

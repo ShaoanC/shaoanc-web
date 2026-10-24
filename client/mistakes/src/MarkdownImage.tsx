@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useState, type Compo
 import { Dialog } from '@base-ui/react/dialog';
 import PhotoSwipe from 'photoswipe';
 import { X } from 'lucide-react';
-import { figureLineCount } from './figure-layout';
+import { FIGURE_HEIGHT_SCALE, figureLineCount } from './figure-layout';
 import 'photoswipe/dist/photoswipe.css';
 
 export const MarkdownImageLink = createContext(false);
@@ -46,7 +46,7 @@ export function MarkdownImage({ src, alt, style, ...props }: ComponentProps<'img
 
   return <Dialog.Root open={Boolean(preview)} onOpenChange={(value) => { if (!value) setPreview(null); }}>
     <img {...props} src={src} alt={alt} className="markdown-figure-image" data-figure-lines={lines ?? 'long'}
-      style={{ ...style, '--figure-lines': lines ?? 4 } as CSSProperties}
+      style={{ ...style, '--figure-lines': lines ?? 4, '--figure-height-scale': FIGURE_HEIGHT_SCALE } as CSSProperties}
       onLoad={(event) => setLines(figureLineCount(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight))}
       role={linked ? undefined : 'button'} tabIndex={linked ? undefined : 0}
       aria-label={linked ? undefined : `放大查看：${alt || '题目配图'}`}

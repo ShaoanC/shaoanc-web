@@ -123,6 +123,7 @@ function textPosition(pdf, marker) {
 
 function inspectPhotos(pdf, expected, fontSize = 10.5) {
     const margin = 15 * 72 / 25.4;
+    let rowBottom = 0;
     assert.equal(pdf.imageCount, expected.length, 'Each included photo is drawn exactly once, without page slices');
     assert.equal(pdf.images.length, expected.length);
     for (const [index, image] of pdf.images.entries()) {
@@ -132,17 +133,23 @@ function inspectPhotos(pdf, expected, fontSize = 10.5) {
         assert.ok(Math.abs((image.width / image.height) / (fixture.width / fixture.height) - 1) < .02, `${fixture.name}: aspect ratio is preserved`);
         assert.ok(image.width <= fixture.width * .75 + 1 && image.height <= fixture.height * .75 + 1, `${fixture.name}: photos are never enlarged`);
         if (fixture.lines) {
-            const expectedHeight = Math.min(fixture.height * .75, fixture.lines * fontSize * 1.7);
+            const expectedHeight = Math.min(fixture.height * .75, fixture.lines * fontSize * 1.7 * 1.15);
             assert.ok(Math.abs(image.height - expectedHeight) < 1, `${fixture.name}: an ordinary figure uses ${fixture.lines} text lines without enlarging small originals`);
         } else {
             assert.ok(image.height <= 230 * 72 / 25.4 + 1, `${fixture.name}: a long source photo retains the 230mm page-fitting limit`);
         }
         assert.ok(image.left >= margin - 1 && image.right <= 595.28 - margin + 1 && image.bottom >= margin - 1 && image.top <= 841.89 - margin + 1,
             `${fixture.name}: the whole photo remains inside one page's content area`);
-        assert.ok(Math.abs(image.left - margin) < 1, `${fixture.name}: photos align with the left content edge`);
-        if (index) {
-            const previous = pdf.images[index - 1];
-            assert.ok(image.page > previous.page || image.page === previous.page && image.top <= previous.bottom + 1, 'Photos flow in document order without overlap');
+        const previous = pdf.images[index - 1];
+        const sameRow = previous && image.page === previous.page && Math.abs(image.top - previous.top) < 1;
+        if (sameRow) {
+            assert.ok(fixture.lines && expected[index - 1].lines, 'Only ordinary figures share a row; long source photos remain standalone');
+            assert.ok(image.left >= previous.right - 1, `${fixture.name}: same-row photos follow source order without overlap`);
+            rowBottom = Math.min(rowBottom, image.bottom);
+        } else {
+            assert.ok(Math.abs(image.left - margin) < 1, `${fixture.name}: each image row starts at the left content edge`);
+            if (previous) assert.ok(image.page > previous.page || image.page === previous.page && image.top <= rowBottom + 1, 'New photo rows follow the entire preceding row without overlap');
+            rowBottom = image.bottom;
         }
         if (fixture.before) assert.ok(textPosition(pdf, fixture.before) <= image.page * 841.89 + 841.89 - image.top + 1, `${fixture.name}: preceding text stays before its photo`);
         if (fixture.after) assert.ok(textPosition(pdf, fixture.after) >= image.page * 841.89 + 841.89 - image.bottom - 1, `${fixture.name}: following text stays after its photo`);
@@ -236,6 +243,7 @@ async function main() {
         { name: 'square', width: 900, height: 900, lines: 4, before: '同段图前标记', after: '同段图后标记' },
         { name: 'portrait', width: 600, height: 1300, lines: 5, before: '同段图前标记', after: '同段图后标记' },
         { name: 'linked', width: 720, height: 240, lines: 3, before: '同段图前标记', after: '同段图后标记' },
+        { name: 'wide-wrap', width: 1400, height: 350, lines: 3, before: '同段图前标记', after: '同段图后标记' },
         { name: 'appendix-tall', width: 420, height: 3600, purpose: 'answer', after: '答案标记05' },
         { name: 'analysis', width: 1000, height: 300, lines: 3, purpose: 'answer', before: '解析图前标记', after: '解析图后标记' }
     ];
@@ -247,11 +255,13 @@ async function main() {
             '导出样本05：照片分页组合。图后标记一。',
             '小图前标记。', `![小图](${photoImages[1].cropUrl})`, '小图后标记。',
             '同段图前标记。',
-            `![横图](${photoImages[2].cropUrl})\n![方图](${photoImages[3].cropUrl})\n![竖图](${photoImages[4].cropUrl})\n[![链接图](${photoImages[5].cropUrl})](https://example.com/photo-review)`,
+            `![横图](${photoImages[2].cropUrl})`,
+            `![方图](${photoImages[3].cropUrl})`,
+            `![竖图](${photoImages[4].cropUrl})\n[![链接图](${photoImages[5].cropUrl})](https://example.com/photo-review)\n![宽图换行](${photoImages[6].cropUrl})`,
             '同段图后标记。'
         ].join('\n\n'),
-        answer: `![附录超长图](${photoImages[6].cropUrl})\n\n答案标记05：附录长图后。`,
-        analysis: `解析标记05：解析图前标记。\n\n![解析图](${photoImages[7].cropUrl})\n\n解析图后标记。`
+        answer: `![附录超长图](${photoImages[7].cropUrl})\n\n答案标记05：附录长图后。`,
+        analysis: `解析标记05：解析图前标记。\n\n![解析图](${photoImages[8].cropUrl})\n\n解析图后标记。`
     });
 
     const selected = await inspectPdf(await alice.request('POST', '/exports/pdf', {
@@ -269,8 +279,16 @@ async function main() {
     assert.ok(Math.abs(selected.images[1].width - 60) < 1 && Math.abs(selected.images[1].height - 30) < 1, 'The small 80×40 photo keeps its natural CSS size');
     assert.ok(selected.images[2].height < selected.images[3].height && selected.images[3].height < selected.images[4].height, 'Landscape, square and portrait figures follow the 3/4/5-line sizing tiers');
     assert.ok(selected.pages[selected.images[0].page].includes('第1题'), 'A first tall photo remains on the same page as its question number');
-    assert.ok(selected.pages[selected.images[6].page].includes('第1题') && selected.pages[selected.images[6].page].includes('正确答案'), 'An appendix first photo remains with its number and answer heading');
-    assert.equal(selected.images[2].page, selected.images[5].page, 'A group of ordinary exam figures fits on one page');
+    assert.ok(selected.pages[selected.images[7].page].includes('第1题') && selected.pages[selected.images[7].page].includes('正确答案'), 'An appendix first photo remains with its number and answer heading');
+    const ordinaryGroup = selected.images.slice(2, 7);
+    for (const image of ordinaryGroup.slice(1, 4)) {
+        assert.equal(image.page, ordinaryGroup[0].page, 'Consecutive ordinary figures share one page while they fit');
+        assert.ok(Math.abs(image.top - ordinaryGroup[0].top) < 1, 'Consecutive image-only paragraphs and same-paragraph figures share a top-aligned row');
+    }
+    const wrapped = ordinaryGroup[4];
+    assert.equal(wrapped.page, ordinaryGroup[0].page, 'A wide ordinary figure wraps within the page');
+    assert.ok(wrapped.top < Math.min(...ordinaryGroup.slice(0, 4).map((image) => image.bottom)), 'An ordinary figure that exceeds the remaining row width wraps below the tallest figure');
+    assert.ok(Math.abs(wrapped.left - 15 * 72 / 25.4) < 1, 'A wrapped figure resets to the left content edge');
     assert.ok(selected.links.includes('https://example.com/photo-review'), 'A linked photo retains its PDF link annotation');
 
     await alice.json('PATCH', `/mistakes/${records[0].id}`, {
@@ -290,7 +308,7 @@ async function main() {
         subjectId: 'math', lifecycle: 'archived', question: `越权图片检查\n\n![私有图](${foreignFigure.cropUrl})`
     }, 201);
     await expectExportFailure(alice, { ids: [invalidFigure.id] }, /配图|图片|第1题|第 1 题/);
-    console.log('PDF export smoke passed: complete filtered results, selected order, long practice, appendix pagination, Chinese text, photo sizing/left alignment/page bounds/order, image links, notes and ownership.');
+    console.log('PDF export smoke passed: complete filtered results, selected order, long practice, appendix pagination, Chinese text, photo sizing/left alignment/rows/wrapping/page bounds/order, image links, notes and ownership.');
 }
 
 async function cleanup() {

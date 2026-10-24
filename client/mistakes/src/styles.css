@@ -1930,7 +1930,7 @@ input:focus, textarea:focus, select:focus { outline: 2px solid rgba(23,100,72,.1
 .markdown-content--full blockquote { margin: .9em 0; padding: .25em 1em; border-left: 3px solid var(--primary); background: var(--primary-soft); color: var(--text-secondary); }
 .markdown-content--full blockquote > :last-child { margin-bottom: 0; }
 .markdown-content--full a { color: var(--primary); text-decoration: underline; text-underline-offset: 3px; }
-.markdown-content--full img { display: block; width: auto; height: auto; max-width: 100%; max-height: calc(var(--figure-lines, 4) * 1lh); margin: .4em auto; }
+.markdown-content--full img { display: block; width: auto; height: auto; max-width: 100%; max-height: calc(var(--figure-lines, 4) * var(--figure-height-scale, 1.15) * 1lh); margin: .4em auto; }
 .markdown-content--full img[data-figure-lines="long"] { max-height: none; }
 .markdown-figure-image[role="button"] { cursor: zoom-in; }
 .markdown-figure-image[role="button"]:focus-visible { outline: 2px solid var(--primary); outline-offset: 4px; }
