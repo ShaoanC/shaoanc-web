@@ -20,9 +20,20 @@ function aiErrorCategory(error) {
 
 function unsupportedFormat(error) {
     const message = String(error.error?.message || error.message || '');
-    return [400, 422].includes(error.status) && /response_?json_?schema|response_?mime_?type|generation_?config/i.test(message)
-        && /not supported|unsupported|does not support|unknown (?:parameter|field)|unrecognized (?:parameter|field)/i.test(message)
+    return [400, 422].includes(error.status) && /response_?json_?schema|response_?mime_?type|generation_?config|json mode/i.test(message)
+        && /not supported|unsupported|does not support|not enabled|unknown (?:name|parameter|field)|unrecognized (?:parameter|field)/i.test(message)
         && !/invalid schema|schema.*(?:invalid|required|additionalProperties)/i.test(message);
+}
+
+function httpAiError(body, response, config, provider) {
+    const message = typeof body?.error?.message === 'string' ? body.error.message : `${provider} request failed (${response.status})`;
+    // Keep provider diagnostics for the administrator, with credentials removed before use.
+    const providerMessage = message.split(config.apiKey).join('[redacted]')
+        .replace(/AIza[\w-]+/g, '[redacted]').replace(/Bearer\s+[^\s"']+/gi, 'Bearer [redacted]').slice(0, 600);
+    const providerCode = String(body?.error?.status || body?.error?.code || '').replace(/[^A-Za-z0-9_]/g, '').slice(0, 80);
+    return Object.assign(new Error(providerMessage), {
+        status: response.status, headers: response.headers, error: body?.error, providerMessage, providerCode
+    });
 }
 
 async function requestCompletion({ messages, responseFormat, signal, context, interpret, onMetrics, profile = 'general' }) {
@@ -52,9 +63,7 @@ async function requestCompletion({ messages, responseFormat, signal, context, in
             });
             if (!httpResponse.ok) {
                 const body = await httpResponse.json().catch(() => null);
-                throw Object.assign(new Error(body?.error?.message || `Gemini request failed (${httpResponse.status})`), {
-                    status: httpResponse.status, headers: httpResponse.headers, error: body?.error
-                });
+                throw httpAiError(body, httpResponse, config, 'Gemini');
             }
             response = await httpResponse.json();
             const candidate = response.candidates?.[0];
@@ -116,9 +125,7 @@ async function requestAnalysis({ input = {}, images = [], signal, context, onMet
         });
         if (!httpResponse.ok) {
             const body = await httpResponse.json().catch(() => null);
-            throw Object.assign(new Error(body?.error?.message || `Analysis request failed (${httpResponse.status})`), {
-                status: httpResponse.status, headers: httpResponse.headers, error: body?.error
-            });
+            throw httpAiError(body, httpResponse, config, 'Analysis');
         }
         response = await httpResponse.json();
         const choice = response.choices?.[0];

@@ -10,6 +10,7 @@
     "build": "npm run typecheck && vite build --config client/mistakes/vite.config.mts",
     "test": "node scripts/mistakes-smoke.cjs && node scripts/mistakes-captcha-smoke.cjs",
     "test:ai": "node scripts/mistakes-ai-smoke.cjs",
+    "diagnose:ai": "node scripts/mistakes-ai-diagnose.cjs",
     "test:pages": "node scripts/mistakes-page-smoke.cjs",
     "test:client": "node scripts/mistakes-editor-smoke.cjs && node scripts/mistakes-page-upload-smoke.cjs",
     "test:export": "node scripts/mistakes-export-smoke.cjs",

@@ -15,7 +15,7 @@ module.exports = function mountAiRoutes(router, { success, ownMistake, serialize
         try {
             success(res, await testVision(req.query.profile || 'general', req.user.id));
         } catch (error) {
-            res.status(400).json({ success: false, message: safeAiError(error) });
+            res.status(400).json({ success: false, message: safeAiError(error, { details: true }) });
         }
     });
     router.get('/photos', (req, res) => {

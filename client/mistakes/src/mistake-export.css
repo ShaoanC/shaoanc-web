@@ -70,6 +70,12 @@
 .export-mobile-drawer .export-settings-footer { border-radius: 0; }
 .export-mobile-settings .export-feedback:empty { margin-bottom: 0; }
 
+@media (min-width: 641px) {
+  /* Avoid filtering the entire page during dialog animation and interaction. */
+  .export-backdrop { backdrop-filter: none; }
+  .export-dialog:not(.is-preview) { will-change: translate, opacity; }
+}
+
 @media (max-width: 640px) {
   .export-dialog { width: calc(100% - 20px); max-height: calc(100dvh - 20px); }
   .export-settings-heading { padding: 20px 17px 15px; }

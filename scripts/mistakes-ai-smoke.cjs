@@ -2,6 +2,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
+const { execFile } = require('node:child_process');
+const { promisify } = require('node:util');
 const { setTimeout: delay } = require('node:timers/promises');
 const { figureLocation, sourceImageId, parseRecognitionJson, recognitionFormat } = require('../server/mistakes/ai-output');
 
@@ -46,6 +48,7 @@ async function runAiSmoke() {
     let ai;
     let failures = 0;
     let failureStatus = 500;
+    let failureError;
     let failureRetryAfter = '';
     let rejectFormat = '';
     let visionReply = 'READ-5827';
@@ -71,7 +74,7 @@ async function runAiSmoke() {
             calls += 1;
             assert.equal(req.method, 'POST');
             const request = JSON.parse(body);
-            if (failures > 0) { failures -= 1; res.writeHead(failureStatus, { 'Content-Type': 'application/json', ...(failureRetryAfter ? { 'Retry-After': failureRetryAfter } : {}) }); res.end(JSON.stringify({ error: { message: 'temporary', type: 'server_error' } })); return; }
+            if (failures > 0) { failures -= 1; res.writeHead(failureStatus, { 'Content-Type': 'application/json', ...(failureRetryAfter ? { 'Retry-After': failureRetryAfter } : {}) }); res.end(JSON.stringify({ error: failureError || { message: 'temporary', type: 'server_error' } })); return; }
             if (hold) await delay(hold);
             if (req.url === '/v1/chat/completions') {
                 assert.equal(req.headers.authorization, 'Bearer analysis-secret');
@@ -219,11 +222,59 @@ async function runAiSmoke() {
         assert.equal(metrics.at(-1).usage, null, 'Missing provider usage is unknown, not zero');
         visionReply = 'READ-5827'; includeUsage = true;
         failureStatus = 400; failures = 1;
-        assert.match((await admin('POST', '/admin/ai/test', {}, 400)).message, /不支持此请求/);
+        const rejectedParameters = (await admin('POST', '/admin/ai/test', {}, 400)).message;
+        assert.match(rejectedParameters, /请求参数.*拒绝/);
+        assert.match(rejectedParameters, /HTTP 400/);
+        assert.match(rejectedParameters, /temporary/);
         const accountUsage = await admin('GET', '/admin/users');
         assert.equal(accountUsage.find((account) => account.id === users.admin).aiCallCount, 5, 'Count successful and failed AI test requests');
         assert.equal(accountUsage.find((account) => account.id === users.alice).aiCallCount, 0, 'Usage belongs to the caller');
+        const { safeAiError } = require('../server/mistakes/ai-config');
+        for (const [status, error, expected] of [
+            [400, { status: 'FAILED_PRECONDITION', message: 'User location is not supported for the API use.' }, /出口地区/],
+            [400, { status: 'INVALID_ARGUMENT', message: 'The supplied credential was rejected.', details: [{ reason: 'API_KEY_INVALID' }] }, /鉴权失败/],
+            [400, { status: 'FAILED_PRECONDITION', message: 'Please enable billing on your Google AI Studio project.' }, /计费状态/],
+            [404, { status: 'NOT_FOUND', message: 'models/mock-vision is not found for API version v1beta.' }, /接口地址或模型不存在/]
+        ]) {
+            failureStatus = status; failures = 1; failureError = error;
+            const beforeRejectedTest = calls;
+            const diagnostic = (await admin('POST', '/admin/ai/test?profile=segmentation', {}, 400)).message;
+            assert.match(diagnostic, expected);
+            assert.ok(diagnostic.includes(`HTTP ${status}`) && diagnostic.includes(error.status) && diagnostic.includes(error.message), 'Administrator tests retain the provider status and cause');
+            assert.equal(calls - beforeRejectedTest, 1, 'An upstream request failure is not resent as a format fallback');
+            const publicError = safeAiError({ status, providerCode: error.status, providerMessage: error.message, error });
+            assert.match(publicError, expected);
+            assert.equal(publicError.includes(error.message), false, 'Ordinary tasks do not expose provider diagnostics');
+        }
+        for (const [profile, secret] of [['general', 'test-secret'], ['analysis', 'analysis-secret']]) {
+            failureStatus = 400; failures = 1;
+            const providerKey = 'AIzaSmokeProviderKey0123456789';
+            failureError = { status: 'INVALID_ARGUMENT', message: `Invalid request using ${secret}, ${providerKey}, and Bearer another-secret.` };
+            const diagnostic = (await admin('POST', `/admin/ai/test?profile=${profile}`, {}, 400)).message;
+            assert.match(diagnostic, /HTTP 400.*INVALID_ARGUMENT/);
+            assert.match(diagnostic, /\[redacted\]/);
+            for (const credential of [secret, providerKey, 'another-secret']) assert.equal(diagnostic.includes(credential), false, 'Both API protocols redact credentials from administrator diagnostics');
+        }
+        failureError = undefined;
         failureStatus = 500;
+        const execFileAsync = promisify(execFile);
+        const diagnoseScript = path.join(__dirname, 'mistakes-ai-diagnose.cjs');
+        const diagnosed = await execFileAsync(process.execPath, [diagnoseScript], { env: process.env, timeout: 15000 });
+        assert.match(diagnosed.stdout, /区域识别测试通过/, 'The CLI diagnoses the saved segmentation profile by default');
+        failureStatus = 400; failures = 1;
+        failureError = { status: 'FAILED_PRECONDITION', message: 'User location is not supported for the API use. Credential: segmentation-secret.' };
+        try {
+            await assert.rejects(execFileAsync(process.execPath, [diagnoseScript, 'segmentation'], { env: process.env, timeout: 15000 }), (error) => {
+                assert.equal(error.code, 1, 'A rejected diagnostic exits with failure');
+                assert.match(error.stderr, /出口地区.*HTTP 400.*FAILED_PRECONDITION/);
+                assert.match(error.stderr, /User location is not supported/);
+                assert.match(error.stderr, /\[redacted\]/);
+                assert.equal(`${error.stdout}\n${error.stderr}`.includes('segmentation-secret'), false, 'CLI diagnostics redact the configured key');
+                return true;
+            });
+        } finally {
+            failureError = undefined; failureStatus = 500; failures = 0;
+        }
         const mistake = await alice('POST', '/mistakes', {}, 201);
         const input = (item) => ({ question: item.question, answer: item.answer, analysis: item.analysis, subjectId: item.subjectId, primaryKnowledgePointId: item.primaryKnowledgePointId, auxiliaryKnowledgePointIds: item.auxiliaryKnowledgePointIds });
         const jpeg = fs.readFileSync(path.join(__dirname, '..', 'server', 'mistakes', 'fixtures', 'vision-test.jpg'));
@@ -509,6 +560,16 @@ async function runAiSmoke() {
         assert.equal(fallback.status, 'succeeded');
         assert.equal(calls - beforeFallback, 2, 'Explicit unsupported-format rejection allows one fallback');
         assert.deepEqual(metrics.slice(-2).map((item) => item.responseFormat), ['json_schema', 'text']);
+        for (const rejection of [
+            'Invalid JSON payload received. Unknown name "responseJsonSchema" at generation_config: Cannot find field.',
+            'JSON mode is not enabled for this model'
+        ]) {
+            rejectFormat = rejection;
+            const beforeCompatibleFallback = calls;
+            const result = await completed(await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'answer', input: input(await latest()), imageIds: [answerImage.id] }, 201));
+            assert.equal(result.status, 'succeeded');
+            assert.equal(calls - beforeCompatibleFallback, 2, 'Official unsupported-format wording permits exactly one plain request');
+        }
         rejectFormat = 'Invalid schema for responseJsonSchema: required is missing';
         const beforeBadSchema = calls;
         const badSchema = await completed(await alice('POST', '/ai/jobs', { mistakeId: mistake.id, type: 'answer', input: input(await latest()), imageIds: [answerImage.id] }, 201));
