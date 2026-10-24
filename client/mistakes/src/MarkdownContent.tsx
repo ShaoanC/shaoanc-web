@@ -5,6 +5,7 @@ import remarkBreaks from 'remark-breaks';
 import rehypeKatex from 'rehype-katex';
 import { ScrollArea } from './ScrollArea';
 import { Checkbox } from './components';
+import { MarkdownImage, MarkdownImageLink } from './MarkdownImage';
 import type { Nodes, PhrasingContent, Root } from 'mdast';
 import 'katex/dist/katex.min.css';
 
@@ -77,6 +78,8 @@ function remarkCompact() {
 }
 
 const fullComponents: Components = {
+  a: ({ node: _node, children, ...props }) => <a {...props}><MarkdownImageLink.Provider value>{children}</MarkdownImageLink.Provider></a>,
+  img: ({ node: _node, ...props }) => <MarkdownImage key={props.src} {...props} />,
   table: ({ node: _node, ...props }) => <ScrollArea axis="horizontal" className="markdown-table-scroll" tabIndex={0} role="region" aria-label="表格，可横向滚动"><table {...props} /></ScrollArea>,
   input: ({ node: _node, type, ...props }) => type === 'checkbox' ? <Checkbox {...props} disabled aria-label={props.checked ? '已完成' : '未完成'} /> : <input {...props} type={type} />,
 };
@@ -94,7 +97,10 @@ export function MarkdownContent({ children, variant = 'full', className = '', em
     <ReactMarkdown
       remarkPlugins={compact ? [remarkGfm, remarkMath, remarkCompact] : [remarkGfm, remarkMath, remarkBreaks]}
       rehypePlugins={[rehypeKatex]}
-      components={compact ? compactComponents : imageUrls ? { ...fullComponents, img: ({ node: _node, src, ...props }) => <img {...props} src={src && imageUrls[src] ? imageUrls[src] : src} /> } : fullComponents}
+      components={compact ? compactComponents : imageUrls ? { ...fullComponents, img: ({ node: _node, src, ...props }) => {
+        const resolved = src && imageUrls[src] ? imageUrls[src] : src;
+        return <MarkdownImage key={resolved} {...props} src={resolved} />;
+      } } : fullComponents}
     >{showEmptyText ? emptyText : children}</ReactMarkdown>
   </Tag>;
 }

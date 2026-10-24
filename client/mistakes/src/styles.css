@@ -1930,7 +1930,14 @@ input:focus, textarea:focus, select:focus { outline: 2px solid rgba(23,100,72,.1
 .markdown-content--full blockquote { margin: .9em 0; padding: .25em 1em; border-left: 3px solid var(--primary); background: var(--primary-soft); color: var(--text-secondary); }
 .markdown-content--full blockquote > :last-child { margin-bottom: 0; }
 .markdown-content--full a { color: var(--primary); text-decoration: underline; text-underline-offset: 3px; }
-.markdown-content--full img { display: block; max-width: 100%; height: auto; }
+.markdown-content--full img { display: block; width: auto; height: auto; max-width: 100%; max-height: calc(var(--figure-lines, 4) * 1lh); margin: .4em auto; }
+.markdown-content--full img[data-figure-lines="long"] { max-height: none; }
+.markdown-figure-image[role="button"] { cursor: zoom-in; }
+.markdown-figure-image[role="button"]:focus-visible { outline: 2px solid var(--primary); outline-offset: 4px; }
+.markdown-image-lightbox { position: fixed; inset: 0; z-index: 1500; border: 0; outline: 0; }
+.markdown-image-lightbox .pswp { --pswp-root-z-index: 0; }
+.markdown-image-lightbox .pswp__button--zoom { margin-right: 60px; }
+.markdown-image-close { position: absolute; top: 0; right: 0; z-index: 1; display: grid; place-items: center; width: 60px; height: 60px; padding: 0; border: 0; background: transparent; color: white; cursor: pointer; }
 .markdown-content--full hr { border: 0; border-top: 1px solid var(--border-medium); margin: 1.2em 0; }
 .markdown-content--full code, .markdown-content--compact code { font-family: ui-monospace, Consolas, monospace; font-size: .9em; font-weight: 400; padding: .1em .3em; background: var(--surface-1); border-radius: 3px; }
 .markdown-content--full pre { min-width: 0; max-width: 100%; overflow-x: auto; margin: .9em 0; padding: 14px 16px; background: var(--surface-1); border: 1px solid var(--border-subtle); border-radius: 3px; white-space: pre; overflow-wrap: normal; word-break: normal; line-height: 1.65; }
@@ -2101,7 +2108,9 @@ input:focus, textarea:focus, select:focus { outline: 2px solid rgba(23,100,72,.1
   .mistake-footer > .status-badge { margin-left: 0; flex-shrink: 0; }
   .mistake-row .mistake-date { font-size: 13px; margin-left: 0; }
   .mistake-row:not(.is-trash) .mistake-actions { display: none; }
-  .swipe-delete-action { position: absolute; inset: 0 0 0 auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; width: 88px; min-width: 88px; border: 0; border-radius: 0; color: #fff; background: var(--error); font-size: 14px; transition: width var(--swipe-settle); }
+  /* Idle actions must not be painted behind rows during fast native scrolling. */
+  .swipe-delete-action { position: absolute; inset: 0 0 0 auto; display: flex; visibility: hidden; flex-direction: column; align-items: center; justify-content: center; gap: 8px; width: 88px; min-width: 88px; border: 0; border-radius: 0; color: #fff; background: var(--error); font-size: 14px; transition: width var(--swipe-settle), visibility 0s 360ms; }
+  .mistake-row.is-delete-revealed .swipe-delete-action { visibility: visible; transition-delay: 0s; }
   .mistake-row.is-dragging .swipe-delete-action { transition: none; }
   .swipe-delete-action:disabled { opacity: 1; }
   .swipe-delete-action:focus-visible { outline: 2px solid #fff; outline-offset: -5px; }

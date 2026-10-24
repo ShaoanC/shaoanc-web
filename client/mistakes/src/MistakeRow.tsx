@@ -159,7 +159,16 @@ export function MistakeRow({ mistake, grid, opened, armed, disabled, deleting, r
       if (!ignoreSwipe.current) direction.current = dir === 'Left' || dir === 'Right' ? dir : null;
     },
     onSwiping: ({ deltaX, absX, absY }) => {
-      if (ignoreSwipe.current || !direction.current || absX <= absY) return;
+      if (ignoreSwipe.current) return;
+      if (absY >= absX) {
+        // Once page scrolling takes over, discard the horizontal preview for this touch.
+        ignoreSwipe.current = true;
+        direction.current = null;
+        if (phaseRef.current === 'dragging') retractRating();
+        else setDragOffset(null);
+        return;
+      }
+      if (!direction.current) return;
       suppressClickUntil.current = Date.now() + 400;
       if (!startedOpen.current && direction.current === 'Right') {
         changeRatingPhase('dragging');
@@ -205,6 +214,7 @@ export function MistakeRow({ mistake, grid, opened, armed, disabled, deleting, r
   const ratingActive = mobile && !trashed && !selectionMode && ratingPhase !== 'idle';
   const expanded = ratingPhase === 'opening' || ratingPhase === 'open';
   const offset = mobile && !trashed && !selectionMode ? expanded ? ratingSize.width : ratingPhase === 'closing' || ratingPhase === 'retracting' ? 0 : dragOffset ?? (opened ? -DELETE_WIDTH : 0) : 0;
+  const deleteRevealed = !ratingActive && offset < 0;
   const actionWidth = Math.max(DELETE_WIDTH, -offset);
   const ratingDistance = ratingPhase === 'dragging' ? Math.max(0, dragOffset || 0) : 0;
   const ratingMorph = Math.max(0, Math.min(1, (ratingDistance - RATING_CIRCLE_WIDTH) / (RATING_SWIPE_THRESHOLD - RATING_CIRCLE_WIDTH)));
@@ -217,7 +227,7 @@ export function MistakeRow({ mistake, grid, opened, armed, disabled, deleting, r
     <SearchSummary search={mistake.search} />
   </div></div>;
 
-  return <div {...handlers} ref={attachRow} className={`mistake-row ${grid ? 'is-grid' : ''} ${trashed ? 'is-trash' : ''} ${opened ? 'is-open' : ''} ${dragOffset !== null && ratingPhase === 'idle' ? 'is-dragging' : ''} ${ratingActive ? 'is-rating-active' : ''} ${selectionMode ? 'is-selecting' : ''} ${selectionMode && selected ? 'is-selected' : ''}`} data-mistake-id={mistake.id} data-rating-phase={ratingPhase} style={{ minHeight: ratingActive ? rowHeight : undefined }} onTouchCancel={() => {
+  return <div {...handlers} ref={attachRow} className={`mistake-row ${grid ? 'is-grid' : ''} ${trashed ? 'is-trash' : ''} ${opened ? 'is-open' : ''} ${deleteRevealed ? 'is-delete-revealed' : ''} ${dragOffset !== null && ratingPhase === 'idle' ? 'is-dragging' : ''} ${ratingActive ? 'is-rating-active' : ''} ${selectionMode ? 'is-selecting' : ''} ${selectionMode && selected ? 'is-selected' : ''}`} data-mistake-id={mistake.id} data-rating-phase={ratingPhase} style={{ minHeight: ratingActive ? rowHeight : undefined }} onTouchCancel={() => {
     ignoreSwipe.current = true;
     if (phaseRef.current === 'dragging') retractRating();
     else setDragOffset(null);

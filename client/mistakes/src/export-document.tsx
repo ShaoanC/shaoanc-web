@@ -1,6 +1,7 @@
 import { useEffect, useRef, type CSSProperties } from 'react';
 import { createRoot } from 'react-dom/client';
 import { MarkdownContent } from './MarkdownContent';
+import { figureLineCount } from './figure-layout';
 import { knowledgeLabel } from './context';
 import { ratingLabel } from './StarRating';
 import type { ExportDocumentData, ExportOptions } from './export-types';
@@ -98,7 +99,13 @@ function prepareImages(document: HTMLElement, pageHeight: number) {
     const precedingHeight = image.getBoundingClientRect().top - start.getBoundingClientRect().top;
     const paragraph = block.closest('p');
     const spacing = parseFloat(getComputedStyle(block).marginBottom) + (paragraph ? parseFloat(getComputedStyle(paragraph).marginBottom) : 0);
-    const maximum = Math.min(230 * 96 / 25.4, Math.max(1, pageHeight - precedingHeight - spacing - 1));
+    // Ordinary exam figures follow the surrounding text size. Keep the larger
+    // page-fitting allowance for long source photos such as complete questions.
+    const lines = figureLineCount(image.naturalWidth, image.naturalHeight);
+    const text = image.closest<HTMLElement>('.markdown-content')!;
+    const lineHeight = parseFloat(getComputedStyle(text).lineHeight);
+    const figureHeight = lines === null ? 230 * 96 / 25.4 : lines * lineHeight;
+    const maximum = Math.min(figureHeight, Math.max(1, pageHeight - precedingHeight - spacing - 1));
     image.style.maxHeight = `${maximum}px`;
   }
 }
