@@ -3,7 +3,7 @@ import ReactCrop, { type PercentCrop } from 'react-image-crop';
 import imageCompression from 'browser-image-compression';
 import { ArrowLeft, ArrowRight, Camera, Crop, ImagePlus, RotateCcw, RotateCw, Trash2 } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { AiDialog } from './AiDialog';
+import { ResponsiveAiDialog } from './ResponsiveAiDialog';
 import { RecognitionPrompt } from './RecognitionPrompt';
 import { UploadedPhotoPicker } from './UploadedPhotoPicker';
 import { usePhotoUploads } from './PhotoUploads';
@@ -49,6 +49,7 @@ export function PhotoInput({ purpose, recordId, ensureSaved, actions, aiAvailabl
   const [busy, setBusy] = useState(false);
   const [stage, setStage] = useState('');
   const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
+  const dialogTrigger = useRef<HTMLButtonElement>(null);
   const camera = useRef<HTMLInputElement>(null);
   const album = useRef<HTMLInputElement>(null);
   const urls = useRef(new Set<string>());
@@ -163,12 +164,12 @@ export function PhotoInput({ purpose, recordId, ensureSaved, actions, aiAvailabl
   return <div className="photo-entry">
     <div className="photo-entry-title"><Camera size={18} />{purpose === 'question' ? '从图片录入题目' : '也可以拍下答案'}</div>
     <p>{purpose === 'question' ? '选中错题部分，多张图片按顺序一起识别。' : '题目和答案在同一张图里时，可直接复用题干图片识别答案。'}</p>
-    <RecognitionPrompt purpose={purpose} value={recognitionPrompt} onChange={onRecognitionPromptChange} disabled={busy} />
     <input ref={camera} type="file" accept="image/jpeg,image/png,image/webp" capture="environment" hidden onChange={fileInput} disabled={busy} />
     <input ref={album} type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onChange={fileInput} disabled={busy} />
-    <div className="photo-actions"><button type="button" className="button secondary" disabled={busy} onClick={() => camera.current?.click()}><Camera size={16} />拍照{purpose === 'answer' ? '识别答案' : ''}</button><button type="button" className="button secondary" disabled={busy} onClick={() => album.current?.click()}><ImagePlus size={16} />选择图片</button><UploadedPhotoPicker disabled={busy} onSelect={reuse} />{actions}{entries.length > 0 && <button type="button" className="table-button" onClick={() => setOpen(true)}><Crop size={15} />{entries.length} 张待选图片</button>}</div>
+    <div className="photo-actions"><button type="button" className="button secondary" disabled={busy} onClick={(event) => { dialogTrigger.current = event.currentTarget; camera.current?.click(); }}><Camera size={16} />拍照{purpose === 'answer' ? '识别答案' : ''}</button><button type="button" className="button secondary" disabled={busy} onClick={(event) => { dialogTrigger.current = event.currentTarget; album.current?.click(); }}><ImagePlus size={16} />选择图片</button><UploadedPhotoPicker disabled={busy} onSelect={reuse} />{actions}{entries.length > 0 && <button type="button" className="table-button" onClick={(event) => { dialogTrigger.current = event.currentTarget; setOpen(true); }}><Crop size={15} />{entries.length} 张待选图片</button>}</div>
     {uploads.map((batch) => <div className="photo-upload-status" role="status" key={batch.id}><span>{batch.message}</span>{batch.status === 'failed' && <button type="button" className="table-button" onClick={() => queue.retry(batch.id)}>重试</button>}</div>)}
-    <AiDialog open={open} onClose={() => { if (!busy) setOpen(false); }} title={`裁剪${label}图片`} wide>
+    <ResponsiveAiDialog open={open} onOpenChange={(value) => { if (!busy) setOpen(value); }} title={`裁剪${label}图片`} description="调整图片范围和顺序，确认后上传，也可补充本次识别要求。" triggerRef={dialogTrigger} className="photo-crop-dialog">
+      {() => <>
       <div className="photo-thumbnails">{entries.map((entry, index) => <div className={`photo-thumbnail${selected === index ? ' active' : ''}`} key={entry.key}>
         <button type="button" disabled={busy} onClick={() => setSelected(index)} aria-label={`选择第 ${index + 1} 张图片`}><img src={entry.url} alt={`${label}图片 ${index + 1}`} /><small>{index + 1}. {entry.file.name}</small></button>
         <div className="photo-thumbnail-controls"><button type="button" className="icon-button" aria-label="向前移动" disabled={busy || index === 0} onClick={() => move(index, -1)}><ArrowLeft size={14} /></button><button type="button" className="icon-button" aria-label="移出本次识别" disabled={busy} onClick={() => remove(index)}><Trash2 size={14} /></button><button type="button" className="icon-button" aria-label="向后移动" disabled={busy || index === entries.length - 1} onClick={() => move(index, 1)}><ArrowRight size={14} /></button></div>
@@ -181,6 +182,7 @@ export function PhotoInput({ purpose, recordId, ensureSaved, actions, aiAvailabl
       <RecognitionPrompt purpose={purpose} value={recognitionPrompt} onChange={onRecognitionPromptChange} disabled={busy} />
       {!aiAvailable && <p className="ai-notice">AI 尚未启用，可以先保存图片。</p>}
       <div className="photo-actions"><button type="button" className="button primary" disabled={busy || !entries.length || !imageReady || !aiAvailable} onClick={() => void upload(true)}>{busy ? '正在处理…' : `上传并识别${label}`}</button><button type="button" className="button secondary" disabled={busy || !entries.length || !imageReady} onClick={() => void upload(false)}>仅保存图片</button></div>
-    </AiDialog>
+      </>}
+    </ResponsiveAiDialog>
   </div>;
 }

@@ -3,13 +3,11 @@ import { Sparkles } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { api, json } from './api';
 import { useApp } from './context';
-import { AiDialog } from './AiDialog';
-import { MobileDrawer, useMobileLayout } from './MobileDrawer';
+import { ResponsiveAiDialog } from './ResponsiveAiDialog';
 import { PageLoadBoundary } from './PageLoadBoundary';
 import { LoadingContent } from './motion';
 import { toastDestination } from './toast-navigation';
 import type { AiApplyOptions, AiApplyResult, AiConfig, AiJob, AiJobRequest } from './ai-types';
-import './ai-tasks-dialog.css';
 
 const AiTaskManager = lazy(() => import('./AiTaskManager').then((module) => ({ default: module.AiTaskManager })));
 
@@ -46,7 +44,6 @@ export function AiTasksProvider({ children }: { children: ReactNode }) {
   const [jobs, setJobs] = useState<AiJob[]>([]);
   const [config, setConfig] = useState<AiConfig | null>(null);
   const [open, setOpen] = useState(false);
-  const mobile = useMobileLayout();
   const tasksTrigger = useRef<HTMLElement | null>(null);
   const [onTasksPage, setOnTasksPage] = useState(window.location.hash.split('?')[0] === '#/ai-tasks');
   const [error, setError] = useState('');
@@ -198,10 +195,8 @@ export function AiTasksProvider({ children }: { children: ReactNode }) {
 
   return <Context.Provider value={{ jobs, config, error, loaded, refreshing, updatedAt, busyIds, refresh, createJob, applyJob, actJobs, openTasks: () => { tasksTrigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setOpen(true); }, closeTasks: () => setOpen(false) }}>
     {children}
-    {mobile ? <MobileDrawer open={open} onOpenChange={setOpen} title="AI 任务" description="离开页面后任务会继续处理，结果保留在这里。" closeLabel="关闭 AI 任务" triggerRef={tasksTrigger} className="ai-tasks-mobile-drawer">
-      {(portalContainer) => <PageLoadBoundary><Suspense fallback={<LoadingContent loading kind="rows">{null}</LoadingContent>}><AiTaskManager compact portalContainer={portalContainer} /></Suspense></PageLoadBoundary>}
-    </MobileDrawer> : <AiDialog open={open} onClose={() => setOpen(false)} title="AI 任务" description="离开页面后任务会继续处理，结果保留在这里。" wide scrollBody className="ai-tasks-dialog" backdropClassName="ai-tasks-dialog-backdrop">
-      <PageLoadBoundary><Suspense fallback={<LoadingContent loading kind="rows">{null}</LoadingContent>}><AiTaskManager compact /></Suspense></PageLoadBoundary>
-    </AiDialog>}
+    <ResponsiveAiDialog open={open} onOpenChange={setOpen} title="AI 任务" description="离开页面后任务会继续处理，结果保留在这里。" closeLabel="关闭 AI 任务" triggerRef={tasksTrigger}>
+      {(portalContainer) => <PageLoadBoundary><Suspense fallback={<LoadingContent loading kind="tasks">{null}</LoadingContent>}><AiTaskManager compact portalContainer={portalContainer} /></Suspense></PageLoadBoundary>}
+    </ResponsiveAiDialog>
   </Context.Provider>;
 }
