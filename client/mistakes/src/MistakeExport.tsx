@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useId, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useId, useRef, useState, type ComponentProps } from 'react';
 import { Dialog } from '@base-ui/react/dialog';
 import { ArrowLeft, Download, Eye, FileDown, LoaderCircle, LockKeyhole, Printer, X } from 'lucide-react';
 import { Checkbox } from './components';
@@ -11,6 +11,14 @@ import type { Mistake } from './types';
 import './mistake-export.css';
 
 const PdfPreview = lazy(() => import('./PdfPreview'));
+
+function ExportDialogRoot({ open, ...props }: ComponentProps<typeof Dialog.Root>) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  // A Root mounted already open skips Base UI's entering phase.
+  return <Dialog.Root {...props} open={mounted && open} />;
+}
 
 interface MistakeExportProps {
   mistakes: Mistake[];
@@ -164,7 +172,7 @@ export function MistakeExport({ mistakes, totalCount, filters, selectedIds = [],
     {(container) => <div className="export-mobile-settings">{settings(container)}</div>}
   </MobileDrawer>;
 
-  return <Dialog.Root open={open} onOpenChange={changeOpen} onOpenChangeComplete={finishClose}>
+  return <ExportDialogRoot open={open} onOpenChange={changeOpen} onOpenChangeComplete={finishClose}>
     <Dialog.Portal id="mistake-export-root">
       <Dialog.Backdrop className="export-backdrop" />
       <Dialog.Popup ref={setPortalContainer} className={`export-dialog${preview && file ? ' is-preview' : ''}`}>
@@ -182,5 +190,5 @@ export function MistakeExport({ mistakes, totalCount, filters, selectedIds = [],
         </>}
       </Dialog.Popup>
     </Dialog.Portal>
-  </Dialog.Root>;
+  </ExportDialogRoot>;
 }

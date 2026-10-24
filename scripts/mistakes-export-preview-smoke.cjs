@@ -79,6 +79,14 @@ async function closeAnimatedView(page, dialog, desktopPopup, mobilePopup, conten
     await popup.waitFor({ state: 'detached' });
 }
 
+async function assertExportOpening(page, name) {
+    const property = page.viewportSize().width <= 640 ? 'transform' : 'translate';
+    await page.waitForFunction((expected) => window.__exportOpeningTransitions.some((entry) => entry.property === expected), property, { timeout: 1500 });
+    const transition = await page.evaluate((expected) => window.__exportOpeningTransitions.find((entry) => entry.property === expected), property);
+    assert.ok(transition.duration >= 150, `${name}: the export popup runs a visible entering transition`);
+    assert.notEqual(transition.values[0], transition.values.at(-1), `${name}: the export popup moves from its entering position`);
+}
+
 async function checkViewport(context, base, name, forceLoadFailure) {
     const page = await context.newPage();
     const errors = [];
@@ -125,14 +133,25 @@ async function checkViewport(context, base, name, forceLoadFailure) {
     if (await closeToast.count()) await closeToast.first().click();
     await page.locator('.Toastify__toast').first().waitFor({ state: 'detached', timeout: 7000 }).catch(() => {});
     const before = await homeSnapshot(page);
+    await page.evaluate(() => {
+        window.__exportOpeningTransitions = [];
+        document.addEventListener('transitionrun', (event) => {
+            if (!event.target.matches('.export-dialog, .export-mobile-drawer')) return;
+            const animation = event.target.getAnimations().find((item) => item.transitionProperty === event.propertyName);
+            if (animation) window.__exportOpeningTransitions.push({ property: event.propertyName, duration: animation.effect.getComputedTiming().duration, values: animation.effect.getKeyframes().map((frame) => frame[event.propertyName]) });
+        }, true);
+    });
 
     await page.getByRole('button', { name: '导出', exact: true }).click();
+    await assertExportOpening(page, name);
     const settingsDialog = page.getByRole('dialog', { name: '导出错题', exact: true });
     await settingsDialog.evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished)));
     await closeAnimatedView(page, settingsDialog, '.export-dialog', '.export-mobile-drawer', '.export-settings-fields');
 
     for (let attempt = 1; attempt <= 2; attempt += 1) {
+        await page.evaluate(() => { window.__exportOpeningTransitions = []; });
         await page.getByRole('button', { name: '导出', exact: true }).click();
+        await assertExportOpening(page, name);
         assert.equal(await page.getByLabel('文档标题', { exact: true }).inputValue(), '错题');
         await page.getByRole('dialog').evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished)));
         assert.deepEqual(await page.locator('.export-dialog, .export-settings-body, .export-mobile-drawer, .export-mobile-drawer > .mobile-filters-content').evaluateAll((elements) => elements.filter((element) => element.scrollWidth > element.clientWidth + 1).map((element) => element.className)), [], `${name}: export settings have no horizontal overflow`);
@@ -181,6 +200,13 @@ async function checkViewport(context, base, name, forceLoadFailure) {
             await retry.click({ timeout: 5000 });
         }
         await waitPdf(page);
+        if (attempt === 1 && !forceLoadFailure) {
+            await page.evaluate(() => { window.__exportOpeningTransitions = []; });
+            await page.getByRole('button', { name: '设置', exact: true }).click();
+            await assertExportOpening(page, `${name}: return from preview`);
+            await page.getByRole('button', { name: '预览 PDF', exact: true }).click();
+            await waitPdf(page);
+        }
         if (attempt === 1 && forceLoadFailure) assert.equal(workerRequests, 2, 'Retry creates a fresh worker after a failed startup');
         if (attempt === 1) await page.screenshot({ path: path.join(screenshotsDirectory, `mistakes-export-${forceLoadFailure ? 'desktop' : 'mobile'}.png`) });
         assert.equal(exports, attempt, 'Preview retry reads the cached PDF without requesting another export');
@@ -282,7 +308,7 @@ async function main() {
     });
     const base = `http://127.0.0.1:${server.address().port}`;
     browser = await chromium.launch({ headless: true });
-    const desktop = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const desktop = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'no-preference' });
     await desktop.route('https://fonts.googleapis.com/**', (route) => route.fulfill({ status: 200, contentType: 'text/css', body: '' }));
     await json(desktop, base, 'POST', '/auth/login', { username: 'export_preview_smoke', password: 'ExportPreview2026!' });
     const mistakes = [];
@@ -291,7 +317,7 @@ async function main() {
     }
     await checkViewport(desktop, base, 'desktop 1280x900', true);
     await checkAiTasksViewport(desktop, base, 'desktop');
-    const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, storageState: await desktop.storageState() });
+    const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, reducedMotion: 'no-preference', storageState: await desktop.storageState() });
     await mobile.route('https://fonts.googleapis.com/**', (route) => route.fulfill({ status: 200, contentType: 'text/css', body: '' }));
     await checkViewport(mobile, base, 'mobile 390x844', false);
     await checkAiTasksViewport(mobile, base, 'mobile');

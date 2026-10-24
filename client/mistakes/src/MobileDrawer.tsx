@@ -30,10 +30,14 @@ interface MobileDrawerProps {
 }
 
 export function MobileDrawer({ open, onOpenChange, onOpenChangeComplete, title, description, closeLabel = '关闭', triggerRef, className = '', footer, children }: MobileDrawerProps) {
+  const [mounted, setMounted] = useState(false);
   const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
 
-  return <Drawer.Root open={open} onOpenChange={onOpenChange} onOpenChangeComplete={onOpenChangeComplete} modal swipeDirection="down">
+  // Conditional callers must also enter through the closed state to animate.
+  useEffect(() => setMounted(true), []);
+
+  return <Drawer.Root open={mounted && open} onOpenChange={onOpenChange} onOpenChangeComplete={onOpenChangeComplete} modal swipeDirection="down">
     <Drawer.VirtualKeyboardProvider>
       <Drawer.Portal>
         <Drawer.Backdrop className="mobile-filters-backdrop" />
