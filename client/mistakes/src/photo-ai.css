@@ -1,6 +1,5 @@
 .photo-dialog-backdrop { position: fixed; inset: 0; background: rgba(20, 40, 29, .48); z-index: 1200; }
 .photo-dialog { position: fixed; z-index: 1201; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(660px, calc(100vw - 32px)); max-height: calc(100dvh - 40px); overflow: auto; background: var(--surface-2); color: var(--text-primary); border: 1px solid var(--border-medium); border-radius: 8px; padding: 24px; box-shadow: 0 20px 80px #14281d33; }
-.ai-profile-settings + .ai-profile-settings { border-top: 1px solid var(--border-medium); margin-top: 28px; padding-top: 24px; }
 .photo-dialog-wide { width: min(960px, calc(100vw - 32px)); }
 .photo-dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .photo-dialog-heading h2 { font-size: 23px; }
@@ -24,9 +23,16 @@
 .ai-toast-link small { color: var(--primary); text-decoration: underline; text-underline-offset: 3px; }
 .ai-toast-link:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
 .ai-empty { padding: 28px 0; color: var(--text-secondary); }
-.ai-settings { max-width: 740px; }
-.ai-settings h2 { margin-bottom: 12px; }
-.ai-settings .field { margin-top: 20px; }
+.ai-settings { width: 100%; }
+.ai-profile-settings { padding: 24px; border-top: 1px solid var(--border-subtle); }
+.ai-profile-settings .panel-title { max-width: 760px; }
+.ai-profile-form { display: flex; flex-direction: column; gap: 21px; max-width: 680px; }
+.ai-profile-enable { display: flex; align-items: center; gap: 10px; min-height: 32px; font-size: 16px; }
+.ai-profile-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+@media (max-width: 640px) {
+  .ai-profile-settings { padding: 22px 16px; }
+  .ai-profile-actions { flex-direction: column; align-items: stretch; }
+}
 .photo-entry { border-left: 3px solid var(--primary); background: var(--surface-1); padding: 14px 18px; margin-bottom: 20px; }
 .photo-entry-title { font-weight: 600; display: flex; align-items: center; gap: 8px; }
 .photo-entry .photo-actions { margin-bottom: 0; }

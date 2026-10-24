@@ -121,7 +121,7 @@ export function BackupSettings() {
   const current = list?.current;
   const backups = list?.backups || [];
 
-  return <LoadingContent loading={loading} kind="settings">
+  return <LoadingContent loading={loading} kind="backups">
     {!list || !settings ? <ErrorState message={loadError || '备份信息暂时无法加载。'} retry={() => { setLoading(true); void refresh(true); }} /> : <div className="backup-settings">
       {loadError && <div className="inline-alert" role="alert">备份状态更新失败：{loadError}<button onClick={() => void refresh()}>重试</button></div>}
       {actionError && <div className="form-error" role="alert">{actionError}</div>}

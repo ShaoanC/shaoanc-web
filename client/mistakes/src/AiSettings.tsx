@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
+import { ScanLine, Scissors, Sparkles } from 'lucide-react';
+import { Checkbox } from './components';
+import { LoadingContent } from './motion';
 import { api, json } from './api';
 import { useApp } from './context';
 import { useAiTasks } from './AiTasks';
@@ -39,22 +42,25 @@ function ProfileSettings({ profile }: { profile: typeof profiles[number] }) {
       toast.update(toastId, { render: result.message, type: 'success', isLoading: false, autoClose: 8000 });
     } catch (err) { toast.update(toastId, { render: (err as Error).message, type: 'error', isLoading: false, autoClose: false, closeButton: true }); } finally { setBusy(''); }
   }
+  const Icon = profile.id === 'general' ? ScanLine : profile.id === 'segmentation' ? Scissors : Sparkles;
   const analysis = profile.id === 'analysis';
   return <section className="ai-profile-settings">
-    <h3>{profile.title}</h3><p className="ai-notice">{profile.description}</p>
+    <div className="panel-title"><span className="panel-title-icon green"><Icon size={18} /></span><div><h2>{profile.title}</h2><p>{profile.description}</p></div></div>
+    <LoadingContent loading={!config && !error} kind="ai-profile">
     {error && <div className="form-error" role="alert">{error}</div>}
-    {config && <form onSubmit={save}>
-      <label className="knowledge-option"><input type="checkbox" checked={config.enabled} onChange={(event) => setConfig({ ...config, enabled: event.target.checked })} />启用{profile.title}</label>
+    {config && <form className="ai-profile-form" onSubmit={save}>
+      <label className="ai-profile-enable"><Checkbox checked={config.enabled} onChange={(event) => setConfig({ ...config, enabled: event.target.checked })} />启用{profile.title}</label>
       <label className="field"><span>{analysis ? 'OpenAI API 基础地址' : 'Gemini API 基础地址'}</span><input type="url" value={config.baseUrl || ''} placeholder={analysis ? 'https://api.openai.com/v1' : 'https://generativelanguage.googleapis.com/v1beta'} onChange={(event) => setConfig({ ...config, baseUrl: event.target.value })} required={config.enabled} /></label>
       <label className="field"><span>模型名称</span><input value={config.model || ''} placeholder={analysis ? '填写支持 Chat Completions 的模型 ID' : '填写 Gemini 模型 ID'} onChange={(event) => setConfig({ ...config, model: event.target.value })} required={config.enabled} /></label>
       <label className="field"><span>API 密钥</span><input type="password" autoComplete="new-password" value={key} onChange={(event) => setKey(event.target.value)} placeholder={config.hasApiKey ? '已保存，留空保持原密钥' : '输入 API 密钥'} required={config.enabled && !config.hasApiKey} /></label>
-      <div className="photo-actions"><button className="button primary" disabled={Boolean(busy)}>{busy === 'save' ? '保存中…' : `保存${profile.title}配置`}</button><button type="button" className="button secondary" disabled={Boolean(busy) || !config.enabled || !config.configured} onClick={() => void test()}>{busy === 'test' ? '测试中…' : profile.testLabel}</button></div>
+      <div className="ai-profile-actions"><button className="button primary" disabled={Boolean(busy)}>{busy === 'save' ? '保存中…' : `保存${profile.title}配置`}</button><button type="button" className="button secondary" disabled={Boolean(busy) || !config.enabled || !config.configured} onClick={() => void test()}>{busy === 'test' ? '测试中…' : profile.testLabel}</button></div>
     </form>}
+    </LoadingContent>
   </section>;
 }
 
 export function AiSettings() {
-  return <section className="panel admin-panel ai-settings"><h2>AI 识别与解析</h2><p className="ai-notice">三套服务独立配置、独立启用，密钥只保存在服务器。留空保留已有密钥，测试使用已保存的配置。</p>
+  return <section className="panel admin-panel ai-settings"><div className="admin-panel-heading"><div><h2>AI 识别与解析</h2><p>三套服务独立配置、独立启用，密钥只保存在服务器。留空保留已有密钥，测试使用已保存的配置。</p></div></div>
     {profiles.map((profile) => <ProfileSettings key={profile.id} profile={profile} />)}
   </section>;
 }

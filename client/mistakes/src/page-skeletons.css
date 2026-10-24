@@ -1,0 +1,35 @@
+/* Page skeletons reuse the content's layout classes; only the ink is replaced. */
+.skeleton-text { position: relative; display: inline-block; max-width: 100%; overflow: hidden; vertical-align: bottom; color: transparent; background: #E5ECE3; border-radius: 2px; }
+.skeleton-symbol { display: inline-block; position: relative; overflow: hidden; width: 18px; height: 18px; flex-shrink: 0; background: #E5ECE3; border-radius: 2px; }
+.skeleton-button { pointer-events: none; border-color: var(--border-medium); }
+.skeleton-input { position: relative; overflow: hidden; height: 50px; min-width: 0; border: 1px solid var(--border-medium); border-radius: 4px; background: #E5ECE3; }
+.skeleton-settings-form { display: flex; flex-direction: column; gap: 21px; }
+.skeleton-tabs { display: flex; overflow: hidden; white-space: nowrap; }
+.skeleton-tabs > span { display: inline-flex; align-items: center; gap: 8px; padding: 17px 3px; font-size: 17px; flex-shrink: 0; }
+.task-filters.skeleton-tabs { gap: 24px; }
+.task-filters.skeleton-tabs > span { font-size: 14px; padding: 15px 3px; }
+.skeleton-subject-bars { display: flex; align-items: flex-end; justify-content: space-around; padding: 28px 32px 40px; gap: 24px; }
+.skeleton-subject-bars > span { position: relative; overflow: hidden; background: #E5ECE3; width: 54px; }
+.skeleton-mastery-ring { display: grid; place-items: center; }
+.skeleton-mastery-ring::before { content: ''; width: min(90%, 216px); aspect-ratio: 1; border: 24px solid #E5ECE3; border-radius: 50%; }
+.skeleton-stats .stats-legend-dot, .skeleton-stats-page .stats-legend-dot { background: #E5ECE3; }
+.skeleton-knowledge-bars { height: 218px; display: flex; flex-direction: column; gap: 20px; padding: 8px 0 34px; }
+.skeleton-knowledge-bars > div { display: grid; grid-template-columns: 38% minmax(0, 1fr); align-items: center; gap: 16px; height: 24px; }
+.skeleton-knowledge-bars .skeleton-text { justify-self: end; }
+.skeleton-knowledge-bars > div > span:last-child { position: relative; overflow: hidden; background: #E5ECE3; height: 16px; }
+.skeleton-admin-table > div { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 24px; padding: 18px 24px; border-bottom: 1px solid var(--border-subtle); }
+.skeleton-admin-table > div:last-child { border: 0; }
+.skeleton-admin-table-heading { background: var(--surface-3); font-size: 14px; }
+.skeleton-copy-lines { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
+@media (max-width: 960px) {
+  .settings-tabs.skeleton-tabs > span { font-size: 16px; }
+}
+@media (max-width: 640px) {
+  .settings-tabs.skeleton-tabs > span { padding: 15px 2px; font-size: 15px; gap: 6px; }
+  .skeleton-admin-table > div { gap: 12px; padding: 16px; font-size: 13px; }
+  .skeleton-input { height: 48px; }
+  .task-search-bar > .skeleton-input { flex-basis: 100%; }
+}
+
+.skeleton-form-control { display: flex; border-radius: 4px; }
+.skeleton-form-control > input { width: 100%; min-width: 0; background: #E5ECE3; }

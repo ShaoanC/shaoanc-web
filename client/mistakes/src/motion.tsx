@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react';
+import { SettingsPageSkeleton, SettingsTableSkeleton, StatsPanelsSkeleton, TaskRowsSkeleton, TasksPageSkeleton, SkeletonPageHeader, AiProfileSkeleton, BackupSettingsSkeleton, TestDataSkeleton } from './PageSkeletons';
 import { getActiveApiRequestCount, getApiActivitySnapshot, subscribeToApiActivity } from './api';
 
 const MOTION_EASING = 'cubic-bezier(0.22, 0.61, 0.36, 1)';
@@ -254,7 +255,7 @@ export function SlidingNavigation({ items, value, ariaLabel = '主导航' }: {
   </nav>;
 }
 
-export type SkeletonKind = 'library' | 'summary' | 'rows' | 'stats' | 'detail' | 'editor' | 'settings' | 'review' | 'shell';
+export type SkeletonKind = 'library' | 'summary' | 'rows' | 'stats' | 'detail' | 'editor' | 'settings' | 'settings-page' | 'stats-page' | 'tasks-page' | 'tasks' | 'ai-profile' | 'backups' | 'test-data' | 'review' | 'shell';
 
 function SkeletonLine({ size = 'long' }: { size?: 'short' | 'medium' | 'long' | 'title' }) {
   return <span className={`skeleton-line skeleton-shimmer ${size}`} />;
@@ -265,22 +266,17 @@ function SkeletonHeading() {
 }
 
 function SkeletonSummary({ library = false }: { library?: boolean }) {
-  if (library) {
-    const metrics = [{ label: '已归档错题', tone: 'green' }, { label: '待巩固', tone: 'amber' }, { label: '已掌握', tone: 'green' }];
-    return <div className="metrics-grid library-metrics skeleton-library-metrics">{metrics.map(({ label, tone }) => <div className="metric-card skeleton-library-metric" key={label}>
-      <div className="metric-top"><span className="skeleton-library-label skeleton-shimmer">{label}</span><span className={`metric-icon ${tone}`}><span className="skeleton-metric-icon skeleton-shimmer" /></span></div>
-      <div className="metric-value"><span className="skeleton-metric-count skeleton-shimmer" /><span className="skeleton-metric-unit skeleton-shimmer" /></div>
-    </div>)}</div>;
-  }
-  return <div className="skeleton-summary-grid">{Array.from({ length: 4 }, (_, index) => <div className="skeleton-summary-card" key={index}><SkeletonLine size="medium" /><SkeletonLine size="title" /><SkeletonLine size="long" /></div>)}</div>;
+  const metrics = library
+    ? [{ label: '已归档错题', tone: 'green' }, { label: '待巩固', tone: 'amber' }, { label: '已掌握', tone: 'green' }]
+    : [{ label: '已归档错题', tone: 'violet' }, { label: '待完善草稿', tone: 'amber' }, { label: '累计复习', tone: 'blue' }, { label: '当前掌握率', tone: 'green' }];
+  return <div className={`metrics-grid${library ? ' library-metrics' : ''}`}>{metrics.map(({ label, tone }) => <div className="metric-card skeleton-metric-card" key={label}>
+    <div className="metric-top"><span className="skeleton-metric-label skeleton-shimmer">{label}</span><span className={`metric-icon ${tone}`}><span className="skeleton-metric-icon skeleton-shimmer" /></span></div>
+    <div className="metric-value"><span className="skeleton-metric-count skeleton-shimmer" /><span className="skeleton-metric-unit skeleton-shimmer" /></div>
+  </div>)}</div>;
 }
 
 function SkeletonRows({ review = false }: { review?: boolean }) {
   return <div className="skeleton-list">{!review && <div className="skeleton-toolbar"><SkeletonLine size="medium" /><SkeletonLine size="short" /></div>}{Array.from({ length: 3 }, (_, index) => <div className="skeleton-row" key={index}><span className="skeleton-row-index skeleton-shimmer" /><div className="skeleton-row-copy"><SkeletonLine /><SkeletonLine size="medium" /></div><SkeletonLine size="short" /><SkeletonLine size="short" /></div>)}</div>;
-}
-
-function SkeletonPanel({ chart = false, editor = false }: { chart?: boolean; editor?: boolean }) {
-  return <div className={`skeleton-panel${chart ? ' skeleton-chart' : ''}`}><SkeletonLine size="medium" /><SkeletonLine size="short" />{chart ? <div className="skeleton-bars">{[74, 92, 55, 38].map((width, index) => <span className="skeleton-line skeleton-shimmer" style={{ width: `${width}%` }} key={index} />)}</div> : editor ? <>{[0, 1, 2].map((index) => <div className="skeleton-field" key={index}><SkeletonLine size="short" /><span className="skeleton-block skeleton-shimmer" /></div>)}</> : <><SkeletonLine /><SkeletonLine /><SkeletonLine size="medium" /></>}</div>;
 }
 
 function SkeletonEditorField() {
@@ -318,8 +314,15 @@ export function Skeleton({ kind = 'library' }: { kind?: SkeletonKind }) {
     case 'summary': content = <SkeletonSummary library />; break;
     case 'rows': content = <SkeletonRows />; break;
     case 'review': content = <SkeletonRows review />; break;
-    case 'settings': content = <><div className="skeleton-toolbar"><SkeletonLine size="medium" /><SkeletonLine size="short" /></div><SkeletonRows /></>; break;
-    case 'stats': content = <><SkeletonSummary /><div className="skeleton-columns"><SkeletonPanel chart /><SkeletonPanel chart /></div><SkeletonPanel chart /></>; break;
+    case 'settings': content = <SettingsTableSkeleton />; break;
+    case 'settings-page': content = <SettingsPageSkeleton />; break;
+    case 'ai-profile': content = <AiProfileSkeleton />; break;
+    case 'backups': content = <BackupSettingsSkeleton />; break;
+    case 'test-data': content = <TestDataSkeleton />; break;
+    case 'tasks': content = <TaskRowsSkeleton />; break;
+    case 'tasks-page': content = <TasksPageSkeleton />; break;
+    case 'stats-page': content = <><SkeletonPageHeader title="学习统计" action="去复习" /><SkeletonSummary /><StatsPanelsSkeleton /></>; break;
+    case 'stats': content = <><SkeletonSummary /><StatsPanelsSkeleton /></>; break;
     case 'editor': content = <SkeletonWorkbench />; break;
     case 'detail': content = <SkeletonReading />; break;
     case 'shell': content = <><SkeletonHeading /><SkeletonSummary library /><SkeletonRows /></>; break;

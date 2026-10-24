@@ -24,9 +24,9 @@ const pageSkeletonKinds: Record<string, SkeletonKind> = {
   '/new': 'editor',
   '/page-imports': 'editor',
   '/review': 'review',
-  '/stats': 'stats',
-  '/ai-tasks': 'rows',
-  '/settings': 'settings',
+  '/stats': 'stats-page',
+  '/ai-tasks': 'tasks-page',
+  '/settings': 'settings-page',
 };
 
 const navItems = [

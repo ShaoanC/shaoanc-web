@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Check, ChevronRight, Copy, DatabaseBackup, FlaskConical, KeyRound, Layers, LoaderCircle, LockKeyhole, Pencil, Plus, ShieldCheck, Trash2, Users } from 'lucide-react';
+import { Check, ChevronRight, Copy, DatabaseBackup, FlaskConical, KeyRound, Layers, LoaderCircle, LockKeyhole, Pencil, Plus, ShieldCheck, Sparkles, Trash2, Users } from 'lucide-react';
 import { api, formatDate, json } from '../api';
 import { knowledgeLabel, useApp } from '../context';
 import { EmptyState, ErrorState, Modal, PageHeader } from '../components';
@@ -160,7 +160,7 @@ export function SettingsPage() {
 
   return <>
     <PageHeader eyebrow="管理账号与分类目录" title="设置" description={user.role === 'admin' ? '管理账号安全、学习目录、AI 服务与全站数据备份。' : '修改用户名、头像与登录密码。'} />
-    {<SlidingTabs className="settings-tabs" ariaLabel="设置分类" value={tab} onChange={setTab} tabs={[{ id: 'account', label: <><ShieldCheck size={18} />账号安全</> }, { id: 'knowledge', label: <><Layers size={18} />知识点目录</> }, ...(user.role === 'admin' ? [{ id: 'ai', label: 'AI 设置' }, { id: 'backups', label: <><DatabaseBackup size={18} />数据备份</> }, { id: 'invites', label: <><KeyRound size={18} />邀请码</> }, { id: 'users', label: <><Users size={18} />用户账号</> }, { id: 'test-data', label: <><FlaskConical size={18} />测试错题</> }] : [])]} />}
+    {<SlidingTabs className="settings-tabs" ariaLabel="设置分类" value={tab} onChange={setTab} tabs={[{ id: 'account', label: <><ShieldCheck size={18} />账号安全</> }, { id: 'knowledge', label: <><Layers size={18} />知识点目录</> }, ...(user.role === 'admin' ? [{ id: 'ai', label: <><Sparkles size={18} />AI 设置</> }, { id: 'backups', label: <><DatabaseBackup size={18} />数据备份</> }, { id: 'invites', label: <><KeyRound size={18} />邀请码</> }, { id: 'users', label: <><Users size={18} />用户账号</> }, { id: 'test-data', label: <><FlaskConical size={18} />测试错题</> }] : [])]} />}
     {user.role === 'admin' && tab === 'ai' && <AiSettings />}
     {user.role === 'admin' && tab === 'backups' && <BackupSettings />}
     {user.role === 'admin' && tab === 'test-data' && <TestDataSettings />}
@@ -200,5 +200,5 @@ function TestDataSettings() {
     finally { setBusy(null); }
   }
 
-  return <LoadingContent loading={loading} kind="settings">{error ? <ErrorState message={error} retry={loadCount} /> : <section className="test-data-tools" aria-label="测试错题工具"><div><strong>体验错题本</strong><p>每次为当前管理员账号生成 6 道示例，带有“测试错题”标签，可用于编辑和复习。当前账号共 {testCount} 道测试错题。</p><small>移入回收站覆盖所有筛选条件、归档和草稿，仅处理当前账号的测试错题，30 天内可恢复题目及复习记录。测试数据会计入学习统计。</small></div><div className="test-data-actions"><button className="button secondary" disabled={Boolean(busy)} onClick={() => void manageTestData('generate')}>{busy === 'generate' ? '正在生成…' : '一键生成测试错题'}</button><button className="button ghost danger-text" disabled={Boolean(busy) || !testCount} onClick={() => void manageTestData('delete')}>{busy === 'delete' ? '正在删除…' : '测试错题移入回收站'}</button></div></section>}</LoadingContent>;
+  return <LoadingContent loading={loading} kind="test-data">{error ? <ErrorState message={error} retry={loadCount} /> : <section className="test-data-tools" aria-label="测试错题工具"><div><strong>体验错题本</strong><p>每次为当前管理员账号生成 6 道示例，带有“测试错题”标签，可用于编辑和复习。当前账号共 {testCount} 道测试错题。</p><small>移入回收站覆盖所有筛选条件、归档和草稿，仅处理当前账号的测试错题，30 天内可恢复题目及复习记录。测试数据会计入学习统计。</small></div><div className="test-data-actions"><button className="button secondary" disabled={Boolean(busy)} onClick={() => void manageTestData('generate')}>{busy === 'generate' ? '正在生成…' : '一键生成测试错题'}</button><button className="button ghost danger-text" disabled={Boolean(busy) || !testCount} onClick={() => void manageTestData('delete')}>{busy === 'delete' ? '正在删除…' : '测试错题移入回收站'}</button></div></section>}</LoadingContent>;
 }
