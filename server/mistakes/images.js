@@ -29,7 +29,9 @@ function uploadImages(req, res, next) {
 function serializeImage(row) {
     return {
         id: row.id, mistakeId: row.mistake_id, purpose: row.purpose, sourceImageId: row.source_image_id, originalName: row.original_name,
-        originalUrl: `/api/mistakes/images/${row.id}/original`, cropUrl: `/api/mistakes/images/${row.id}/crop`, createdAt: row.created_at
+        originalUrl: row.original_path ? `/api/mistakes/images/${row.id}/original` : null,
+        cropUrl: row.crop_path ? `/api/mistakes/images/${row.id}/crop` : null,
+        sourceAvailable: !row.reference_only && Boolean(row.original_path && row.crop_path), createdAt: row.created_at
     };
 }
 
@@ -86,7 +88,14 @@ function saveImages(req, mistake) {
 }
 
 function deleteMistakeFiles(mistakeIds) {
-    const query = db.prepare('SELECT original_path, crop_path, page_import_id FROM mistake_images WHERE mistake_id = ?');
+    const query = db.prepare('SELECT original_path, crop_path, page_import_id, reference_only FROM mistake_images WHERE mistake_id = ?');
+    const deleting = new Set(mistakeIds);
+    const references = db.prepare('SELECT mistake_id FROM mistake_images WHERE original_path = ? OR crop_path = ?');
+    function removeFile(filename, referenceOnly) {
+        if (!filename) return;
+        if (referenceOnly && references.all(filename, filename).some((row) => !deleting.has(row.mistake_id))) return;
+        fs.rmSync(imagePath(filename), { force: true });
+    }
     const sourcePages = new Set();
     const removedRegions = new Map();
     for (const id of mistakeIds) {
@@ -98,11 +107,10 @@ function deleteMistakeFiles(mistakeIds) {
         }
         for (const row of query.all(id)) {
             if (row.page_import_id) sourcePages.add(row.page_import_id);
-            else fs.rmSync(imagePath(row.original_path), { force: true });
-            if (!row.page_import_id || row.crop_path !== row.original_path) fs.rmSync(imagePath(row.crop_path), { force: true });
+            else removeFile(row.original_path, row.reference_only);
+            if (!row.page_import_id || row.crop_path !== row.original_path) removeFile(row.crop_path, row.reference_only);
         }
     }
-    const deleting = new Set(mistakeIds);
     for (const pageId of sourcePages) {
         const page = db.prepare('SELECT image_path, deleted_at FROM page_imports WHERE id = ?').get(pageId);
         const referenced = db.prepare(`SELECT mistake_id FROM mistake_images WHERE page_import_id = ?

@@ -3,6 +3,7 @@ const path = require('node:path');
 const tar = require('tar');
 const Database = require('better-sqlite3');
 const { version: appVersion } = require('../../package.json');
+const { retainReferencedImages } = require('./backup-images');
 
 function copyRegularTree(source, destination) {
     fs.mkdirSync(destination, { recursive: true });
@@ -12,22 +13,6 @@ function copyRegularTree(source, destination) {
         const to = path.join(destination, entry.name);
         if (entry.isDirectory()) copyRegularTree(from, to);
         else if (entry.isFile()) fs.copyFileSync(from, to);
-        else throw new Error('图片目录包含符号链接或特殊文件，请移除后重新备份');
-    }
-}
-
-async function copySnapshotTree(source, destination) {
-    await fs.promises.mkdir(destination, { recursive: true });
-    let entries;
-    try { entries = await fs.promises.readdir(source, { withFileTypes: true }); } catch (error) {
-        if (error.code === 'ENOENT') return;
-        throw error;
-    }
-    for (const entry of entries) {
-        const from = path.join(source, entry.name);
-        const to = path.join(destination, entry.name);
-        if (entry.isDirectory()) await copySnapshotTree(from, to);
-        else if (entry.isFile()) await fs.promises.copyFile(from, to);
         else throw new Error('图片目录包含符号链接或特殊文件，请移除后重新备份');
     }
 }
@@ -48,7 +33,18 @@ async function snapshotContent({ db, paths, directory, id, source, createdAt, on
     onStage('snapshot');
     await db.backup(path.join(directory, 'db.sqlite'));
     onStage('copying');
-    await copySnapshotTree(paths.uploads, path.join(directory, 'uploads'));
+    const imagePolicy = 'referenced-only';
+    const filenames = retainReferencedImages(path.join(directory, 'db.sqlite'));
+    await fs.promises.mkdir(path.join(directory, 'uploads'), { recursive: true });
+    for (const filename of filenames) {
+        const from = path.join(paths.uploads, filename);
+        const stat = await fs.promises.lstat(from).catch((error) => {
+            if (error.code === 'ENOENT') throw new Error(`正文配图文件 ${filename} 不存在，无法备份`);
+            throw error;
+        });
+        if (!stat.isFile()) throw new Error(`正文配图文件 ${filename} 必须为普通文件`);
+        await fs.promises.copyFile(from, path.join(directory, 'uploads', filename));
+    }
     const configurations = {};
     for (const [name, target, archivePath] of [['server', paths.serverEnv, 'config/server.env'], ['ai', paths.aiEnv, 'config/ai.env']]) {
         const exists = fs.existsSync(target);
@@ -58,7 +54,7 @@ async function snapshotContent({ db, paths, directory, id, source, createdAt, on
         }
         configurations[name] = { path: archivePath, exists };
     }
-    const manifest = { formatVersion: 1, appVersion, id, source, createdAt, configurations, files: listFiles(directory) };
+    const manifest = { formatVersion: 1, appVersion, id, source, createdAt, imagePolicy, configurations, files: listFiles(directory) };
     fs.writeFileSync(path.join(directory, 'manifest.json'), JSON.stringify(manifest, null, 2), { mode: 0o600 });
     return manifest;
 }

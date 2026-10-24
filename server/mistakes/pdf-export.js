@@ -166,6 +166,7 @@ async function documentImages(mistakes, options, userId) {
                 if (!image.imageId) fail(422, `第 ${index + 1} 题含不支持的外链配图，请将图片上传到本站后重试。`);
                 const row = query.get(image.imageId, userId);
                 if (!row) fail(422, `第 ${index + 1} 题的配图不可访问，请重新上传配图后重试。`);
+                if (!row[`${image.variant}_path`]) fail(422, `第 ${index + 1} 题引用的配图未保留，请重新上传配图后重试。`);
                 const filename = imagePath(row[`${image.variant}_path`]);
                 try { await fs.access(filename); }
                 catch { fail(422, `第 ${index + 1} 题的配图文件已丢失，请重新上传后重试。`); }

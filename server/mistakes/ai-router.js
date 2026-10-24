@@ -22,7 +22,8 @@ module.exports = function mountAiRoutes(router, { success, ownMistake, serialize
         cleanupExpiredTrash(Date.now(), req.user.id);
         res.set('Cache-Control', 'no-store');
         const images = db.prepare(`SELECT i.* FROM mistake_images i JOIN mistakes m ON m.id = i.mistake_id
-            WHERE i.user_id = ? AND m.deleted_at IS NULL AND i.source_image_id IS NULL AND i.page_import_id IS NULL`).all(req.user.id)
+            WHERE i.user_id = ? AND m.deleted_at IS NULL AND i.source_image_id IS NULL AND i.page_import_id IS NULL
+                AND i.reference_only = 0 AND i.original_path <> '' AND i.crop_path <> ''`).all(req.user.id)
             .map((image) => ({ key: `image-${image.id}`, ...serializeImage(image) }));
         const pages = db.prepare('SELECT * FROM page_imports WHERE user_id = ? AND deleted_at IS NULL').all(req.user.id)
             .map((page) => ({ key: `page-${page.id}`, mistakeId: null, purpose: null, originalName: page.original_name,
@@ -42,6 +43,7 @@ module.exports = function mountAiRoutes(router, { success, ownMistake, serialize
         cleanupExpiredTrash(Date.now(), req.user.id);
         const image = db.prepare('SELECT * FROM mistake_images WHERE id = ? AND user_id = ?').get(Number(req.params.id), req.user.id);
         if (!image || !['original', 'crop'].includes(req.params.variant)) fail(404, '图片不存在');
+        if (!image[`${req.params.variant}_path`]) fail(404, '此来源图片未包含在备份中，请重新上传');
         res.set('Cache-Control', 'private, no-store');
         res.type('jpeg').sendFile(image[`${req.params.variant}_path`], { root: uploadsDirectory });
     });

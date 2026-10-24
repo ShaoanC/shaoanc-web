@@ -153,6 +153,9 @@ db.exec(`
 if (!db.prepare('PRAGMA table_info(mistake_images)').all().some((column) => column.name === 'source_image_id')) {
     db.exec('ALTER TABLE mistake_images ADD COLUMN source_image_id INTEGER REFERENCES mistake_images(id) ON DELETE SET NULL');
 }
+if (!db.prepare('PRAGMA table_info(mistake_images)').all().some((column) => column.name === 'reference_only')) {
+    db.exec('ALTER TABLE mistake_images ADD COLUMN reference_only INTEGER NOT NULL DEFAULT 0');
+}
 db.exec('CREATE INDEX IF NOT EXISTS mistake_images_source ON mistake_images(source_image_id)');
 
 db.exec(`

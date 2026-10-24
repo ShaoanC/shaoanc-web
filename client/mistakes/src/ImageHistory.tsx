@@ -64,7 +64,7 @@ export function ImageHistory({ mistakeId, onRecrop, onRecognize }: { mistakeId?:
   useEffect(() => {
     if (!open || !mistakeId) return;
     setLoading(true); setError('');
-    api<MistakeImage[]>(`/mistakes/${mistakeId}/images`).then(setImages).catch((err) => { setError(err.message); toast.error(err.message); }).finally(() => setLoading(false));
+    api<MistakeImage[]>(`/mistakes/${mistakeId}/images`).then((items) => { setImages(items.filter((image) => image.sourceAvailable !== false && image.originalUrl && image.cropUrl)); setSelected([]); }).catch((err) => { setError(err.message); toast.error(err.message); }).finally(() => setLoading(false));
   }, [open, mistakeId]);
   async function recognize(purpose: ImagePurpose) {
     if (!onRecognize) return;
@@ -87,7 +87,7 @@ export function ImageHistory({ mistakeId, onRecrop, onRecognize }: { mistakeId?:
   return <>
     <button type="button" className="button secondary" disabled={!mistakeId} onClick={() => setOpen(true)}><Images size={16} />查看上传图片</button>
     <AiDialog open={open} onClose={() => setOpen(false)} suspended={galleryOpen} title="之前上传的图片" description="按显示序号提交识别，可前后移动调整顺序。点击图片放大查看，支持缩放和左右切换。" wide>
-      {loading && <p>正在加载图片…</p>}{error && <p className="form-error">{error}</p>}{!loading && !error && !images.length && <p className="ai-empty">这道题还没有上传图片。</p>}
+      {loading && <p>正在加载图片…</p>}{error && <p className="form-error">{error}</p>}{!loading && !error && !images.length && <p className="ai-empty">没有可用的来源图片。备份恢复后仅保留正文配图，可重新上传照片进行识别。</p>}
       <Gallery withCaption options={galleryOptions} onBeforeOpen={(photoswipe) => {
         setGalleryOpen(true);
         prepareGallery(photoswipe);
@@ -98,7 +98,7 @@ export function ImageHistory({ mistakeId, onRecrop, onRecognize }: { mistakeId?:
         {images.filter((image) => image.purpose === purpose).map((image, index, group) => <article key={image.id} className="photo-history-item">
           <div className="photo-history-order"><span className="photo-history-number">图片 {index + 1}{image.sourceImageId ? ' · 派生配图' : ''}</span><button type="button" className="table-button" aria-label={`图片 ${index + 1} 向前移动`} disabled={busy || index === 0} onClick={() => move(image.id, -1)}><ArrowUp size={14} />向前</button><button type="button" className="table-button" aria-label={`图片 ${index + 1} 向后移动`} disabled={busy || index === group.length - 1} onClick={() => move(image.id, 1)}><ArrowDown size={14} />向后</button></div>
           <h3>{onRecognize && <input type="checkbox" aria-label={`选择图片 ${image.id}`} checked={selected.includes(image.id)} onChange={(event) => setSelected((items) => event.target.checked ? [...items, image.id] : items.filter((id) => id !== image.id))} />} {image.originalName} <small>{formatDate(image.createdAt, true)}</small></h3>
-          <div className="photo-history-pair">{[['整图', image.originalUrl], ['裁剪图', image.cropUrl]].map(([label, url]) => <figure key={label}><Item<HTMLImageElement> original={url} thumbnail={url} alt={`${purpose === 'question' ? '题干' : '答案'}图片 ${index + 1} · ${label}`} caption={`${purpose === 'question' ? '题干' : '答案'}图片 ${index + 1} · ${label}`}>
+          <div className="photo-history-pair">{[['整图', image.originalUrl], ['裁剪图', image.cropUrl]].filter((pair): pair is [string, string] => Boolean(pair[1])).map(([label, url]) => <figure key={label}><Item<HTMLImageElement> original={url} thumbnail={url} alt={`${purpose === 'question' ? '题干' : '答案'}图片 ${index + 1} · ${label}`} caption={`${purpose === 'question' ? '题干' : '答案'}图片 ${index + 1} · ${label}`}>
             {({ ref, open: openImage }) => <button type="button" className="photo-thumbnail" onClick={openImage} aria-label={`放大${label} ${image.id}`}><img ref={ref} src={url} alt={label} loading="lazy" /></button>}
           </Item><figcaption>{label}</figcaption></figure>)}</div>
           {onRecrop && <div className="photo-actions"><button type="button" className="table-button" onClick={() => { setOpen(false); onRecrop(image); }}>重新裁剪</button></div>}

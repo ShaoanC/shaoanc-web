@@ -156,11 +156,23 @@ function analysisImages(input, mistakeId, userId) {
         const image = db.prepare('SELECT * FROM mistake_images WHERE id = ? AND mistake_id = ? AND user_id = ?')
             .get(reference.imageId, mistakeId, userId);
         if (!image) fail(400, '题干或答案的本站配图不存在或不属于当前错题，请检查后重试');
+        if (!image[`${reference.variant}_path`]) fail(400, '题干或答案引用的配图未保留，请重新上传');
         images.push({ ...image, variant: reference.variant });
         seen.add(key);
     }
     if (images.length > 12) fail(400, '题干和答案引用的配图超过 12 张，请精简后生成解析');
     return images;
+}
+
+function recognitionImages(imageIds, mistakeId, userId, type) {
+    if (!imageIds.length) fail(400, '来源图片未保留，请重新上传');
+    return imageIds.map((id) => {
+        const image = db.prepare('SELECT * FROM mistake_images WHERE id = ? AND mistake_id = ? AND user_id = ?')
+            .get(id, mistakeId, userId);
+        if (!image || image.reference_only || !image.crop_path) fail(400, '来源图片未保留，请重新上传');
+        if (image.purpose !== type && !(type === 'answer' && image.purpose === 'question')) fail(400, '图片不存在或用途与任务不一致');
+        return { ...image, variant: 'crop' };
+    });
 }
 
 function analysisNoticeFor(row) {
@@ -196,11 +208,7 @@ function createJob(userId, body) {
     let imageIds = Array.isArray(body.imageIds) ? [...new Set(body.imageIds)] : [];
     if (body.type !== 'analysis' && (!imageIds.length || imageIds.length > 12)) fail(400, '每次请选择 1–12 张裁剪图');
     if (body.type !== 'analysis' && imageIds.some((id) => !Number.isSafeInteger(id) || id <= 0)) fail(400, '图片编号无效');
-    for (const id of body.type === 'analysis' ? [] : imageIds) {
-        const image = db.prepare('SELECT purpose FROM mistake_images WHERE id = ? AND mistake_id = ? AND user_id = ?')
-            .get(id, row.id, userId);
-        if (!image || (image.purpose !== body.type && !(body.type === 'answer' && image.purpose === 'question'))) fail(400, '图片不存在或用途与任务不一致');
-    }
+    if (body.type !== 'analysis') recognitionImages(imageIds, row.id, userId, body.type);
     let references = [];
     if (body.type === 'analysis') {
         if (!input.question.trim()) fail(400, '请先填写题干');
@@ -263,9 +271,8 @@ async function requestResult(job, signal) {
     const directory = job.type === 'question' ? db.prepare(`SELECT id, subject_id AS subjectId, parent_id AS parentId, name FROM knowledge_points
         WHERE owner_user_id IS NULL OR owner_user_id = ? ORDER BY id`).all(job.user_id) : [];
     const subjects = job.type === 'question' ? db.prepare('SELECT id, name FROM subjects').all() : [];
-    const sources = job.type === 'analysis' ? analysisImages(input, job.mistake_id, job.user_id) : imageIds.map((id) => ({
-        ...db.prepare('SELECT * FROM mistake_images WHERE id = ? AND mistake_id = ? AND user_id = ?').get(id, job.mistake_id, job.user_id), variant: 'crop'
-    }));
+    const sources = job.type === 'analysis' ? analysisImages(input, job.mistake_id, job.user_id)
+        : recognitionImages(imageIds, job.mistake_id, job.user_id, job.type);
     const images = sources.map((image) => {
         if (!image.id) throw Object.assign(new Error('Missing image'), { status: 400 });
         return { id: image.id, bytes: fs.readFileSync(imagePath(image[`${image.variant}_path`])) };
@@ -454,6 +461,8 @@ function retryJob(id, userId) {
     const job = ownJob(id, userId);
     activeMistake(job.mistake_id, userId);
     if (!['failed', 'cancelled'].includes(job.status)) fail(409, '只能重试失败或已取消的任务');
+    if (job.type === 'analysis') analysisImages(JSON.parse(job.input_json), job.mistake_id, userId);
+    else recognitionImages(JSON.parse(job.image_ids), job.mistake_id, userId, job.type);
     const config = publicConfig(false, job.type === 'analysis' ? 'analysis' : 'general');
     if (!config.enabled || !config.configured) fail(400, '管理员尚未启用并配置 AI 服务');
     const duplicate = db.prepare("SELECT id FROM ai_jobs WHERE mistake_id = ? AND type = ? AND fingerprint = ? AND status IN ('queued','running','retrying') AND id != ?")

@@ -15,8 +15,9 @@ export interface MistakeImage {
   mistakeId: number;
   purpose: ImagePurpose;
   originalName: string;
-  originalUrl: string;
-  cropUrl: string;
+  originalUrl: string | null;
+  cropUrl: string | null;
+  sourceAvailable: boolean;
   createdAt: string;
   sourceImageId?: number | null;
 }

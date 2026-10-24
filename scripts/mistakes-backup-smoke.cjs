@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
-const { spawnSync } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 const { setTimeout: delay } = require('node:timers/promises');
 const Database = require('better-sqlite3');
 const sharp = require('sharp');
@@ -29,6 +29,61 @@ async function until(check) {
         await delay(20);
     }
     throw new Error('等待备份状态超时');
+}
+
+async function checkRestoredImages(target, ids, jpeg, password) {
+    const child = spawn(process.execPath, ['-e', `
+        const app = require('./server/app');
+        const listener = app.listen(0, '127.0.0.1', () => process.send(listener.address().port));
+        process.on('message', () => listener.close(() => { app.db.close(); process.exit(0); }));
+    `], { cwd: root, env: { ...process.env, MISTAKES_DB_PATH: target.databasePath, MISTAKES_UPLOADS_PATH: target.uploadsPath,
+        MISTAKES_BACKUPS_PATH: target.backupsPath, MISTAKES_ENV_PATH: target.envPath, MISTAKES_AI_CONFIG_PATH: target.aiConfigPath },
+    stdio: ['ignore', 'ignore', 'pipe', 'ipc'] });
+    let childError = '';
+    child.stderr.on('data', (chunk) => { childError += chunk; });
+    try {
+        const port = await new Promise((resolve, reject) => {
+            child.once('message', resolve);
+            child.once('error', reject);
+            child.once('exit', (code) => reject(new Error(`恢复后服务退出 ${code}: ${childError}`)));
+        });
+        let cookie = '';
+        const request = async (route, method = 'GET', body, expected = 200) => {
+            const response = await fetch(`http://127.0.0.1:${port}/api/mistakes${route}`, { method,
+                headers: { Cookie: cookie, ...(body ? { 'Content-Type': 'application/json' } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
+            for (const value of response.headers.getSetCookie()) cookie = value.split(';')[0];
+            assert.equal(response.status, expected, `${method} restored ${route}`);
+            if (response.headers.get('content-type')?.startsWith('image/')) return Buffer.from(await response.arrayBuffer());
+            const result = await response.json();
+            return expected < 400 ? result.data : result;
+        };
+        await request('/auth/login', 'POST', { username: 'backup_admin', password });
+        assert.deepEqual(await request(`/images/${ids.question}/crop`), jpeg);
+        assert.deepEqual(await request(`/images/${ids.answer}/original`), jpeg);
+        assert.deepEqual(await request(`/images/${ids.both}/crop`), jpeg);
+        assert.deepEqual(await request(`/images/${ids.both}/original`), jpeg);
+        await request(`/images/${ids.question}/original`, 'GET', undefined, 404);
+        await request(`/images/${ids.answer}/crop`, 'GET', undefined, 404);
+        await request(`/images/${ids.unused}/crop`, 'GET', undefined, 404);
+        await request(`/page-imports/${ids.page}/image`, 'GET', undefined, 404);
+        assert.deepEqual(await request('/photos'), []);
+        assert.deepEqual(await request('/page-imports'), []);
+        const images = await request(`/mistakes/${ids.mistake}/images`);
+        assert.ok(images.every((image) => image.sourceAvailable === false));
+        assert.equal(images.find((image) => image.id === ids.question).originalUrl, null);
+        assert.equal(images.find((image) => image.id === ids.answer).cropUrl, null);
+        await request('/ai/jobs', 'POST', { mistakeId: ids.mistake, type: 'question', imageIds: [ids.question],
+            input: (await request(`/mistakes/${ids.mistake}`)) }, 400);
+        // Retained shared page figures must outlive deletion of another restored question.
+        await request(`/mistakes/${ids.shared}/permanent`, 'DELETE');
+        assert.deepEqual(await request(`/images/${ids.answer}/original`), jpeg);
+    } finally {
+        if (child.exitCode === null) {
+            const exited = new Promise((resolve) => child.once('exit', resolve));
+            if (child.connected) child.send('stop'); else child.kill();
+            await exited;
+        }
+    }
 }
 
 async function run() {
@@ -66,11 +121,24 @@ async function run() {
         const jpeg = await sharp({ create: { width: 100, height: 100, channels: 3, background: 'white' } }).jpeg().toBuffer();
         fs.writeFileSync(path.join(paths.uploadsPath, 'shared-page.jpg'), jpeg);
         fs.writeFileSync(path.join(paths.uploadsPath, 'crop.jpg'), jpeg);
+        fs.writeFileSync(path.join(paths.uploadsPath, 'both.jpg'), jpeg);
+        fs.writeFileSync(path.join(paths.uploadsPath, 'unused-crop.jpg'), jpeg);
+        fs.writeFileSync(path.join(paths.uploadsPath, 'code-only.jpg'), jpeg);
         const nextAttempt = new Date(Date.now() + 86400000).toISOString();
         const pageId = Number(db.prepare("INSERT INTO page_imports (user_id,client_id,batch_id,original_name,image_path,width,height,status,created_at,next_attempt_at) VALUES (?,'page','batch','试卷.jpg','shared-page.jpg',100,100,'retrying',?,?)").run(adminId, now, nextAttempt).lastInsertRowid);
         const insertImage = db.prepare("INSERT INTO mistake_images (mistake_id,user_id,purpose,client_id,original_name,original_path,crop_path,page_import_id,created_at) VALUES (?,?,'question',?,'试卷.jpg','shared-page.jpg',?,?,?)");
-        insertImage.run(mistakeId, adminId, 'shared-1', 'crop.jpg', pageId, now);
+        const questionImage = Number(insertImage.run(mistakeId, adminId, 'shared-1', 'crop.jpg', pageId, now).lastInsertRowid);
         insertImage.run(trashId, adminId, 'shared-2', 'shared-page.jpg', pageId, now);
+        const answerImage = Number(insertImage.run(mistakeId, adminId, 'answer-final', 'unused-crop.jpg', pageId, now).lastInsertRowid);
+        const bothImage = Number(insertImage.run(mistakeId, adminId, 'both-final', 'both.jpg', pageId, now).lastInsertRowid);
+        db.prepare('UPDATE mistake_images SET original_path = ? WHERE id = ?').run('both.jpg', bothImage);
+        const unusedImage = Number(insertImage.run(mistakeId, adminId, 'unused', 'code-only.jpg', pageId, now).lastInsertRowid);
+        const sharedMistake = Number(insertMistake.run(adminId, '保留共享配图的题目', '', now, now, now).lastInsertRowid);
+        const sharedImage = Number(insertImage.run(sharedMistake, adminId, 'shared-final', 'shared-page.jpg', pageId, now).lastInsertRowid);
+        db.prepare('UPDATE mistakes SET question = ? WHERE id = ?').run(`共享配图 ![图](/api/mistakes/images/${sharedImage}/original)`, sharedMistake);
+        const question = `求解 x+2=5\n\n![题目配图](${questionImage})\n\n![双版本](/api/mistakes/images/${bothImage}/crop)\n\n\`![代码而非图片](/api/mistakes/images/${unusedImage}/crop)\``;
+        const answer = `x=3\n\n![答案配图][answer]\n\n[answer]: /api/mistakes/images/${answerImage}/original\n\n![另一版本](/api/mistakes/images/${bothImage}/original)`;
+        db.prepare('UPDATE mistakes SET question = ?, answer = ? WHERE id = ?').run(question, answer, mistakeId);
         db.prepare("INSERT INTO page_import_items (page_import_id,region_id,mistake_id,status,crop_path,region_json,input_json) VALUES (?,'region',?,'preparing','pending.jpg',?,?)")
             .run(pageId, mistakeId, JSON.stringify({ box: [0, 0, 1, 1], label: '1' }), JSON.stringify(ai.inputFor(db.prepare('SELECT * FROM mistakes WHERE id=?').get(mistakeId))));
         db.prepare("INSERT INTO ai_jobs (mistake_id,user_id,type,status,input_json,fingerprint,created_at,next_attempt_at) VALUES (?,?,'analysis','retrying',?,'pending-restore',?,?)")
@@ -128,7 +196,16 @@ async function run() {
         assert.equal(snapshot.prepare('SELECT COUNT(*) AS n FROM reviews').get().n, 1);
         assert.ok(snapshot.prepare('SELECT id FROM mistakes WHERE id=?').get(trashId));
         assert.match(snapshot.prepare('SELECT analysis FROM mistakes WHERE id=?').get(mistakeId).analysis, /两边减去/);
+        assert.equal(snapshot.prepare('SELECT COUNT(*) AS n FROM mistake_images').get().n, 4);
+        assert.equal(snapshot.prepare('SELECT COUNT(*) AS n FROM page_imports').get().n, 0);
+        assert.equal(snapshot.prepare('SELECT COUNT(*) AS n FROM page_import_items').get().n, 0);
+        assert.equal(snapshot.prepare('SELECT original_path FROM mistake_images WHERE id=?').get(questionImage).original_path, '');
+        assert.equal(snapshot.prepare('SELECT crop_path FROM mistake_images WHERE id=?').get(answerImage).crop_path, '');
         snapshot.close();
+        assert.deepEqual(fs.readdirSync(path.join(extracted, 'uploads')).sort(), ['both.jpg', 'crop.jpg', 'shared-page.jpg']);
+        assert.equal(JSON.parse(fs.readFileSync(path.join(extracted, 'manifest.json'))).imagePolicy, 'referenced-only');
+        assert.ok(db.prepare('SELECT id FROM mistake_images WHERE id=?').get(unusedImage), '在线来源记录不变');
+        assert.ok(fs.existsSync(path.join(paths.uploadsPath, 'unused-crop.jpg')), '在线上传文件不变');
         assert.deepEqual(fs.readFileSync(path.join(extracted, 'uploads/shared-page.jpg')), jpeg);
         assert.match(fs.readFileSync(path.join(extracted, 'config/server.env'), 'utf8'), /server-test-secret/);
         assert.match(fs.readFileSync(path.join(extracted, 'config/ai.env'), 'utf8'), /ai-test-secret/);
@@ -168,9 +245,11 @@ async function run() {
         const restored = new Database(target.databasePath);
         assert.equal(restored.prepare('SELECT COUNT(*) AS n FROM sessions').get().n, 0);
         assert.equal(restored.prepare("SELECT status FROM ai_jobs WHERE fingerprint='pending-restore'").get().status, 'cancelled');
-        assert.equal(restored.prepare('SELECT status FROM page_imports WHERE id=?').get(pageId).status, 'cancelled');
-        assert.equal(restored.prepare("SELECT status FROM page_import_items WHERE region_id='region'").get().status, 'cancelled');
+        assert.equal(restored.prepare('SELECT COUNT(*) AS n FROM page_imports').get().n, 0);
+        assert.equal(restored.prepare('SELECT COUNT(*) AS n FROM page_import_items').get().n, 0);
         restored.prepare('UPDATE mistakes SET note=? WHERE id=?').run('恢复失败时应保留', mistakeId); restored.close();
+        await checkRestoredImages(target, { question: questionImage, answer: answerImage, both: bothImage, unused: unusedImage,
+            page: pageId, mistake: mistakeId, shared: sharedMistake }, jpeg, password);
         assert.deepEqual(fs.readFileSync(path.join(target.uploadsPath, 'shared-page.jpg')), jpeg);
         const targetEnvironment = require('dotenv').parse(fs.readFileSync(target.envPath));
         assert.equal(path.resolve(targetEnvironment.MISTAKES_DB_PATH), target.databasePath);

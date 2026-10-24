@@ -127,7 +127,7 @@ export function BackupSettings() {
       {actionError && <div className="form-error" role="alert">{actionError}</div>}
       <section className="panel backup-create-panel">
         <div className="backup-heading"><div className="panel-title"><span className="panel-title-icon"><DatabaseBackup size={22} /></span><div><h2>全站数据备份</h2><p>保留一份完整记录，为恢复与迁移做好准备。</p></div></div><button className="button primary" disabled={creating || Boolean(current)} onClick={() => void createBackup()}>{creating || current ? <LoaderCircle className="spin" size={17} /> : <DatabaseBackup size={17} />}{creating ? '正在启动…' : current ? '备份进行中' : '立即备份'}</button></div>
-        <p className="backup-contents">包含所有账号、错题、知识点、复习记录、回收站、图片和服务器配置；浏览器中的未保存草稿不包含在内。</p>
+        <p className="backup-contents">包含所有账号、错题、知识点、复习记录、回收站、题干和答案中使用的配图及服务器配置。上传来源整图和识别裁剪图不另行备份；恢复后如需重新识别，请重新上传照片。浏览器中的未保存草稿不包含在内。</p>
         <div className="backup-sensitive"><ShieldCheck size={19} /><p>备份含所有账号数据，以及 <code>.env</code>、<code>.env.ai</code> 中的密钥。请妥善保管下载文件。</p></div>
         {current && <div className="backup-progress" role="status"><LoaderCircle className="spin" size={18} /><div><strong>{stageLabels[current.stage]}</strong><p>{list.readOnly ? '当前暂时只读，已输入的内容会保留，请稍后重试保存。' : '快照已完成，可继续保存和录题，归档仍在后台进行。'}</p></div></div>}
       </section>
