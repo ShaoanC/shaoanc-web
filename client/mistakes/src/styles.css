@@ -2422,7 +2422,7 @@ input:focus, textarea:focus, select:focus { outline: 2px solid rgba(23,100,72,.1
 .markdown-field textarea,
 .ai-review-text,
 .recognition-prompt textarea {
-  font-family: 'Noto Serif SC', 'Songti SC', 'SimSun', serif;
+  font-family: var(--font-body);
 }
 
 /* Display metrics use Barlow; ordinary numbers inherit Inter. */

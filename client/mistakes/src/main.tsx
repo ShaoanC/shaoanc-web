@@ -5,6 +5,7 @@ import App from './App';
 import '@fontsource/noto-serif-sc/400.css';
 import '../../../public/styles/scrollbars.css';
 import './number-fonts.css';
+import './body-fonts.css';
 import './styles.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

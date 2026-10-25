@@ -10,6 +10,7 @@ import '@fontsource/noto-serif-sc/400.css';
 import '@fontsource/noto-serif-sc/700.css';
 import '@fontsource/noto-sans-sc/600.css';
 import './number-fonts.css';
+import './body-fonts.css';
 import './export-document.css';
 
 declare global {
