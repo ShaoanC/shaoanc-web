@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import ReactCrop, { type PercentCrop } from 'react-image-crop';
-import imageCompression from 'browser-image-compression';
 import { ArrowLeft, ArrowRight, Camera, Crop, ImagePlus, RotateCcw, RotateCw, Trash2 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { ResponsiveAiDialog } from './ResponsiveAiDialog';
@@ -8,36 +7,29 @@ import { RecognitionPrompt } from './RecognitionPrompt';
 import { UploadedPhotoPicker } from './UploadedPhotoPicker';
 import { usePhotoUploads } from './PhotoUploads';
 import { compressJpeg } from './photo-compression';
+import { canvasBlob, drawableSize, predecode, quarterTurns, rotatedPreview, rotateOnto, withImage, type Drawable } from './photo-rotation';
+import { useQuarterTurn } from './motion';
 import type { PreparedPhoto } from './photo-upload-queue';
 import type { ImagePurpose, UploadedPhoto } from './ai-types';
 import type { Mistake } from './types';
 import 'react-image-crop/dist/ReactCrop.css';
 
-type Entry = { key: string; clientId: string; file: File; url: string; crop: PercentCrop };
+// file stays the untouched original; url previews it with rotation applied.
+type Entry = { key: string; clientId: string; file: File; url: string; crop: PercentCrop; rotation: number };
 const fullCrop: PercentCrop = { unit: '%', x: 0, y: 0, width: 100, height: 100 };
 // The compression library's PNG helper quantizes colors; native PNG preserves the canvas pixels.
 const losslessFile = (canvas: HTMLCanvasElement, name: string) => new Promise<File>((resolve, reject) => {
   canvas.toBlob((blob) => blob ? resolve(new File([blob], name, { type: 'image/png', lastModified: Date.now() })) : reject(new Error('浏览器无法生成裁剪图片，请重试。')), 'image/png');
 });
+async function drawableJpeg(source: Drawable, name: string) {
+  const blob = await canvasBlob(rotateOnto(source, 0, 2560), 'image/jpeg', .88);
+  const encoded = new File([blob], name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg', lastModified: Date.now() });
+  // The library also caps output at input file size. Small lossless PNGs must not force JPEG quality below .88.
+  return encoded.size <= 1.5 * 1024 * 1024 ? encoded : compressJpeg(encoded);
+}
 async function jpeg(file: File) {
   if (file.type !== 'image/png') return compressJpeg(file);
-  const url = URL.createObjectURL(file);
-  try {
-    const image = await imageCompression.loadImage(url);
-    const scale = Math.min(1, 2560 / Math.max(image.naturalWidth, image.naturalHeight));
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
-    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
-    const context = canvas.getContext('2d');
-    if (!context) throw new Error('浏览器无法处理图片，请重试。');
-    context.fillStyle = '#fff'; context.fillRect(0, 0, canvas.width, canvas.height);
-    context.drawImage(image, 0, 0, canvas.width, canvas.height);
-    const encoded = await new Promise<File>((resolve, reject) => canvas.toBlob((blob) => blob
-      ? resolve(new File([blob], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg', lastModified: Date.now() }))
-      : reject(new Error('浏览器无法压缩图片，请重试。')), 'image/jpeg', .88));
-    // The library also caps output at input file size. Small lossless PNGs must not force JPEG quality below .88.
-    return encoded.size <= 1.5 * 1024 * 1024 ? encoded : compressJpeg(encoded);
-  } finally { URL.revokeObjectURL(url); }
+  return withImage(file, (image) => drawableJpeg(image, file.name));
 }
 
 export function PhotoInput({ purpose, recordId, ensureSaved, actions, aiAvailable, onPendingChange, recognitionPrompt, onRecognitionPromptChange }: { purpose: ImagePurpose; recordId?: number; ensureSaved: () => Promise<Mistake>; actions?: ReactNode; aiAvailable: boolean; onPendingChange?: (pending: boolean) => void; recognitionPrompt: string; onRecognitionPromptChange: (value: string) => void }) {
@@ -62,6 +54,10 @@ export function PhotoInput({ purpose, recordId, ensureSaved, actions, aiAvailabl
     // A cached blob can finish loading before React attaches its load handler.
     if (image?.complete && image.naturalWidth > 0) setLoadedUrl(image.src);
   }, []);
+  const quarterTurn = useQuarterTurn();
+  const { settle } = quarterTurn;
+  // Clear the held spin only once the rotated preview has been committed in its place.
+  useLayoutEffect(settle, [current?.url, settle]);
   const label = purpose === 'question' ? '题目' : '答案';
   useEffect(() => { onPendingChange?.(entries.length > 0 || busy); }, [entries.length, busy, onPendingChange]);
   useEffect(() => {
@@ -82,7 +78,7 @@ export function PhotoInput({ purpose, recordId, ensureSaved, actions, aiAvailabl
     if (valid.length !== files.length) toast.error('请选择 JPG、PNG 或 WebP 图片。');
     if (!valid.length) return;
     if (entries.length + valid.length > 12) { toast.error('每次最多选择 12 张图片。'); return; }
-    const added = valid.map((file) => ({ key: crypto.randomUUID(), clientId: crypto.randomUUID(), file, url: objectUrl(file), crop: { ...fullCrop } }));
+    const added = valid.map((file) => ({ key: crypto.randomUUID(), clientId: crypto.randomUUID(), file, url: objectUrl(file), crop: { ...fullCrop }, rotation: 0 }));
     setEntries((items) => [...items, ...added]); setSelected(entries.length); setOpen(true);
   }
   async function reuse(image: UploadedPhoto) {
@@ -100,19 +96,32 @@ export function PhotoInput({ purpose, recordId, ensureSaved, actions, aiAvailabl
     if (!current || busy) return;
     setBusy(true);
     try {
-      const image = await imageCompression.loadImage(current.url);
-      const canvas = document.createElement('canvas'); canvas.width = image.naturalHeight; canvas.height = image.naturalWidth;
-      const context = canvas.getContext('2d');
-      if (!context) throw new Error('浏览器无法旋转图片，请重试。');
-      context.fillStyle = '#fff'; context.fillRect(0, 0, canvas.width, canvas.height);
-      context.translate(canvas.width / 2, canvas.height / 2); context.rotate(direction * Math.PI / 2);
-      context.drawImage(image, -image.naturalWidth / 2, -image.naturalHeight / 2);
-      const file = await losslessFile(canvas, current.file.name.replace(/\.[^.]+$/, '') + '.png');
-      const url = objectUrl(file);
-      setEntries((items) => items.map((entry) => entry.key === current.key ? { ...entry, file, url, crop: { ...fullCrop }, clientId: crypto.randomUUID() } : entry));
+      const rotation = quarterTurns(current.rotation + direction);
+      const spin = spinPreview(direction);
+      const url = objectUrl(await rotatedPreview(current.file, rotation));
+      await Promise.all([predecode(url), spin]);
+      setEntries((items) => items.map((entry) => entry.key === current.key ? { ...entry, url, rotation, crop: { ...fullCrop }, clientId: crypto.randomUUID() } : entry));
       URL.revokeObjectURL(current.url); urls.current.delete(current.url);
-    } catch (err) { toast.error((err as Error).message); }
+    } catch (err) { quarterTurn.settle(); toast.error((err as Error).message); }
     finally { setBusy(false); }
+  }
+  // Spin the crop frame towards where the rotated preview will sit, so the swap itself does not jump.
+  function spinPreview(direction: number) {
+    const image = photo.current;
+    const frame = image?.closest<HTMLElement>('.ReactCrop');
+    const stage = frame?.closest<HTMLElement>('.photo-crop-stage');
+    if (!image || !frame || !stage || !image.naturalWidth) return Promise.resolve();
+    const style = getComputedStyle(stage);
+    const padX = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+    const padY = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+    const maxHeight = parseFloat(getComputedStyle(image).maxHeight) || Infinity;
+    const shown = image.getBoundingClientRect();
+    const [width, height] = [image.naturalHeight, image.naturalWidth];
+    const fit = Math.min(1, (stage.clientWidth - padX) / width, maxHeight / height);
+    const stageHeight = stage.getBoundingClientRect().height;
+    return quarterTurn.turn(frame, direction, width * fit / shown.height, {
+      element: stage, from: stageHeight, to: Math.max(parseFloat(style.minHeight) || 0, height * fit + padY),
+    });
   }
   function move(index: number, offset: number) {
     const next = index + offset;
@@ -123,16 +132,16 @@ export function PhotoInput({ purpose, recordId, ensureSaved, actions, aiAvailabl
     const entry = entries[index]; URL.revokeObjectURL(entry.url); urls.current.delete(entry.url);
     setEntries((items) => items.filter((_, n) => n !== index)); setSelected(Math.max(0, Math.min(selected, entries.length - 2)));
   }
-  async function croppedFile(entry: Entry) {
-    const image = await imageCompression.loadImage(entry.url);
+  function croppedFile(entry: Entry, image: Drawable) {
     const crop = entry.crop;
+    const { width, height } = drawableSize(image);
     const canvas = document.createElement('canvas');
-    canvas.width = Math.max(1, Math.round(image.naturalWidth * crop.width / 100));
-    canvas.height = Math.max(1, Math.round(image.naturalHeight * crop.height / 100));
+    canvas.width = Math.max(1, Math.round(width * crop.width / 100));
+    canvas.height = Math.max(1, Math.round(height * crop.height / 100));
     const context = canvas.getContext('2d');
     if (!context) throw new Error('浏览器无法处理图片，请换一个浏览器重试');
     context.fillStyle = '#fff'; context.fillRect(0, 0, canvas.width, canvas.height);
-    context.drawImage(image, image.naturalWidth * crop.x / 100, image.naturalHeight * crop.y / 100, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
+    context.drawImage(image, width * crop.x / 100, height * crop.y / 100, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
     // Keep crop pixels lossless until the final size-limited JPEG compression.
     return losslessFile(canvas, entry.file.name.replace(/\.[^.]+$/, '') + '-crop.png');
   }
@@ -148,8 +157,12 @@ export function PhotoInput({ purpose, recordId, ensureSaved, actions, aiAvailabl
       const files: PreparedPhoto[] = [];
       for (const [index, entry] of snapshot.entries()) {
         setStage(`正在压缩第 ${index + 1}/${snapshot.length} 张图片…`);
-        const original = await jpeg(entry.file);
-        const crop = await jpeg(await croppedFile(entry));
+        // Rotate the full-size original only once, and reuse that canvas for both uploads.
+        const [original, crop] = await withImage(entry.file, async (image) => {
+          if (!entry.rotation) return [await jpeg(entry.file), await jpeg(await croppedFile(entry, image))];
+          const rotated = rotateOnto(image, entry.rotation);
+          return [await drawableJpeg(rotated, entry.file.name), await jpeg(await croppedFile(entry, rotated))];
+        });
         if (!mounted.current) return;
         files.push({ clientId: entry.clientId, original, crop, originalName: entry.file.name.replace(/\.[^.]+$/, '') + '.jpg' });
       }

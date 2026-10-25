@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react';
 import { EditorContentSkeleton, EditorPageSkeleton, ReviewCandidatesSkeleton, ReviewPageSkeleton, SettingsPageSkeleton, SettingsTableSkeleton, StatsPanelsSkeleton, TaskRowsSkeleton, TasksPageSkeleton, SkeletonPageHeader, AiProfileSkeleton, BackupSettingsSkeleton, TestDataSkeleton } from './PageSkeletons';
 import { getActiveApiRequestCount, getApiActivitySnapshot, subscribeToApiActivity } from './api';
 
@@ -14,6 +14,34 @@ function useReducedMotion(): boolean {
     return () => media.removeEventListener('change', update);
   }, []);
   return reduced;
+}
+
+const QUARTER_TURN_DURATION = 280;
+type QuarterTurnResize = { element: HTMLElement; from: number; to: number };
+
+/**
+ * Spins an element a quarter turn (scaled so the result fits) while its rotated replacement is prepared.
+ * The final frame is held until settle(), which callers run in a layout effect once the new image is in place.
+ */
+export function useQuarterTurn() {
+  const reduced = useReducedMotion();
+  const animations = useRef<Animation[]>([]);
+  const settle = useCallback(() => {
+    animations.current.forEach((animation) => animation.cancel());
+    animations.current = [];
+  }, []);
+  const turn = useCallback((element: HTMLElement | null | undefined, direction: number, scale: number, resize?: QuarterTurnResize) => {
+    settle();
+    if (reduced || !element || typeof element.animate !== 'function') return Promise.resolve();
+    const timing: KeyframeAnimationOptions = { duration: QUARTER_TURN_DURATION, easing: MOTION_EASING, fill: 'forwards' };
+    animations.current = [element.animate([{ transform: 'none' }, { transform: `rotate(${direction * 90}deg) scale(${scale})` }], timing)];
+    // Resizing the container alongside the spin avoids a height jump when the rotated image replaces it;
+    // clipping it also keeps the diagonal mid-spin corners from flashing scrollbars.
+    if (resize) animations.current.push(resize.element.animate([{ height: `${resize.from}px`, overflow: 'hidden' }, { height: `${resize.to}px`, overflow: 'hidden' }], timing));
+    return Promise.all(animations.current.map((animation) => animation.finished)).then(() => undefined, () => undefined);
+  }, [reduced, settle]);
+  useEffect(() => settle, [settle]);
+  return { turn, settle };
 }
 
 type ProgressPhase = 'idle' | 'loading' | 'completing' | 'fading';

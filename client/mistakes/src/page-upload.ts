@@ -5,6 +5,8 @@ export interface PendingPage {
   error: string;
   batchId?: string;
   pageOrder?: number;
+  // Quarter turns still to apply to file, which is kept as the untouched original.
+  rotation?: number;
 }
 
 export function assignPageUploadBatch(entries: PendingPage[]): PendingPage[] {
@@ -15,7 +17,7 @@ export function assignPageUploadBatch(entries: PendingPage[]): PendingPage[] {
 
 export async function uploadPageBatch<T>(entries: PendingPage[], options: {
   signal: AbortSignal;
-  prepare: (file: File) => Promise<File>;
+  prepare: (file: File, rotation: number) => Promise<File>;
   send: (body: FormData, signal: AbortSignal) => Promise<T>;
   onProgress: (index: number) => void;
   onSuccess: (entry: PendingPage, result: T) => void;
@@ -27,7 +29,7 @@ export async function uploadPageBatch<T>(entries: PendingPage[], options: {
     signal.throwIfAborted();
     try {
       options.onProgress(index);
-      const file = await options.prepare(entry.file);
+      const file = await options.prepare(entry.file, entry.rotation || 0);
       signal.throwIfAborted();
       const body = new FormData();
       body.append('file', file, entry.file.name.replace(/\.[^.]+$/, '') + '.jpg');

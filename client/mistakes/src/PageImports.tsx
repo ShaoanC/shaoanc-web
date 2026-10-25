@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'react';
-import imageCompression from 'browser-image-compression';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from 'react';
 import { compressJpeg } from './photo-compression';
+import { canvasBlob, predecode, quarterTurns, rotatedPreview, rotateOnto, withImage } from './photo-rotation';
+import { useQuarterTurn } from './motion';
 import { ArrowDown, ArrowLeft, ArrowUp, Check, CheckSquare, ImagePlus, LoaderCircle, Maximize2, Move, MousePointer2, Plus, RefreshCw, RotateCcw, RotateCw, Trash2, Upload } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { api, formatDate, json } from './api';
@@ -30,24 +31,13 @@ const statusLabel: Record<ImportStatus, string> = { queued: '等待分题', runn
 const activeStatus = (status: ImportStatus) => ['queued', 'running', 'retrying'].includes(status);
 const clamp = (value: number, min = 0, max = 1) => Math.min(max, Math.max(min, value));
 
-async function preparePage(file: File) {
+async function preparePage(file: File, rotation: number) {
   let input = file;
-  if (file.type !== 'image/jpeg') {
-    const url = URL.createObjectURL(file);
-    try {
-      const image = await imageCompression.loadImage(url);
-      const scale = Math.min(1, 3200 / Math.max(image.naturalWidth, image.naturalHeight));
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale)); canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
-      const context = canvas.getContext('2d');
-      if (!context) throw new Error('浏览器无法处理页面图片。');
-      context.fillStyle = '#fff'; context.fillRect(0, 0, canvas.width, canvas.height);
-      context.drawImage(image, 0, 0, canvas.width, canvas.height);
-      input = await new Promise<File>((resolve, reject) => canvas.toBlob((blob) => blob
-        ? resolve(new File([blob], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' }))
-        : reject(new Error('浏览器无法压缩页面图片。')), 'image/jpeg', .92));
-      if (input.size <= 3.8 * 1024 * 1024) return input;
-    } finally { URL.revokeObjectURL(url); }
+  if (file.type !== 'image/jpeg' || rotation) {
+    // Rotation is applied here, once, at the same 3200px cap as the upload itself.
+    const blob = await withImage(file, (image) => canvasBlob(rotateOnto(image, rotation, 3200), 'image/jpeg', .92));
+    input = new File([blob], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
+    if (input.size <= 3.8 * 1024 * 1024) return input;
   }
   return compressJpeg(input, { maxSizeMB: 3.8, maxWidthOrHeight: 3200, initialQuality: .92 });
 }
@@ -83,6 +73,10 @@ export function PageImportsPage() {
   const recognition = tasks.config;
   const canRecognize = recognition?.configured && recognition.enabled;
   const current = pages.find((page) => page.id === selectedId) || pages[0];
+  const quarterTurn = useQuarterTurn();
+  const { settle } = quarterTurn;
+  // A rotated page remounts with its new preview; clear the held spin before that frame paints.
+  useLayoutEffect(settle, [pending, settle]);
 
   const refresh = useCallback(async () => {
     if (inflight.current) return;
@@ -126,25 +120,26 @@ export function PageImportsPage() {
     if (entry) releaseUrl(entry.url);
     setPending((items) => items.filter((item) => item.id !== id));
   }
-  async function rotate(entry: PendingPage, direction: number) {
+  // The thumbnail is object-fit: contain, so scale the spin until the rotated page fits the same box.
+  function spinThumbnail(trigger: HTMLElement, direction: number) {
+    const image = trigger.closest('li')?.querySelector<HTMLImageElement>('.page-pending-preview img');
+    if (!image?.naturalWidth) return Promise.resolve();
+    const { width: boxWidth, height: boxHeight } = image.getBoundingClientRect();
+    const shownHeight = image.naturalHeight * Math.min(boxWidth / image.naturalWidth, boxHeight / image.naturalHeight);
+    const rotatedWidth = image.naturalHeight * Math.min(boxWidth / image.naturalHeight, boxHeight / image.naturalWidth);
+    return quarterTurn.turn(image, direction, rotatedWidth / shownHeight);
+  }
+  async function rotate(entry: PendingPage, direction: number, trigger: HTMLElement) {
     setRotatingId(entry.id);
     try {
-      const image = await imageCompression.loadImage(entry.url);
-      const canvas = document.createElement('canvas');
-      canvas.width = image.naturalHeight; canvas.height = image.naturalWidth;
-      const context = canvas.getContext('2d');
-      if (!context) throw new Error('浏览器无法旋转图片，请重试。');
-      context.fillStyle = '#fff'; context.fillRect(0, 0, canvas.width, canvas.height);
-      context.translate(canvas.width / 2, canvas.height / 2); context.rotate(direction * Math.PI / 2);
-      context.drawImage(image, -image.naturalWidth / 2, -image.naturalHeight / 2);
-      const file = await new Promise<File>((resolve, reject) => canvas.toBlob((blob) => blob
-        ? resolve(new File([blob], entry.file.name.replace(/\.[^.]+$/, '') + '.png', { type: 'image/png' }))
-        : reject(new Error('浏览器无法旋转图片。')), 'image/png'));
-      const url = makeUrl(file);
+      const rotation = quarterTurns((entry.rotation || 0) + direction);
+      const spin = spinThumbnail(trigger, direction);
+      const url = makeUrl(await rotatedPreview(entry.file, rotation));
+      await Promise.all([predecode(url), spin]);
       if (!mounted.current) { releaseUrl(url); return; }
-      setPending((items) => items.map((item) => item.id === entry.id ? { ...item, id: crypto.randomUUID(), batchId: undefined, pageOrder: undefined, file, url, error: '' } : item));
+      setPending((items) => items.map((item) => item.id === entry.id ? { ...item, id: crypto.randomUUID(), batchId: undefined, pageOrder: undefined, rotation, url, error: '' } : item));
       releaseUrl(entry.url);
-    } catch (err) { toast.error((err as Error).message); }
+    } catch (err) { quarterTurn.settle(); toast.error((err as Error).message); }
     finally { setRotatingId(''); }
   }
   async function upload() {
@@ -205,7 +200,7 @@ export function PageImportsPage() {
       <input ref={camera} type="file" capture="environment" accept="image/jpeg,image/png,image/webp" hidden disabled={disabled} onChange={(event) => { add(Array.from(event.target.files || [])); event.target.value = ''; }} />
       <div className="photo-actions"><button className="button secondary" disabled={disabled} onClick={() => album.current?.click()}><ImagePlus size={16} />选择页面</button><button className="button secondary" disabled={disabled} onClick={() => camera.current?.click()}>拍照</button><span className="page-import-help">保留整页和蓝色笔迹。按 1.、2. 这样的题号分题；同一题里的 1(1)、1(2) 仍算一道题。</span></div>
       {!configured && tasks.config && <p className="ai-notice">页面分题服务尚未启用，请由管理员在设置中配置专用 Gemini API。</p>}
-      {pending.length > 0 && <><ol className="page-pending-grid">{pending.map((entry, index) => <li key={entry.id} className="page-pending-card"><img src={entry.url} alt={`待上传页面 ${index + 1}`} /><div className="page-pending-caption"><strong>{index + 1}. {entry.file.name}</strong><div><button type="button" className="icon-button" aria-label={`第 ${index + 1} 页向前移动`} disabled={disabled || index === 0} onClick={() => move(index, -1)}><ArrowUp size={16} /></button><button type="button" className="icon-button" aria-label={`第 ${index + 1} 页向后移动`} disabled={disabled || index === pending.length - 1} onClick={() => move(index, 1)}><ArrowDown size={16} /></button><button type="button" className="icon-button" aria-label={`第 ${index + 1} 页左转 90 度`} disabled={disabled} onClick={() => void rotate(entry, -1)}><RotateCcw size={16} /></button><button type="button" className="icon-button" aria-label={`第 ${index + 1} 页右转 90 度`} disabled={disabled} onClick={() => void rotate(entry, 1)}><RotateCw size={16} /></button><button type="button" className="icon-button" aria-label={`移除第 ${index + 1} 页`} disabled={disabled} onClick={() => remove(entry.id)}><Trash2 size={16} /></button></div>{entry.error && <p className="form-error" role="alert">{entry.error}</p>}</div></li>)}</ol><div className="photo-actions"><button type="button" className="button primary" disabled={disabled || !configured} onClick={() => void upload()}>{uploading ? <LoaderCircle size={17} className="spin" /> : <Upload size={17} />}{uploadStage || `上传 ${pending.length} 页并分题`}</button><span className="page-import-help">上传完成后，即可离开此页，分题和识别会在后台继续。</span></div></>}
+      {pending.length > 0 && <><ol className="page-pending-grid">{pending.map((entry, index) => <li key={entry.id} className="page-pending-card"><div className="page-pending-preview"><img src={entry.url} alt={`待上传页面 ${index + 1}`} /></div><div className="page-pending-caption"><strong>{index + 1}. {entry.file.name}</strong><div><button type="button" className="icon-button" aria-label={`第 ${index + 1} 页向前移动`} disabled={disabled || index === 0} onClick={() => move(index, -1)}><ArrowUp size={16} /></button><button type="button" className="icon-button" aria-label={`第 ${index + 1} 页向后移动`} disabled={disabled || index === pending.length - 1} onClick={() => move(index, 1)}><ArrowDown size={16} /></button><button type="button" className="icon-button" aria-label={`第 ${index + 1} 页左转 90 度`} disabled={disabled} onClick={(event) => void rotate(entry, -1, event.currentTarget)}><RotateCcw size={16} /></button><button type="button" className="icon-button" aria-label={`第 ${index + 1} 页右转 90 度`} disabled={disabled} onClick={(event) => void rotate(entry, 1, event.currentTarget)}><RotateCw size={16} /></button><button type="button" className="icon-button" aria-label={`移除第 ${index + 1} 页`} disabled={disabled} onClick={() => remove(entry.id)}><Trash2 size={16} /></button></div>{entry.error && <p className="form-error" role="alert">{entry.error}</p>}</div></li>)}</ol><div className="photo-actions"><button type="button" className="button primary" disabled={disabled || !configured} onClick={() => void upload()}>{uploading ? <LoaderCircle size={17} className="spin" /> : <Upload size={17} />}{uploadStage || `上传 ${pending.length} 页并分题`}</button><span className="page-import-help">上传完成后，即可离开此页，分题和识别会在后台继续。</span></div></>}
     </section>
     {error && <p className="form-error" role="alert">{error} <button className="table-button" onClick={() => void refresh()}>重新加载</button></p>}
     {!loaded && <p className="page-import-loading"><LoaderCircle className="spin" size={18} />正在读取页面…</p>}
