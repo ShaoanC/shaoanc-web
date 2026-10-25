@@ -6,7 +6,7 @@ import { knowledgeLabel, useApp } from './context';
 import { Checkbox, DataTypeBadge, StatusBadge } from './components';
 import { DeleteButton } from './DeleteButton';
 import { MarkdownContent } from './MarkdownContent';
-import { SearchSummary } from './SearchSummary';
+import { SearchSnippetText, SearchSummary } from './SearchSummary';
 import { StarRatingDisplay, StarRatingPicker } from './StarRating';
 import type { Mistake } from './types';
 
@@ -221,8 +221,9 @@ export function MistakeRow({ mistake, grid, opened, armed, disabled, deleting, r
   const rowHeight = Math.max(ratingSize.height, ratingError ? 190 : 156);
   const layerHeight = expanded ? rowHeight : ratingPhase === 'dragging' ? ratingDistance <= RATING_CIRCLE_WIDTH ? ratingDistance : RATING_CIRCLE_WIDTH + (rowHeight - RATING_CIRCLE_WIDTH) * ratingMorph : 0;
   const remainingDays = mistake.deletedAt ? Math.max(0, Math.ceil((Date.parse(mistake.deletedAt) + 30 * 86400000 - Date.now()) / 86400000)) : 0;
+  const questionSnippet = mistake.search?.snippets.find((snippet) => snippet.field === 'question');
   const main = <div className="mistake-main">{selectionMode && <Checkbox checked={selected} disabled={disabled} onChange={onSelectedChange} aria-label={`选择错题 #${mistake.id}`} />}<span className={`subject-icon subject-${mistake.subjectId}`}>{subjectName?.slice(0, 1) || <FileText size={20} />}</span><div className="mistake-copy">
-    <h3><MarkdownContent variant="compact" emptyText="尚未填写题干">{mistake.question}</MarkdownContent></h3>
+    <h3>{questionSnippet ? <SearchSnippetText snippet={questionSnippet} /> : <MarkdownContent variant="compact" emptyText="尚未填写题干">{mistake.question}</MarkdownContent>}</h3>
     <div className="mistake-meta"><DataTypeBadge isTest={mistake.isTest} /><span className={`subject-tag subject-${mistake.subjectId}`}>{subjectName || mistake.subjectId || <span className="text-muted">未选学科</span>}</span><span className={`knowledge-tag ${knowledgePoints.some((point) => point.id === mistake.primaryKnowledgePointId) ? '' : 'text-muted'}`}>{knowledgeLabel(knowledgePoints, mistake.primaryKnowledgePointId)}</span>{mistake.lifecycle === 'draft' && <span className="draft-tag">草稿</span>}</div>
     <SearchSummary search={mistake.search} />
   </div></div>;

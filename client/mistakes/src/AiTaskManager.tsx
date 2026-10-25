@@ -34,7 +34,7 @@ function duration(job: AiJob, clock: number) {
 }
 function excerpt(job: AiJob) {
   const source = job.input.question || job.result?.question || '';
-  return source.replace(/!\[[^\]]*\]\([^)]*\)/g, '[配图]').replace(/[#*$`>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 160)
+  return source.replace(/!\[[^\]]*\]\([^)]*\)/g, '[配图]').trim()
     || (job.imageIds.length ? `已上传 ${job.imageIds.length} 张图片，等待识别题目内容` : '等待补充题目内容');
 }
 
@@ -134,8 +134,8 @@ export function AiTaskManager({ compact = false, portalContainer: drawerContaine
       const link = job.mistakeDeleted ? '#/mistakes?trash=1' : `#/mistakes/${job.mistakeId}/edit${review ? `?aiJob=${job.id}` : ''}`;
       return <article key={job.id} className={`task-row task-row-${tone}`}>
         <div className="task-row-heading"><div className="task-row-title"><Checkbox aria-label={`选择任务 #${job.id}`} checked={chosen.some((item) => item.id === job.id)} disabled={busy || !(canCancelJob(job) || retryable(job))} onChange={(event) => setSelected((current) => event.target.checked ? [...current, job.id] : current.filter((id) => id !== job.id))} /><h3>{aiJobLabel(job)}</h3><span className="task-id">#{job.id}</span></div><span className={`task-status task-status-${tone}`}>{isActiveJob(job) ? <LoaderCircle size={14} className={job.status === 'running' ? 'spin' : ''} /> : job.applyStatus === 'applied' ? <CheckCircle2 size={14} /> : null}{status}</span></div>
-        <a className="task-excerpt" href={link}>{excerpt(job)}</a>
-        {job.recognitionPrompt && <p className="task-row-notice">二级提示词：{job.recognitionPrompt}</p>}
+        <a className="task-excerpt" href={link}><MarkdownContent variant="compact">{excerpt(job)}</MarkdownContent></a>
+        {job.recognitionPrompt && <p className="task-row-notice">二级提示词：<span className="user-content">{job.recognitionPrompt}</span></p>}
         <div className="task-meta"><a href={link}>记录 #{job.mistakeId}</a>{job.input.subjectId && <span>{subjects.find((subject) => subject.id === job.input.subjectId)?.name || job.input.subjectId}</span>}<span>{formatDate(job.createdAt, true)}</span><span><Clock3 size={13} />{duration(job, clock)}</span><span>尝试 {job.attempts}/{job.maxAttempts}</span>{job.imageIds.length > 0 && <span>{job.imageIds.length} 张图片</span>}</div>
         {job.mistakeDeleted ? <p className="task-row-notice">错题已移入回收站，恢复后可继续操作。</p> : review && job.applyStatus === 'conflict' && <p className="task-row-notice">题目内容已修改，AI 结果尚未覆盖现有内容。请打开编辑页核对。</p>}
         {job.status === 'retrying' && <p className="task-row-notice">{job.nextAttemptAt && Date.parse(job.nextAttemptAt) > clock ? `将在 ${Math.ceil((Date.parse(job.nextAttemptAt) - clock) / 1000)} 秒后自动重试，无需重复提交。` : '等待队列继续执行，无需重复提交。'}</p>}

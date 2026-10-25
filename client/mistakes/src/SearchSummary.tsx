@@ -13,14 +13,19 @@ const FIELD_LABELS: Record<MistakeSearch['snippets'][number]['field'], string> =
 };
 
 export function SearchSummary({ search }: { search?: MistakeSearch }) {
-  if (!search || search.snippets.length === 0) return null;
+  const snippets = search?.snippets.filter((snippet) => snippet.field !== 'question').slice(0, 2) || [];
+  if (snippets.length === 0) return null;
 
   return <div className="search-summary">
-    {search.snippets.slice(0, 2).map((snippet, snippetIndex) => <p className="search-snippet" key={`${snippet.field}-${snippetIndex}`}>
+    {snippets.map((snippet, snippetIndex) => <p className="search-snippet" key={`${snippet.field}-${snippetIndex}`}>
       <span className="search-snippet-label">{FIELD_LABELS[snippet.field]}</span>
-      <span className="search-snippet-text">{snippet.segments.map((segment, segmentIndex) => <SearchSegment key={segmentIndex} segment={segment} />)}</span>
+      <SearchSnippetText snippet={snippet} />
     </p>)}
   </div>;
+}
+
+export function SearchSnippetText({ snippet }: { snippet: MistakeSearch['snippets'][number] }) {
+  return <span className="search-snippet-text">{snippet.segments.map((segment, index) => <SearchSegment key={index} segment={segment} />)}</span>;
 }
 
 function SearchSegment({ segment }: { segment: MistakeSearch['snippets'][number]['segments'][number] }) {

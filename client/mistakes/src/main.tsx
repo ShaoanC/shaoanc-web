@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { Slide, ToastContainer } from 'react-toastify';
 import App from './App';
+import '@fontsource/noto-serif-sc/400.css';
 import '../../../public/styles/scrollbars.css';
 import './styles.css';
 
