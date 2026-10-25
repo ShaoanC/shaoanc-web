@@ -39,9 +39,10 @@ interface StarRatingPickerProps {
   error?: string;
   onClose?: () => void;
   autoFocus?: boolean;
+  compact?: boolean;
 }
 
-export function StarRatingPicker({ value, onChange, onCommit, disabled = false, error, onClose, autoFocus = false }: StarRatingPickerProps) {
+export function StarRatingPicker({ value, onChange, onCommit, disabled = false, error, onClose, autoFocus = false, compact = false }: StarRatingPickerProps) {
   const hintId = useId();
   const [preview, setPreview] = useState(value);
   const pointer = useRef<number | null>(null);
@@ -116,10 +117,10 @@ export function StarRatingPicker({ value, onChange, onCommit, disabled = false, 
       <RatingStars value={preview} />
     </div>
     <div className="star-rating-controls">
-      <button type="button" className="button ghost" disabled={disabled} onClick={() => commit(0)}>清除标记</button>
+      <button type="button" className="button ghost" disabled={disabled} onClick={() => commit(0)}>{compact ? '清除' : '清除标记'}</button>
       {onClose && <button type="button" className="button ghost" disabled={disabled} onClick={() => { setPreview(value); onClose(); }}><X size={16} />取消</button>}
     </div>
     {error && <p className="star-rating-error" role="alert">{error}</p>}
-    <p className="star-rating-hint" id={hintId}>点击或滑动选星 · 每半星一档<span className="sr-only">。方向键调整，回车保存，Escape 取消。</span></p>
+    <p className={compact ? 'sr-only' : 'star-rating-hint'} id={hintId}>点击或滑动选星 · 每半星一档<span className="sr-only">。方向键调整，回车保存，Escape 取消。</span></p>
   </div>;
 }

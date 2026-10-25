@@ -12,11 +12,13 @@ import { LoadingContent } from '../motion';
 import { StarRatingPicker, StarRatingDisplay } from '../StarRating';
 import { MistakeExport } from '../MistakeExport';
 import { useRecordView } from '../RecordView';
+import { useMobileLayout } from '../MobileDrawer';
 import type { Mistake, Review } from '../types';
 import '../export-selection.css';
 
 export function DetailPage({ id }: { id: number }) {
   const view = useRecordView();
+  const mobile = useMobileLayout();
   const { subjects, knowledgePoints, notify } = useApp();
   const { jobs } = useAiTasks();
   const appliedJobs = jobs.filter((job) => job.mistakeId === id && job.applyStatus === 'applied').map((job) => job.id).join(',');
@@ -94,7 +96,7 @@ export function DetailPage({ id }: { id: number }) {
     {error ? <ErrorState message={error} /> : mistake && <>
       {!view && <a className="back-link" href={mistake.deletedAt ? '#/mistakes?trash=1' : '#/mistakes'}><ArrowLeft size={16} /> {mistake.deletedAt ? '返回回收站' : '返回我的错题'}</a>}
       <header className="detail-header detail-reading-header">
-        <div>
+        <div className="detail-heading-copy">
           {!view && <><div className="eyebrow">浏览详情</div><h1>错题详情</h1></>}
           <div className="detail-subtitle">
             <DataTypeBadge isTest={mistake.isTest} />
@@ -111,15 +113,14 @@ export function DetailPage({ id }: { id: number }) {
             <DeleteButton armed={confirmDelete} onArmedChange={setConfirmDelete} busy={deleting} onDelete={() => void remove()} className="detail-delete-button" />
           </>}
         </div>
+        <dl className="detail-facts detail-reading-meta">
+          <div><dt>主知识点</dt><dd><span className={knowledgePoints.some((point) => point.id === mistake.primaryKnowledgePointId) ? undefined : 'text-muted'}>{knowledgeLabel(knowledgePoints, mistake.primaryKnowledgePointId)}</span></dd></div>
+          <div><dt>辅助知识点</dt><dd>{mistake.auxiliaryKnowledgePointIds.length ? mistake.auxiliaryKnowledgePointIds.map((pointId) => <span className={`knowledge-pill${knowledgePoints.some((point) => point.id === pointId) ? '' : ' text-muted'}`} key={pointId}>{knowledgeLabel(knowledgePoints, pointId)}</span>) : <span className="text-muted">暂未标注</span>}</dd></div>
+        </dl>
+        <div className="field detail-rating-field detail-reading-rating">
+          {mistake.deletedAt ? <StarRatingDisplay value={mistake.rating} /> : <StarRatingPicker compact={mobile} value={ratingPreview} onChange={setRatingPreview} onCommit={saveRating} disabled={ratingSaving} error={ratingError} onClose={() => { setRatingPreview(mistake.rating); setRatingError(''); }} />}
+        </div>
       </header>
-      <dl className="detail-facts detail-reading-meta">
-        <div><dt>主知识点</dt><dd><span className={knowledgePoints.some((point) => point.id === mistake.primaryKnowledgePointId) ? undefined : 'text-muted'}>{knowledgeLabel(knowledgePoints, mistake.primaryKnowledgePointId)}</span></dd></div>
-        <div><dt>辅助知识点</dt><dd>{mistake.auxiliaryKnowledgePointIds.length ? mistake.auxiliaryKnowledgePointIds.map((pointId) => <span className={`knowledge-pill${knowledgePoints.some((point) => point.id === pointId) ? '' : ' text-muted'}`} key={pointId}>{knowledgeLabel(knowledgePoints, pointId)}</span>) : <span className="text-muted">暂未标注</span>}</dd></div>
-      </dl>
-      <div className="field detail-rating-field detail-reading-rating">
-        <span>星级标记</span>
-        {mistake.deletedAt ? <StarRatingDisplay value={mistake.rating} /> : <StarRatingPicker value={ratingPreview} onChange={setRatingPreview} onCommit={saveRating} disabled={ratingSaving} error={ratingError} onClose={() => { setRatingPreview(mistake.rating); setRatingError(''); }} />}
-      </div>
       {mistake.deletedAt ? <div className="draft-notice"><Clock3 size={18} /><div><strong>这道错题在回收站中</strong><span>题目及复习记录会保留至 {formatDate(new Date(Date.parse(mistake.deletedAt) + 30 * 86400000).toISOString())}，恢复后可继续编辑和复习。</span></div></div> : mistake.lifecycle === 'draft' && <div className="draft-notice"><FileText size={18} /><div><strong>这是一份待完善的草稿</strong><span>编辑并归档后，就可以在复习中练习这道题。</span></div><a className="text-link" href={`#/mistakes/${id}/edit`}>继续编辑<Pencil size={14} /></a></div>}
       <article className="detail-document" aria-label="错题内容">
         <section className="detail-document-section question-panel">
