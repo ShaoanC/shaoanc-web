@@ -4,9 +4,9 @@
 html { background: white; color: #171717; font-synthesis: none; text-rendering: optimizeLegibility; }
 body { margin: 0; padding: 0; }
 h1, h2, h3, p { margin: 0; }
-.export-document { width: 180mm; margin: 0; font-family: 'Noto Serif SC', serif; line-height: 1.7; overflow-wrap: anywhere; }
+.export-document { width: 180mm; margin: 0; font-family: var(--font-numbers), 'Noto Serif SC', serif; line-height: 1.7; overflow-wrap: anywhere; }
 .export-document-heading { padding-bottom: 5mm; margin-bottom: 7mm; border-bottom: 1.5pt solid #222; break-inside: avoid; break-after: avoid; }
-.export-document-heading h1 { font-family: 'Noto Sans SC', sans-serif; font-size: 22pt; font-weight: 600; line-height: 1.5; }
+.export-document-heading h1 { font-family: var(--font-numbers), 'Noto Sans SC', sans-serif; font-size: 22pt; font-weight: 600; line-height: 1.5; }
 .export-document-heading > div { display: flex; flex-wrap: wrap; gap: 6mm; margin-top: 3mm; color: #555; font-size: 9pt; }
 .export-question, .export-appendix-entry { padding-bottom: 6mm; margin-bottom: 6mm; border-bottom: .5pt solid #bbb; break-inside: avoid; }
 .export-question:last-child, .export-appendix-entry:last-child { padding-bottom: 0; margin-bottom: 0; border-bottom: 0; }
@@ -15,18 +15,18 @@ h1, h2, h3, p { margin: 0; }
 .export-practice .export-question, .export-per-question .export-question, .export-per-question .export-appendix-entry { border-bottom: 0; }
 .export-per-question .export-question + .export-question { break-before: page; }
 .export-question-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 5mm; break-inside: avoid; break-after: avoid; }
-.export-question-heading h2, .export-appendix-number { font-family: 'Noto Sans SC', sans-serif; font-size: 12pt; font-weight: 600; line-height: 1.6; }
+.export-question-heading h2, .export-appendix-number { font-family: var(--font-numbers), 'Noto Sans SC', sans-serif; font-size: 12pt; font-weight: 600; line-height: 1.6; }
 .export-question-heading > span { color: #666; font-size: 8pt; }
 .export-question-meta { margin-top: 1.5mm; font-size: 8.5pt; color: #555; break-after: avoid; }
 .export-question-text { margin-top: 3mm; break-before: avoid; }
 .export-question-text > :first-child { break-before: avoid; }
 .export-answer { margin-top: 4mm; }
-.export-answer h3 { margin-bottom: 1.5mm; font-family: 'Noto Sans SC', sans-serif; font-size: .9em; font-weight: 600; break-after: avoid; }
+.export-answer h3 { margin-bottom: 1.5mm; font-family: var(--font-numbers), 'Noto Sans SC', sans-serif; font-size: .9em; font-weight: 600; break-after: avoid; }
 .export-note { padding-left: 3mm; border-left: 1pt solid #999; }
 .export-answer-space { height: var(--practice-space); margin-top: 4mm; break-inside: avoid; }
 .export-appendix { break-before: page; }
 .export-appendix-heading { margin-bottom: 6mm; padding-bottom: 4mm; border-bottom: 1pt solid #333; break-inside: avoid; break-after: avoid; }
-.export-appendix-heading h2 { font-family: 'Noto Sans SC', sans-serif; font-size: 18pt; font-weight: 600; }
+.export-appendix-heading h2 { font-family: var(--font-numbers), 'Noto Sans SC', sans-serif; font-size: 18pt; font-weight: 600; }
 .export-appendix-heading p { margin-top: 2mm; font-size: 9pt; color: #555; }
 .export-appendix-number { break-after: avoid; }
 .export-empty-answer { margin-top: 2mm; color: #555; font-size: 10pt; }
@@ -47,7 +47,7 @@ h1, h2, h3, p { margin: 0; }
 .export-image-paragraph > .export-image-block:first-child { margin-top: 0; }
 .export-image-paragraph > .export-image-block:last-child { margin-bottom: 0; }
 .markdown-content hr { margin: .9em 0; border: 0; border-top: .5pt solid #aaa; }
-.markdown-content code { font-family: Consolas, 'Liberation Mono', monospace; font-size: .85em; padding: .1em .2em; background: #f4f4f4; }
+.markdown-content code { font-family: var(--font-numbers), Consolas, 'Liberation Mono', monospace; font-size: .85em; padding: .1em .2em; background: #f4f4f4; }
 .markdown-content pre { margin: .7em 0; padding: 3mm; border: .5pt solid #ccc; background: #f7f7f7; white-space: pre-wrap; overflow-wrap: anywhere; }
 .markdown-content pre code { padding: 0; background: transparent; white-space: pre-wrap; }
 .markdown-table-scroll { max-width: 100%; margin: .7em 0; overflow: visible; }

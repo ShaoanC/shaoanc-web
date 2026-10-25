@@ -1,0 +1,43 @@
+/* Restrict font substitution to digits and numeric punctuation, preserving Chinese and Latin text. */
+@font-face {
+  font-family: 'Inter Numbers';
+  src: url('@fontsource-variable/inter/files/inter-latin-wght-normal.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  unicode-range: U+0025, U+002B-003A, U+00B1, U+2013-2014, U+2212;
+}
+@font-face {
+  font-family: 'Barlow Numbers';
+  src: url('@fontsource/barlow/files/barlow-latin-400-normal.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  unicode-range: U+0025, U+002B-003A, U+00B1, U+2013-2014, U+2212;
+}
+@font-face {
+  font-family: 'Barlow Numbers';
+  src: url('@fontsource/barlow/files/barlow-latin-500-normal.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  unicode-range: U+0025, U+002B-003A, U+00B1, U+2013-2014, U+2212;
+}
+@font-face {
+  font-family: 'Barlow Numbers';
+  src: url('@fontsource/barlow/files/barlow-latin-600-normal.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  unicode-range: U+0025, U+002B-003A, U+00B1, U+2013-2014, U+2212;
+}
+@font-face {
+  font-family: 'Barlow Numbers';
+  src: url('@fontsource/barlow/files/barlow-latin-700-normal.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  unicode-range: U+0025, U+002B-003A, U+00B1, U+2013-2014, U+2212;
+}
+
+:root { --font-numbers: 'Inter Numbers'; }
