@@ -761,6 +761,7 @@ input.checkbox-input {
 .prep-steps { display: flex; flex-direction: column; gap: 10px; font-size: 15px; color: var(--text-secondary); }
 .prep-steps > span { display: flex; align-items: center; gap: 9px; }
 .prep-steps i {
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, 'Liberation Mono', monospace;
   width: 18px; height: 18px; border-radius: 50%; font-style: normal;
   background: var(--surface-4); color: var(--primary);
   display: flex; align-items: center; justify-content: center;
@@ -2427,6 +2428,7 @@ input:focus, textarea:focus, select:focus { outline: 2px solid rgba(23,100,72,.1
 }
 
 /* Display metrics use Barlow; ordinary numbers inherit Inter. */
+.prep-selected > strong,
 .metric-value,
 .subject-row > span:last-child,
 .chart-row > strong,
