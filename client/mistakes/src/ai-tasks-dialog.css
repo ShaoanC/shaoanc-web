@@ -29,7 +29,7 @@
 }
 
 .ai-tasks-dialog > .photo-dialog-heading h2 {
-  font-family: var(--font-numbers), 'Noto Serif SC', serif;
+  font-family: var(--font-numbers), var(--font-ui);
   font-size: 22px;
 }
 
