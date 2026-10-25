@@ -21,9 +21,9 @@ const PageImportsPage = lazy(() => import('./PageImports').then((module) => ({ d
 const AiTasksPage = lazy(() => import('./AiTaskManager').then((module) => ({ default: module.AiTasksPage })));
 
 const pageSkeletonKinds: Record<string, SkeletonKind> = {
-  '/new': 'editor',
+  '/new': 'editor-page',
   '/page-imports': 'editor',
-  '/review': 'review',
+  '/review': 'review-page',
   '/stats': 'stats-page',
   '/ai-tasks': 'tasks-page',
   '/settings': 'settings-page',
@@ -222,7 +222,7 @@ export default function App() {
 
   const routePath = path.split('?')[0];
   const detailMatch = routePath.match(/^\/mistakes\/(\d+)(\/edit)?$/);
-  const skeletonKind = detailMatch ? (detailMatch[2] ? 'editor' : 'detail') : (pageSkeletonKinds[routePath] || 'library');
+  const skeletonKind = detailMatch ? (detailMatch[2] ? 'editor-page' : 'detail') : (pageSkeletonKinds[routePath] || 'library');
   const activePath = detailMatch ? '/mistakes' : routePath === '/page-imports' ? '/new' : routePath;
   const backgroundEditorId = routePath === '/new' ? newEditor.recordId : detailMatch?.[2] ? Number(detailMatch[1]) : null;
   let page;

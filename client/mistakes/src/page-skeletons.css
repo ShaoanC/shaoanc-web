@@ -1,5 +1,5 @@
 /* Page skeletons reuse the content's layout classes; only the ink is replaced. */
-.skeleton-text { position: relative; display: inline-block; max-width: 100%; overflow: hidden; vertical-align: bottom; color: transparent; background: #E5ECE3; border-radius: 2px; }
+.skeleton-text { font-style: normal; position: relative; display: inline-block; max-width: 100%; overflow: hidden; vertical-align: bottom; color: transparent; background: #E5ECE3; border-radius: 2px; }
 .skeleton-symbol { display: inline-block; position: relative; overflow: hidden; width: 18px; height: 18px; flex-shrink: 0; background: #E5ECE3; border-radius: 2px; }
 .skeleton-button { pointer-events: none; border-color: var(--border-medium); }
 .skeleton-input { position: relative; overflow: hidden; height: 50px; min-width: 0; border: 1px solid var(--border-medium); border-radius: 4px; background: #E5ECE3; }
@@ -33,3 +33,13 @@
 
 .skeleton-form-control { display: flex; border-radius: 4px; }
 .skeleton-form-control > input { width: 100%; min-width: 0; background: #E5ECE3; }
+
+.skeleton-screen .skeleton-form-control > textarea { width: 100%; min-width: 0; background: #E5ECE3; resize: none; }
+.skeleton-review-page .custom-select-trigger { pointer-events: none; }
+@media (max-width: 640px) {
+  .skeleton-editor-secondary { display: none; }
+}
+
+.skeleton-editor-secondary .skeleton-form-control > input { min-height: 42px; padding: 9px 10px; font-size: 15px; }
+
+.editor-block-heading > .skeleton-symbol { margin-left: 0; }

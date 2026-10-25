@@ -1600,7 +1600,6 @@ input:focus, textarea:focus, select:focus { outline: 2px solid rgba(23,100,72,.1
 .loading-content-placeholder { opacity: 1; pointer-events: none; }
 .loading-content.is-ready > .loading-content-placeholder { position: absolute; inset: 0; opacity: 0; overflow: hidden; }
 .loading-kind-rows { min-height: 388px; }
-.loading-kind-review { min-height: 300px; }
 .app-entrance { min-height: 100vh; }
 .skeleton-screen { min-width: 0; }
 .skeleton-line, .skeleton-block, .skeleton-row-index { display: block; position: relative; overflow: hidden; border-radius: 2px; background: #E5ECE3; }
@@ -2288,7 +2287,7 @@ input:focus, textarea:focus, select:focus { outline: 2px solid rgba(23,100,72,.1
 .editor-navigation .editor-batch-entry { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 6px 10px; white-space: nowrap; }
 .editor-workbench-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
 .editor-workbench-header > div:first-child { display: flex; align-items: baseline; flex-wrap: wrap; gap: 12px; }
-.editor-workbench-header h1 { font-family: 'Noto Sans SC', 'Microsoft YaHei', sans-serif; font-size: 28px; font-weight: 600; line-height: 1.4; }
+.editor-workbench-header h1 { font-family: 'Noto Serif SC', 'Songti SC', 'SimSun', serif; font-size: 28px; font-weight: 600; line-height: 1.4; }
 .editor-record-id { font-size: 13px; color: var(--text-tertiary); }
 .editor-workbench-state { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; }
 .editor-mode { display: inline-flex; gap: 6px; align-items: center; padding: 5px 10px; background: var(--accent-soft); color: var(--warning); font-size: 13px; border-radius: 4px; white-space: nowrap; }
@@ -2337,16 +2336,16 @@ input:focus, textarea:focus, select:focus { outline: 2px solid rgba(23,100,72,.1
 .skeleton-reading-document > section + section { margin-top: 34px; padding-top: 28px; border-top: 1px solid var(--border-subtle); }
 .skeleton-reading-document > section > .short { margin-bottom: 22px; }
 .skeleton-reading-history { margin-top: 28px; background: transparent; border: 0; border-top: 1px solid var(--border-medium); padding-left: 4px; }
-.skeleton-workbench-tabs { display: none; }
-.skeleton-workbench-layout { display: grid; grid-template-columns: minmax(0, 1fr) 290px; gap: 24px; align-items: start; }
-.skeleton-workbench-main { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
-.skeleton-workbench-layout .skeleton-panel { margin: 0; padding: 22px; background: var(--primary-soft); border: 1px solid var(--border-subtle); border-radius: 5px; }
-.skeleton-workbench-main > .skeleton-panel:first-child .skeleton-block { height: 270px; }
-.skeleton-workbench-layout .skeleton-field > .skeleton-block { background: var(--surface-2); border: 1px solid var(--border-medium); }
-.skeleton-workbench-layout .skeleton-workbench-classification { background: var(--surface-2); }
+
+
+
+
+
+
+
 
 @media (max-width: 960px) {
-  .editor-workbench .editor-layout, .skeleton-workbench-layout { grid-template-columns: minmax(0, 1fr); }
+  .editor-workbench .editor-layout { grid-template-columns: minmax(0, 1fr); }
   .editor-workbench .editor-classification { position: static; }
 }
 @media (max-width: 640px) {
@@ -2390,11 +2389,11 @@ input:focus, textarea:focus, select:focus { outline: 2px solid rgba(23,100,72,.1
   .editor-workbench .markdown-field-heading > label { font-size: 14px; }
   .editor-workbench .markdown-field-modes > button { padding: 4px 8px; font-size: 12px; }
   .save-dock { right: calc(16px + env(safe-area-inset-right, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
-  .skeleton-workbench-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; padding: 12px 8px 18px; margin-bottom: 18px; border-bottom: 1px solid var(--border-medium); }
-  .skeleton-workbench-tabs > .short { width: 100%; height: 18px; }
-  .skeleton-workbench-layout .skeleton-workbench-answers, .skeleton-workbench-layout .skeleton-workbench-note, .skeleton-workbench-layout .skeleton-workbench-classification { display: none; }
-  .skeleton-workbench-main > .skeleton-panel:first-child .skeleton-block { height: 300px; }
-  .skeleton-workbench-layout .skeleton-panel { padding: 18px 14px; }
+
+
+
+
+
   .skeleton-reading-document { padding: 24px 18px; }
 }
 @media (prefers-reduced-motion: reduce) {

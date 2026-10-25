@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react';
-import { SettingsPageSkeleton, SettingsTableSkeleton, StatsPanelsSkeleton, TaskRowsSkeleton, TasksPageSkeleton, SkeletonPageHeader, AiProfileSkeleton, BackupSettingsSkeleton, TestDataSkeleton } from './PageSkeletons';
+import { EditorContentSkeleton, EditorPageSkeleton, ReviewCandidatesSkeleton, ReviewPageSkeleton, SettingsPageSkeleton, SettingsTableSkeleton, StatsPanelsSkeleton, TaskRowsSkeleton, TasksPageSkeleton, SkeletonPageHeader, AiProfileSkeleton, BackupSettingsSkeleton, TestDataSkeleton } from './PageSkeletons';
 import { getActiveApiRequestCount, getApiActivitySnapshot, subscribeToApiActivity } from './api';
 
 const MOTION_EASING = 'cubic-bezier(0.22, 0.61, 0.36, 1)';
@@ -255,7 +255,7 @@ export function SlidingNavigation({ items, value, ariaLabel = '主导航' }: {
   </nav>;
 }
 
-export type SkeletonKind = 'library' | 'summary' | 'rows' | 'stats' | 'detail' | 'editor' | 'settings' | 'settings-page' | 'stats-page' | 'tasks-page' | 'tasks' | 'ai-profile' | 'backups' | 'test-data' | 'review' | 'shell';
+export type SkeletonKind = 'library' | 'summary' | 'rows' | 'stats' | 'detail' | 'editor' | 'editor-page' | 'review-page' | 'settings' | 'settings-page' | 'stats-page' | 'tasks-page' | 'tasks' | 'ai-profile' | 'backups' | 'test-data' | 'review' | 'shell';
 
 function SkeletonLine({ size = 'long' }: { size?: 'short' | 'medium' | 'long' | 'title' }) {
   return <span className={`skeleton-line skeleton-shimmer ${size}`} />;
@@ -279,24 +279,6 @@ function SkeletonRows({ review = false }: { review?: boolean }) {
   return <div className="skeleton-list">{!review && <div className="skeleton-toolbar"><SkeletonLine size="medium" /><SkeletonLine size="short" /></div>}{Array.from({ length: 3 }, (_, index) => <div className="skeleton-row" key={index}><span className="skeleton-row-index skeleton-shimmer" /><div className="skeleton-row-copy"><SkeletonLine /><SkeletonLine size="medium" /></div><SkeletonLine size="short" /><SkeletonLine size="short" /></div>)}</div>;
 }
 
-function SkeletonEditorField() {
-  return <div className="skeleton-field"><SkeletonLine size="short" /><span className="skeleton-block skeleton-shimmer" /></div>;
-}
-
-function SkeletonWorkbench() {
-  return <>
-    <div className="skeleton-workbench-tabs">{[0, 1, 2, 3].map((index) => <SkeletonLine size="short" key={index} />)}</div>
-    <div className="skeleton-workbench-layout">
-      <div className="skeleton-workbench-main">
-        <div className="skeleton-panel"><SkeletonLine size="medium" /><SkeletonEditorField /></div>
-        <div className="skeleton-panel skeleton-workbench-answers"><SkeletonLine size="medium" /><SkeletonEditorField /><SkeletonEditorField /></div>
-        <div className="skeleton-panel skeleton-workbench-note"><SkeletonLine size="medium" /><SkeletonEditorField /></div>
-      </div>
-      <div className="skeleton-panel skeleton-workbench-classification"><SkeletonLine size="medium" /><SkeletonEditorField /><SkeletonEditorField /></div>
-    </div>
-  </>;
-}
-
 function SkeletonReading() {
   return <>
     <div className="skeleton-reading-header"><SkeletonHeading /></div>
@@ -313,7 +295,8 @@ export function Skeleton({ kind = 'library' }: { kind?: SkeletonKind }) {
   switch (kind) {
     case 'summary': content = <SkeletonSummary library />; break;
     case 'rows': content = <SkeletonRows />; break;
-    case 'review': content = <SkeletonRows review />; break;
+    case 'review': content = <ReviewCandidatesSkeleton />; break;
+    case 'review-page': content = <ReviewPageSkeleton />; break;
     case 'settings': content = <SettingsTableSkeleton />; break;
     case 'settings-page': content = <SettingsPageSkeleton />; break;
     case 'ai-profile': content = <AiProfileSkeleton />; break;
@@ -323,7 +306,8 @@ export function Skeleton({ kind = 'library' }: { kind?: SkeletonKind }) {
     case 'tasks-page': content = <TasksPageSkeleton />; break;
     case 'stats-page': content = <><SkeletonPageHeader title="学习统计" action="去复习" /><SkeletonSummary /><StatsPanelsSkeleton /></>; break;
     case 'stats': content = <><SkeletonSummary /><StatsPanelsSkeleton /></>; break;
-    case 'editor': content = <SkeletonWorkbench />; break;
+    case 'editor': content = <EditorContentSkeleton />; break;
+    case 'editor-page': content = <EditorPageSkeleton />; break;
     case 'detail': content = <SkeletonReading />; break;
     case 'shell': content = <><SkeletonHeading /><SkeletonSummary library /><SkeletonRows /></>; break;
     default: content = <><SkeletonHeading /><SkeletonSummary library /><div className="skeleton-toolbar"><SkeletonLine size="medium" /><SkeletonLine size="short" /></div><SkeletonRows /></>;

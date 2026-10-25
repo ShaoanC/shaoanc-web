@@ -75,3 +75,45 @@ export function BackupSettingsSkeleton() {
 export function TestDataSkeleton() {
   return <section className="test-data-tools"><div><strong><Text>体验错题本</Text></strong><p><Text>每次为当前管理员账号生成 6 道示例，带有“测试错题”标签，可用于编辑和复习。当前账号共 — 道测试错题。</Text></p><small><Text>移入回收站覆盖所有筛选条件、归档和草稿，仅处理当前账号的测试错题，30 天内可恢复题目及复习记录。测试数据会计入学习统计。</Text></small></div><div className="test-data-actions"><Button>一键生成测试错题</Button><Button>测试错题移入回收站</Button></div></section>;
 }
+
+function EditorPhotoSkeleton({ answer = false }: { answer?: boolean }) {
+  return <div className="photo-entry">
+    <div className="photo-entry-title"><span className="skeleton-symbol skeleton-shimmer" /><Text>{answer ? '也可以拍下答案' : '从图片录入题目'}</Text></div>
+    <p><Text>{answer ? '题目和答案在同一张图里时，可直接复用题干图片识别答案。' : '选中错题部分，多张图片按顺序一起识别。'}</Text></p>
+    <div className="photo-actions">{[answer ? '拍照识别答案' : '拍照', '选择图片', '选择已上传的照片', ...(answer ? ['复用题干图片'] : [])].map((label) => <span className="button secondary skeleton-button" key={label}><span className="skeleton-symbol skeleton-shimmer" style={{ width: 16, height: 16 }} /><Text>{label}</Text></span>)}</div>
+  </div>;
+}
+
+function EditorFieldSkeleton({ label, rows = 5, question = false }: { label: string; rows?: number; question?: boolean }) {
+  return <div className="field markdown-field"><div className="markdown-field-heading"><label><Text>{label}</Text></label><div className="markdown-field-modes">{['编辑', '预览'].map((mode) => <button type="button" disabled tabIndex={-1} key={mode}><Text>{mode}</Text></button>)}</div></div><div className="skeleton-form-control skeleton-shimmer"><textarea disabled tabIndex={-1} rows={rows} className={question ? 'question-editor' : undefined} /></div></div>;
+}
+
+function EditorBlockHeading({ title, required = false }: { title: string; required?: boolean }) {
+  return <div className="editor-block-heading"><span className="skeleton-symbol skeleton-shimmer" /><h2><Text>{title}</Text></h2>{required && <span><Text>必填</Text></span>}</div>;
+}
+
+export function EditorContentSkeleton() {
+  const existing = /^#\/mistakes\/\d+\/edit/.test(window.location.hash);
+  return <>
+    {existing && <div className="editor-uploaded"><span className="table-button"><Text>查看上传图片</Text></span></div>}
+    <div className="editor-mobile-tabs"><div className="sliding-tabs">{['题干', '解答', '笔记', '归类'].map((tab) => <span className="sliding-tab" key={tab}><i className="skeleton-text skeleton-shimmer">{tab}</i></span>)}</div></div>
+    <div className="editor-layout"><div className="editor-main">
+      <section className="editor-block editor-question-block"><EditorBlockHeading title="题目" required /><EditorPhotoSkeleton /><EditorFieldSkeleton label="题干 *" question /></section>
+      <section className="editor-block editor-answers-block skeleton-editor-secondary"><EditorBlockHeading title="答案与分析" /><EditorFieldSkeleton label="正确答案　选填" rows={3} /><EditorPhotoSkeleton answer /><p className="ai-notice"><Text>手动输入的短答案会在保存时自动生成解析；图片识别的短答案会在填入后生成。</Text></p><div className="photo-actions"><Button>生成解析</Button></div><EditorFieldSkeleton label="解题分析　选填" /></section>
+      <section className="editor-block editor-note-block skeleton-editor-secondary"><EditorBlockHeading title="我的笔记" /><EditorFieldSkeleton label="我的笔记　选填" /></section>
+    </div><aside className="editor-aside editor-classification editor-block skeleton-editor-secondary"><EditorBlockHeading title="学科与知识点" /><Field label="学科 *" /><Field label="主知识点　选填" /><div className="field"><span><Text>辅助知识点　可多选</Text></span><div className="knowledge-options skeleton-copy-lines"><Text>知识点名称</Text><Text>知识点名称</Text></div></div><div className="field"><span><Text>星级标记　选填</Text></span><Text>☆　☆　☆　☆　☆</Text></div></aside></div>
+  </>;
+}
+
+export function EditorPageSkeleton() {
+  const existing = /^#\/mistakes\/\d+\/edit/.test(window.location.hash);
+  return <div className="editor-workbench"><nav className="editor-navigation"><span className="back-link"><span className="skeleton-symbol skeleton-shimmer" /><Text>{existing ? '返回错题详情' : '返回我的错题'}</Text></span>{!existing && <span className="table-button editor-batch-entry"><span className="skeleton-symbol skeleton-shimmer" /><Text>按页批量录入</Text></span>}</nav><header className="editor-workbench-header"><div><h1><Text>{existing ? '编辑错题' : '录入错题'}</Text></h1></div><div className="editor-workbench-state"><span className="editor-mode"><Text>正在编辑</Text></span></div></header><EditorContentSkeleton /></div>;
+}
+
+export function ReviewCandidatesSkeleton() {
+  return <div className="review-candidates">{[0, 1, 2].map((index) => <div className="review-candidate" key={index}><span className="skeleton-symbol skeleton-shimmer" /><div><h3><Text>题目条件、问题和需要复习的内容</Text></h3><span><Text>学科 · 知识点</Text></span><div className="review-candidate-rating"><Text>☆☆☆☆☆</Text></div></div><span className="status-badge"><i className="skeleton-text skeleton-shimmer">未复习</i></span></div>)}</div>;
+}
+
+export function ReviewPageSkeleton() {
+  return <><SkeletonPageHeader title="开始复习" /><div className="review-selection-layout"><section className="library-panel"><div className="panel-title selection-heading"><span className="panel-title-icon"><span className="skeleton-symbol skeleton-shimmer" /></span><div><h2><Text>选择今天的练习</Text></h2><p><Text>仅已归档的错题可以参与复习。</Text></p></div></div><div className="filter-bar review-filters has-rating-filter">{['全部学科', '全部知识点', '全部掌握程度', '全部星级'].map((label) => <div className="custom-select" key={label}><div className="custom-select-trigger"><Text>{label}</Text><span className="skeleton-symbol skeleton-shimmer" /></div></div>)}</div><div className="selection-toolbar"><label><span className="skeleton-symbol skeleton-shimmer" /><Text>全选当前结果</Text></label><span><Text>共 0 道 · 已选 0 道</Text></span></div><ReviewCandidatesSkeleton /></section><aside className="review-preparation panel"><span className="prep-icon"><span className="skeleton-symbol skeleton-shimmer" style={{ width: 29, height: 29 }} /></span><h2><Text>今天的复习计划</Text></h2><div className="prep-selected"><span><Text>本次已选择</Text></span><strong><Text>0</Text><small><Text>道错题</Text></small></strong></div><div className="prep-steps">{['独立完成题目', '查看答案与分析', '记录本次掌握程度'].map((label, index) => <span key={label}><i>{index + 1}</i><Text>{label}</Text></span>)}</div><Button>开始复习</Button><small className="prep-hint"><Text>复习记录会同步更新掌握程度。</Text></small></aside></div></>;
+}
