@@ -2289,7 +2289,7 @@ input:focus, textarea:focus, select:focus { outline: 2px solid rgba(23,100,72,.1
 .editor-navigation .editor-batch-entry { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 6px 10px; white-space: nowrap; }
 .editor-workbench-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
 .editor-workbench-header > div:first-child { display: flex; align-items: baseline; flex-wrap: wrap; gap: 12px; }
-.editor-workbench-header h1 { font-family: 'Noto Serif SC', 'Songti SC', 'SimSun', serif; font-size: 28px; font-weight: 600; line-height: 1.4; }
+.editor-workbench-header h1 { font-family: 'Noto Serif SC', 'Songti SC', 'SimSun', serif; font-size: 32px; font-weight: 600; line-height: 1.4; }
 .editor-record-id { font-size: 13px; color: var(--text-tertiary); }
 .editor-workbench-state { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; }
 .editor-mode { display: inline-flex; gap: 6px; align-items: center; padding: 5px 10px; background: var(--accent-soft); color: var(--warning); font-size: 13px; border-radius: 4px; white-space: nowrap; }
@@ -2384,7 +2384,7 @@ input:focus, textarea:focus, select:focus { outline: 2px solid rgba(23,100,72,.1
   .editor-navigation .back-link { font-size: 14px; }
   .editor-navigation .editor-batch-entry { min-height: 40px; padding: 6px 8px; font-size: 13px; }
   .editor-workbench-header > div:first-child { flex-direction: column; gap: 4px; }
-  .editor-workbench-header h1 { font-size: 24px; }
+  .editor-workbench-header h1 { font-size: 28px; }
   .editor-workbench-state { gap: 6px; }
   .editor-mode { padding: 5px 8px; font-size: 12px; }
   .editor-mobile-tabs { display: block; margin-bottom: 18px; }
