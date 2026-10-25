@@ -165,6 +165,36 @@ async function runSearchSmoke({ alice, bob, admin }) {
             assert.ok(boundarySegments.some((segment) => segment.text === '…'), 'Long excerpts still indicate omitted context');
         }
 
+        // Prefer the strongest passage, even after repeated or approximate early hits.
+        const excerptCases = [
+            {
+                question: `${'FocusAlpha '.repeat(20)}${'背景材料。'.repeat(35)}最终条件：FocusAlpha FocusBeta。`,
+                keyword: 'FocusAlpha FocusBeta', expected: /FocusAlpha FocusBeta/, marker: '最终条件'
+            },
+            {
+                question: `ClusterAlpha ${'铺垫。'.repeat(15)} ClusterBeta ${'背景材料。'.repeat(35)}集中条件：ClusterAlpha ClusterBeta。`,
+                keyword: 'ClusterAlpha ClusterBeta', expected: /ClusterAlpha ClusterBeta/, marker: '集中条件'
+            },
+            {
+                question: `SearchTargat ${'背景材料。'.repeat(35)}精确条件：ＳｅａｒｃｈＴａｒｇｅｔ。`,
+                keyword: 'SearchTarget', expected: /SearchTarget/i, marker: '精确条件'
+            },
+            {
+                question: `FormulaAlpha ${'背景材料。'.repeat(35)}公式条件：$FormulaAlpha+FormulaBeta=0$。`,
+                keyword: 'FormulaAlpha FormulaBeta', expected: /FormulaAlpha\+FormulaBeta=0/, marker: '公式条件'
+            }
+        ];
+        for (const example of excerptCases) {
+            const record = await createMistake(alice, { question: example.question });
+            const results = await search(alice, example.keyword, { summary: 'true', page: '1', pageSize: '24' });
+            const result = results.items.find((item) => item.id === record.id);
+            assertHighlighted(result, 'question', example.expected);
+            const segments = result.search.snippets.find((snippet) => snippet.field === 'question').segments;
+            assert.ok(segments.map((segment) => segment.text).join('').includes(example.marker),
+                'Summary responses select the strongest late passage from the full question');
+            assert.equal(segments[0].text, '…', 'Skipped early weak matches are marked as omitted');
+        }
+
         // Writes update the shared index, including metadata changes across accounts.
         await alice('PATCH', `/mistakes/${full.id}`, { question: 'ReplacementSignal 的新题干' });
         assert.deepEqual(await search(alice, 'geometry'), [], 'Editing removes the old indexed text immediately');

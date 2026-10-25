@@ -289,12 +289,41 @@ function appendTextSegments(segments, text, start, end, ranges) {
     if (cursor < end) segments.push({ text: text.slice(cursor, end), matched: false });
 }
 
-function snippetSegments({ text, math }, matchedTerms) {
+function bestSnippetRange(ranges) {
+    let best;
+    for (let left = 0; left < ranges.length; left += 1) {
+        const queries = new Set();
+        const exactQueries = new Set();
+        let end = ranges[left].end;
+        for (let right = left; right < ranges.length; right += 1) {
+            const range = ranges[right];
+            const nextEnd = Math.max(end, range.end);
+            // Reserve room for context; a single long matching token still qualifies.
+            if (right > left && nextEnd - ranges[left].start > SNIPPET_LENGTH - 24) break;
+            end = nextEnd;
+            for (const query of range.queries) queries.add(query);
+            if (range.exact) exactQueries.add(range.term);
+            // Repeated weak matches must not outweigh distinct or exact query terms.
+            const score = [queries.size, exactQueries.size,
+                [...queries].reduce((length, query) => length + query.length, 0),
+                -(end - ranges[left].start)];
+            const difference = best ? score.findIndex((value, index) => value !== best.score[index]) : -1;
+            if (!best || (difference >= 0 && score[difference] > best.score[difference])) {
+                best = { start: ranges[left].start, end, score };
+            }
+        }
+    }
+    return best;
+}
+
+function snippetSegments({ text, math }, matchedTerms, queryTerms) {
     const projection = normalizedProjection(text);
     const ranges = [];
+    const related = new Map([...matchedTerms].map((term) => [term, relatedQueryTerms(term, queryTerms)]));
     visitIndexTokens(projection.normalized, (term, start, end) => {
         if (matchedTerms.has(term)) {
-            ranges.push({ start: projection.starts[start], end: projection.ends[end - 1] });
+            ranges.push({ start: projection.starts[start], end: projection.ends[end - 1],
+                term, queries: related.get(term), exact: queryTerms.includes(term) });
         }
     });
     ranges.sort((first, second) => first.start - second.start || first.end - second.end);
@@ -305,15 +334,16 @@ function snippetSegments({ text, math }, matchedTerms) {
         else merged.push({ ...range });
     }
     if (!merged.length) return [];
+    const best = bestSnippetRange(ranges);
 
     const characters = [...text];
     const offsets = [0];
     for (const character of characters) offsets.push(offsets[offsets.length - 1] + character.length);
-    let hit = offsets.findIndex((offset) => offset >= merged[0].start);
+    let hit = offsets.findIndex((offset) => offset >= best.start);
     if (hit < 0) hit = 0;
-    const startCharacter = Math.max(0, hit - 35);
+    const startCharacter = Math.max(0, hit - 12);
     let start = offsets[startCharacter];
-    let end = offsets[Math.min(characters.length, startCharacter + SNIPPET_LENGTH)];
+    let end = Math.max(best.end, offsets[Math.min(characters.length, startCharacter + SNIPPET_LENGTH)]);
     // A formula is an indivisible excerpt, even when it crosses the context window.
     for (const formula of math) {
         if (formula.start < start && formula.end > start) start = formula.start;
@@ -359,7 +389,7 @@ function searchMetadata(row, result, terms, directory) {
             field: entry.field,
             segments: snippetSegments(BODY_FIELDS.includes(entry.field)
                 ? markdownContent(row[entry.field])
-                : { text: fieldText(row, entry.field, directory), math: [] }, entry.terms)
+                : { text: fieldText(row, entry.field, directory), math: [] }, entry.terms, terms)
         }))
         .filter((snippet) => snippet.segments.length);
     return { matchedTermCount: new Set(result.queryTerms).size, totalTermCount: terms.length, snippets };
