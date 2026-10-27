@@ -117,7 +117,7 @@ async function mobileChecks(context, base) {
     fs.mkdirSync(path.resolve(__dirname, '../docs/screenshots'), { recursive: true });
     await page.screenshot({ path: path.resolve(__dirname, '../docs/screenshots/toast-record-mobile.png') });
     await drawer.locator('.record-view-actions').getByRole('link', { name: '编辑错题', exact: true }).click();
-    await drawer.locator('.question-editor').fill('抽屉保留：已在抽屉保存的新题干');
+    await drawer.locator('.question-editor:not(:disabled)').fill('抽屉保留：已在抽屉保存的新题干');
     await drawer.getByRole('button', { name: '保存操作', exact: true }).click();
     await drawer.getByRole('button', { name: '保存修改', exact: true }).click();
     await drawer.waitFor({ state: 'detached' });
@@ -140,7 +140,7 @@ async function mobileChecks(context, base) {
     });
     await page.evaluate((id) => window.dispatchEvent(new CustomEvent('mistakes:open-toast-record', { detail: { path: `/mistakes/${id}/edit` } })), record.id);
     await drawer.locator('.editor-workbench > .loading-content[aria-busy="false"]').waitFor();
-    await drawer.locator('.question-editor').fill('抽屉保留：关闭期间完成保存的新题干');
+    await drawer.locator('.question-editor:not(:disabled)').fill('抽屉保留：关闭期间完成保存的新题干');
     await drawer.getByRole('button', { name: '保存操作', exact: true }).click();
     await drawer.getByRole('button', { name: '保存修改', exact: true }).click();
     await patchStarted;
@@ -191,28 +191,28 @@ async function mobileChecks(context, base) {
     await closeDrawer(page);
 
     await page.goto(`${base}/mistakes/#/mistakes/${record.id}/edit`);
-    await page.locator('.question-editor').fill('当前编辑器中尚未提交的题干');
-    const questionNode = await page.locator('.question-editor').elementHandle();
+    await page.locator('.question-editor:not(:disabled)').fill('当前编辑器中尚未提交的题干');
+    const questionNode = await page.locator('.question-editor:not(:disabled)').elementHandle();
     const editorHash = new URL(page.url()).hash;
     await page.evaluate((id) => window.dispatchEvent(new CustomEvent('mistakes:open-toast-record', { detail: { path: `/mistakes/${id}/edit?photo=answer` } })), record.id);
     await drawer.getByRole('tab', { name: '解答', exact: true }).waitFor();
     assert.equal(await drawer.getByRole('tab', { name: '解答', exact: true }).getAttribute('aria-selected'), 'true', 'Photo answer targets select the answer tab');
-    assert.equal(await drawer.locator('.question-editor').evaluate((element, original) => element === original, questionNode), true, 'Promotion preserves the existing textarea node');
+    assert.equal(await drawer.locator('.question-editor:not(:disabled)').evaluate((element, original) => element === original, questionNode), true, 'Promotion preserves the existing textarea node');
     assert.equal(await page.locator('.editor-workbench').count(), 1, 'Promotion creates no second editor');
     await drawer.getByRole('button', { name: '查看上传图片', exact: true }).click();
     const history = page.getByRole('dialog', { name: '之前上传的图片', exact: true });
-    await history.getByText('这道题还没有上传图片。', { exact: true }).waitFor();
+    await history.getByText(/^没有可用的来源图片。/).waitFor();
     await history.getByRole('button', { name: '关闭', exact: true }).click();
     await history.waitFor({ state: 'hidden' });
     await closeDrawer(page, true);
     assert.equal(new URL(page.url()).hash, editorHash);
-    assert.equal(await page.locator('.record-page-slot .question-editor').evaluate((element, original) => element === original, questionNode), true, 'Swipe close restores the same editor node');
-    assert.equal(await page.locator('.question-editor').inputValue(), '当前编辑器中尚未提交的题干');
+    assert.equal(await page.locator('.record-page-slot .question-editor:not(:disabled)').evaluate((element, original) => element === original, questionNode), true, 'Swipe close restores the same editor node');
+    assert.equal(await page.locator('.question-editor:not(:disabled)').inputValue(), '当前编辑器中尚未提交的题干');
 
     // An actual upload adopts a /new editor into its saved record URL before its real photo toast opens it.
     await page.goto(`${base}/mistakes/#/new`);
-    await page.locator('.question-editor').fill('新增录题会话保留题干');
-    const newNode = await page.locator('.question-editor').elementHandle();
+    await page.locator('.question-editor:not(:disabled)').fill('新增录题会话保留题干');
+    const newNode = await page.locator('.question-editor:not(:disabled)').elementHandle();
     const png = await require('sharp')({ create: { width: 80, height: 80, channels: 3, background: '#ffffff' } }).png().toBuffer();
     await page.locator('.editor-question-block input[type="file"][multiple]').setInputFiles({ name: 'toast-upload.png', mimeType: 'image/png', buffer: png });
     const crop = page.getByRole('dialog', { name: '裁剪题目图片', exact: true });
@@ -223,12 +223,12 @@ async function mobileChecks(context, base) {
     const adoptedHash = new URL(page.url()).hash;
     assert.match(adoptedHash, /^#\/mistakes\/\d+\/edit$/);
     await photoToast.click();
-    await drawer.locator('.question-editor').waitFor();
-    assert.equal(await drawer.locator('.question-editor').evaluate((element, original) => element === original, newNode), true, 'The adopted /new editor survives its real photo toast');
+    await drawer.locator('.question-editor:not(:disabled)').waitFor();
+    assert.equal(await drawer.locator('.question-editor:not(:disabled)').evaluate((element, original) => element === original, newNode), true, 'The adopted /new editor survives its real photo toast');
     assert.equal(await page.locator('.editor-workbench').count(), 1);
     await closeDrawer(page);
     assert.equal(new URL(page.url()).hash, adoptedHash);
-    assert.equal(await page.locator('.record-page-slot .question-editor').evaluate((element, original) => element === original, newNode), true);
+    assert.equal(await page.locator('.record-page-slot .question-editor:not(:disabled)').evaluate((element, original) => element === original, newNode), true);
     assert.deepEqual(errors, [], 'Mobile drawer and nested dialogs produce no browser errors');
     await page.close();
 }
@@ -243,10 +243,14 @@ async function main() {
     browser = await chromium.launch({ headless: true });
     const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
     await api(mobile, base, 'POST', '/auth/login', { username: 'toast_drawer_smoke', password: 'ToastDrawer2026!' });
+    await libraryChecks(mobile, base, 'mobile');
     await mobileChecks(mobile, base);
     await mobile.close();
     const desktop = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     await api(desktop, base, 'POST', '/auth/login', { username: 'toast_drawer_smoke', password: 'ToastDrawer2026!' });
+    await libraryChecks(desktop, base, 'desktop');
+    await burstChecks(desktop, base);
+    await printChecks(desktop, base);
     const record = await api(desktop, base, 'POST', '/mistakes', { subjectId: 'math', lifecycle: 'archived', question: '桌面 toast 保持页面跳转' });
     const page = await desktop.newPage();
     await page.goto(`${base}/mistakes/#/mistakes`);
@@ -258,6 +262,143 @@ async function main() {
     assert.equal(await page.locator('.record-view-drawer').count(), 0);
     await desktop.close();
     console.log('Toast drawer smoke passed: real mobile/desktop toast links, filter-preserving save/delete/restore/rating including late responses after close, first-click nested review, photo targets, same-editor and adopted /new node retention, nested image dialog and swipe close.');
+}
+
+async function punctuationChecks(page, selector) {
+    const result = await page.locator(selector).first().evaluate((content) => {
+        const formula = content.querySelector('.math-punctuation > .katex, .math-punctuation > .search-snippet-math');
+        if (!formula) return { error: 'Formula punctuation group missing' };
+        const tail = formula.nextElementSibling;
+        const failures = [];
+        const style = content.getAttribute('style');
+        for (let width = 100; width <= 300; width += 10) {
+            content.style.display = 'block';
+            content.style.width = `${width}px`;
+            const math = formula.getBoundingClientRect(), mark = tail.getBoundingClientRect();
+            if (mark.top >= math.bottom || mark.bottom <= math.top) failures.push(width);
+        }
+        if (style === null) content.removeAttribute('style'); else content.setAttribute('style', style);
+        return { failures };
+    });
+    assert.deepEqual(result, { failures: [] }, `${selector}: punctuation stays beside its formula across narrow line widths`);
+}
+
+async function libraryChecks(context, base, name) {
+    for (let index = 0; name === 'mobile' && index < 30; index += 1) {
+        await api(context, base, 'POST', '/mistakes', { subjectId: 'math', lifecycle: 'draft', question: `状态恢复${name}${index}，求解 $x=2$。` });
+    }
+    const page = await context.newPage();
+    if (name === 'desktop') await page.setViewportSize({ width: 1280, height: 720 });
+    await page.goto(`${base}/mistakes/#/mistakes?lifecycle=draft`);
+    await page.getByRole('textbox', { name: '搜索错题', exact: true }).fill('状态恢复mobile');
+    await page.waitForFunction(() => document.querySelector('.results-toolbar strong')?.textContent === '30');
+    if (name === 'mobile') {
+        await page.getByRole('button', { name: /^筛选错题/ }).click();
+        const filters = page.getByRole('dialog', { name: '筛选错题', exact: true });
+        await filters.getByRole('button', { name: '按学科筛选' }).click();
+        await page.getByRole('option', { name: '数学', exact: true }).click();
+        await filters.getByRole('button', { name: '应用筛选', exact: true }).click();
+        await filters.waitFor({ state: 'hidden' });
+    } else {
+        await page.getByRole('button', { name: '按学科筛选' }).click();
+        await page.getByRole('option', { name: '数学', exact: true }).click();
+    }
+    await page.getByRole('button', { name: '卡片视图' }).click();
+    await page.getByRole('button', { name: '下一页', exact: true }).click();
+    await page.waitForFunction(() => document.querySelectorAll('.mistake-row').length === 6);
+    await page.locator('.library-panel .loading-content-placeholder').waitFor({ state: 'detached' });
+    await page.evaluate(() => document.fonts.ready);
+    await punctuationChecks(page, '.search-snippet-text');
+    const link = page.locator('a.mistake-detail-link').nth(3);
+    await link.scrollIntoViewIfNeeded();
+    const scroll = await page.evaluate(() => scrollY);
+    assert.ok(scroll > 100, `The ${name} origin is below the top of the list: ${scroll}`);
+    const input = await page.getByRole('textbox', { name: '搜索错题', exact: true }).elementHandle();
+    await link.click();
+    await page.locator('.detail-document').waitFor();
+    await page.locator('.detail-page > .loading-content-placeholder').waitFor({ state: 'detached' });
+    await page.evaluate(() => document.fonts.ready);
+    await punctuationChecks(page, '.question-text');
+    await page.locator('.detail-document').evaluate((element) => element.scrollIntoView({ block: 'start', behavior: 'instant' }));
+    await page.screenshot({ path: path.resolve(__dirname, `../docs/screenshots/reading-punctuation-${name}.png`) });
+    await page.locator('.back-link').click();
+    await page.getByRole('heading', { name: '我的错题', exact: true }).waitFor();
+    assert.equal(new URL(page.url()).hash, '#/mistakes?lifecycle=draft');
+    assert.equal(await page.getByRole('textbox', { name: '搜索错题', exact: true }).evaluate((element, original) => element === original, input), true, 'Return retains the actual library controls');
+    assert.equal(await page.getByRole('textbox', { name: '搜索错题', exact: true }).inputValue(), '状态恢复mobile');
+    assert.equal(await page.getByRole('button', { name: '卡片视图' }).getAttribute('aria-pressed'), 'true');
+    assert.match(await page.locator('.library-pagination').textContent(), /第 2 \/ 2 页/);
+    assert.ok(Math.abs(await page.evaluate(() => scrollY) - scroll) < 3, 'Return restores scroll position');
+    await page.screenshot({ path: path.resolve(__dirname, `../docs/screenshots/library-return-${name}.png`) });
+    // Native browser Back follows the same restoration path.
+    await page.locator('a.mistake-detail-link').nth(3).click();
+    await page.locator('.detail-document').waitFor();
+    await page.goBack();
+    await page.getByRole('heading', { name: '我的错题', exact: true }).waitFor();
+    assert.ok(Math.abs(await page.evaluate(() => scrollY) - scroll) < 3, 'Browser Back restores scroll position');
+    assert.equal(await page.locator('.mistake-row').count(), 6);
+    await page.locator('a.mistake-detail-link').nth(3).click();
+    await page.locator('.detail-document').waitFor();
+    await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '我的错题' }).click();
+    await page.getByRole('heading', { name: '我的错题', exact: true }).waitFor();
+    assert.equal(new URL(page.url()).hash, '#/mistakes?lifecycle=draft', 'Main navigation also restores the originating tab');
+    assert.match(await page.locator('.library-pagination').textContent(), /第 2 \/ 2 页/);
+    await page.close();
+}
+
+async function burstChecks(context, base) {
+    const record = await api(context, base, 'POST', '/mistakes', { subjectId: 'math', question: '快速任务合并' });
+    const page = await context.newPage();
+    await page.goto(`${base}/mistakes/#/mistakes/${record.id}/edit`);
+    await page.locator('.question-editor:not(:disabled)').waitFor();
+    const png = await require('sharp')({ create: { width: 80, height: 80, channels: 3, background: '#ffffff' } }).png().toBuffer();
+    for (let index = 0; index < 3; index += 1) {
+        await page.locator('.editor-question-block input[type="file"][multiple]').setInputFiles({ name: `burst-${index}.png`, mimeType: 'image/png', buffer: png });
+        const crop = page.getByRole('dialog', { name: '裁剪题目图片', exact: true });
+        await crop.getByRole('button', { name: '仅保存图片', exact: true }).click();
+        await crop.waitFor({ state: 'hidden' });
+    }
+    await page.locator('#photo-uploads').getByText('3 项完成', { exact: true }).waitFor();
+    assert.equal(await page.locator('[id^="photo-upload"]').count(), 1, 'Rapid photo batches share one toast');
+    await page.locator('#photo-uploads summary').click();
+    assert.equal(await page.locator('#photo-uploads a').count(), 3, 'Every upload remains accessible');
+    const ids = [];
+    for (let index = 0; index < 12; index += 1) {
+        ids.push(app.db.prepare("INSERT INTO ai_jobs (mistake_id, user_id, type, status, input_json, fingerprint, created_at) VALUES (?, ?, 'analysis', 'queued', '{}', ?, ?)")
+            .run(record.id, userId, crypto.randomUUID(), new Date().toISOString()).lastInsertRowid);
+    }
+    await refreshJobs(page);
+    ids.forEach((id) => app.db.prepare("UPDATE ai_jobs SET status = 'succeeded', apply_status = 'applied' WHERE id = ?").run(id));
+    await refreshJobs(page);
+    await page.locator(`[id="ai-results-${userId}"]`).getByText('12 项完成', { exact: true }).waitFor();
+    assert.equal(await page.locator('[id^="ai-results-"]').count(), 1, 'A burst of AI completions shares one toast');
+    assert.ok(await page.locator('.Toastify__toast').count() <= 2, 'No per-task toast backlog');
+    await page.screenshot({ path: path.resolve(__dirname, '../docs/screenshots/activity-summary-desktop.png') });
+    await page.close();
+}
+
+async function printChecks(context, base) {
+    const record = await api(context, base, 'POST', '/mistakes', { subjectId: 'math', lifecycle: 'archived', question: '计算结果为 $x=2$。', answer: '所以 $x=2$，正确。' });
+    const page = await context.newPage();
+    await page.addInitScript((mistake) => { window.__MISTAKE_EXPORT_DATA__ = {
+        mistakes: [mistake], subjects: [{ id: 'math', name: '数学' }], knowledgePoints: [], date: '2026-10-27',
+        options: { title: '标点排版', version: 'complete', includeNotes: true, fontSize: 12, layout: 'continuous', practiceSpace: 60, answerPlacement: 'inline' },
+    }; }, record);
+    await page.goto(`${base}/mistakes/export.html`);
+    await page.waitForFunction(() => window.__MISTAKE_EXPORT_READY__ || window.__MISTAKE_EXPORT_ERROR__);
+    assert.equal(await page.evaluate(() => window.__MISTAKE_EXPORT_ERROR__), '');
+    await punctuationChecks(page, '.export-question-text');
+    await page.screenshot({ path: path.resolve(__dirname, '../docs/screenshots/reading-punctuation-print.png') });
+    const bytes = await page.pdf({ preferCSSPageSize: true });
+    const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    const loading = getDocument({ data: new Uint8Array(bytes), useSystemFonts: false });
+    const pdf = await loading.promise;
+    const text = (await (await pdf.getPage(1)).getTextContent()).items.filter((item) => item.str?.trim());
+    const punctuation = text.find((item) => item.str.includes('。'));
+    assert.ok(punctuation, 'The generated PDF retains punctuation');
+    assert.ok(text.some((item) => item !== punctuation && item.str.includes('2') && Math.abs(item.transform[5] - punctuation.transform[5]) < 3), 'PDF formula and closing punctuation share a baseline');
+    await loading.destroy();
+    await page.close();
 }
 
 async function cleanup() {

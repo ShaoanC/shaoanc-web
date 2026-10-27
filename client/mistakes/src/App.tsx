@@ -1,4 +1,4 @@
-import { lazy, useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { toast } from 'react-toastify';
 import { ArrowRight, BookOpen, CheckCircle2, ClipboardList, DatabaseBackup, GraduationCap, LayoutGrid, LoaderCircle, LogOut, Plus, RotateCcw, Settings, ShieldCheck, Sparkles, TrendingUp } from 'lucide-react';
 import { api, json } from './api';
@@ -9,6 +9,7 @@ import { FriendlyCaptcha, type CaptchaState } from './FriendlyCaptcha';
 import { AiTasksProvider, AiTasksButton } from './AiTasks';
 import { PhotoUploadsProvider } from './PhotoUploads';
 import { RecordWorkspace } from './RecordWorkspace';
+import { isLibraryPath, LibraryLocationContext } from './LibraryLocation';
 import type { KnowledgePoint, Subject, User } from './types';
 
 const MistakesPage = lazy(() => import('./pages/MistakesPage').then((module) => ({ default: module.MistakesPage })));
@@ -127,6 +128,8 @@ export default function App() {
   // A new draft keeps its editor instance when a task link adopts the saved record URL.
   const [newEditor, setNewEditor] = useState<{ session: number; recordId: number | null }>({ session: 0, recordId: null });
   const pendingWelcome = useRef<string | null>(null);
+  const libraryLocation = useRef<{ path: string; x: number; y: number } | null>(null);
+  const libraryVisited = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -145,16 +148,30 @@ export default function App() {
         return;
       }
       const nextRoute = nextPath.split('?')[0];
+      const previousPath = new URL(event.oldURL || window.location.href).hash.slice(1) || '/mistakes';
+      if (isLibraryPath(previousPath) && !isLibraryPath(nextPath)) {
+        libraryLocation.current = { path: previousPath, x: window.scrollX, y: window.scrollY };
+      }
+      if (!isLibraryPath(nextPath) && !/^\/mistakes\/\d+(\/edit)?$/.test(nextRoute)) {
+        libraryLocation.current = null;
+      }
       setNewEditor((current) => {
         if (nextRoute === '/new') return { session: current.session + 1, recordId: null };
         if (current.recordId && nextRoute !== `/mistakes/${current.recordId}/edit`) return { ...current, recordId: null };
         return current;
       });
-      setPath(nextPath); window.scrollTo(0, 0);
+      setPath(nextPath);
+      if (!isLibraryPath(nextPath) || !libraryLocation.current) window.scrollTo(0, 0);
     };
     window.addEventListener('hashchange', onHash);
     return () => { active = false; window.removeEventListener('hashchange', onHash); };
   }, []);
+
+  useLayoutEffect(() => {
+    if (isLibraryPath(path) && libraryLocation.current) {
+      window.scrollTo(libraryLocation.current.x, libraryLocation.current.y);
+    }
+  }, [path]);
 
   const notify = useCallback((message: string, kind: 'success' | 'error' = 'success') => { toast[kind](message); }, []);
 
@@ -216,12 +233,18 @@ export default function App() {
       setUser(null);
       setSubjects([]);
       setKnowledgePoints([]);
+      libraryLocation.current = null;
+      libraryVisited.current = false;
       window.location.hash = '/mistakes';
     } catch (err) { window.dispatchEvent(new Event('mistakes:session-resumed')); notify((err as Error).message, 'error'); }
   }, [notify]);
 
   const routePath = path.split('?')[0];
   const detailMatch = routePath.match(/^\/mistakes\/(\d+)(\/edit)?$/);
+  const libraryReturnPath = detailMatch && libraryLocation.current ? libraryLocation.current.path : '/mistakes';
+  const onLibrary = isLibraryPath(path);
+  if (onLibrary) libraryVisited.current = true;
+  else if (!detailMatch) libraryVisited.current = false;
   const skeletonKind = detailMatch ? (detailMatch[2] ? 'editor-page' : 'detail') : (pageSkeletonKinds[routePath] || 'library');
   const activePath = detailMatch ? '/mistakes' : routePath === '/page-imports' ? '/new' : routePath;
   const backgroundEditorId = routePath === '/new' ? newEditor.recordId : detailMatch?.[2] ? Number(detailMatch[1]) : null;
@@ -234,10 +257,15 @@ export default function App() {
   else if (routePath === '/stats') page = <StatsPage />;
   else if (routePath === '/ai-tasks') page = <AiTasksPage />;
   else if (routePath === '/settings') page = <SettingsPage />;
-  else page = <MistakesPage />;
+  else page = onLibrary ? null : <MistakesPage />;
+
+  page = <LibraryLocationContext.Provider value={libraryLocation.current?.path || null}>
+    {libraryVisited.current && <div key="library" hidden={!onLibrary}><MistakesPage active={onLibrary} /></div>}
+    {!onLibrary && page}
+  </LibraryLocationContext.Provider>;
 
   const workspace = user ? <AppContext.Provider value={{ user, updateUser: setUser, subjects, knowledgePoints, refreshDirectory, notify, logout }}><AiTasksProvider key={user.id}><PhotoUploadsProvider><div className="app-shell">
-    <aside className="sidebar"><a className="brand" href="#/mistakes"><LogoMark /><span className="brand-text">拾题<span>把错题，学明白。</span></span></a><div className="sidebar-label">学习空间</div><SlidingNavigation value={activePath} ariaLabel="主导航" items={navItems.map(({ path: itemPath, label, icon: Icon }) => ({ id: itemPath, href: `#${itemPath}`, label: <><Icon size={19} strokeWidth={1.8} /><span>{label}</span></> }))} /><div className="sidebar-bottom"><div className="sidebar-reminder"><span className="reminder-icon"><RotateCcw size={22} /></span><strong>温故而知新，可以为师矣</strong><a href="#/review">打开复习页</a></div><div className="account"><a className="account-profile" href="#/settings"><span className="avatar">{user.avatar ? <img src={user.avatar} alt="" /> : user.username.slice(0, 1).toUpperCase()}</span><span className="account-name"><strong title={user.username}>{user.username}</strong><small>{user.role === 'admin' ? '管理员' : '我的账号'}</small></span></a><button className="icon-button" title="退出登录" aria-label="退出登录" onClick={logout}><LogOut size={17} /></button></div></div></aside>
+    <aside className="sidebar"><a className="brand" href={`#${libraryReturnPath}`}><LogoMark /><span className="brand-text">拾题<span>把错题，学明白。</span></span></a><div className="sidebar-label">学习空间</div><SlidingNavigation value={activePath} ariaLabel="主导航" items={navItems.map(({ path: itemPath, label, icon: Icon }) => ({ id: itemPath, href: `#${itemPath === '/mistakes' ? libraryReturnPath : itemPath}`, label: <><Icon size={19} strokeWidth={1.8} /><span>{label}</span></> }))} /><div className="sidebar-bottom"><div className="sidebar-reminder"><span className="reminder-icon"><RotateCcw size={22} /></span><strong>温故而知新，可以为师矣</strong><a href="#/review">打开复习页</a></div><div className="account"><a className="account-profile" href="#/settings"><span className="avatar">{user.avatar ? <img src={user.avatar} alt="" /> : user.username.slice(0, 1).toUpperCase()}</span><span className="account-name"><strong title={user.username}>{user.username}</strong><small>{user.role === 'admin' ? '管理员' : '我的账号'}</small></span></a><button className="icon-button" title="退出登录" aria-label="退出登录" onClick={logout}><LogOut size={17} /></button></div></div></aside>
     <div className="main-shell"><header className="topbar"><span className="topbar-label"><BookOpen size={15} /> 个人学习空间</span><div className="topbar-right"><AiTasksButton /><a className="workspace-state" href="/"><ArrowRight size={16} /> 返回个人主页</a><a className="topbar-avatar" href="#/settings" aria-label="账号设置">{user.avatar ? <img src={user.avatar} alt="" /> : user.username.slice(0, 1).toUpperCase()}</a></div></header><main className="main-content">{backupReadOnly && <div className="backup-readonly-banner" role="status"><DatabaseBackup size={20} /><p><strong>正在备份，暂时只读</strong><span>已输入的内容会保留，请稍后重试保存。</span></p></div>}{directoryError && <div className="inline-alert" role="alert">基础目录加载失败：{directoryError}<button onClick={refreshDirectory}>重试</button></div>}<RecordWorkspace path={path} editorId={backgroundEditorId} skeletonKind={skeletonKind}>{page}</RecordWorkspace><footer className="page-footer"><span>拾题 · © {new Date().getFullYear()} ShaoanC</span></footer></main></div>
   </div></PhotoUploadsProvider></AiTasksProvider></AppContext.Provider> : <AuthPage onLogin={(nextUser) => { setUser(nextUser); setPath('/mistakes'); window.location.hash = '/mistakes'; }} onNotify={(msg) => { pendingWelcome.current = msg; }} />;
 

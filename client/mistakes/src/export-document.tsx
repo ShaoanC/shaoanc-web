@@ -44,7 +44,9 @@ function fitWideContent(document: HTMLElement) {
   document.querySelectorAll<HTMLElement>('.markdown-content .katex, .markdown-content table').forEach((element) => {
     if (element.classList.contains('katex') && element.parentElement?.closest('.katex')) return;
     element.style.zoom = '1';
-    const available = element.closest('.markdown-content')!.clientWidth;
+    const punctuation = element.parentElement?.classList.contains('math-punctuation')
+      ? element.parentElement.querySelector('.math-punctuation-tail')?.getBoundingClientRect().width || 0 : 0;
+    const available = element.closest('.markdown-content')!.clientWidth - punctuation;
     const width = Math.max(element.scrollWidth, element.getBoundingClientRect().width);
     if (width > available && available > 0) element.style.zoom = String(available / width);
   });

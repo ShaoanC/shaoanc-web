@@ -1,7 +1,9 @@
 import { useMemo } from 'react';
 import katex from 'katex';
 import type { MistakeSearch } from './types';
+import { leadingPunctuation } from './text-layout';
 import 'katex/dist/katex.min.css';
+import './text-layout.css';
 
 const FIELD_LABELS: Record<MistakeSearch['snippets'][number]['field'], string> = {
   question: '题干',
@@ -25,7 +27,14 @@ export function SearchSummary({ search }: { search?: MistakeSearch }) {
 }
 
 export function SearchSnippetText({ snippet }: { snippet: MistakeSearch['snippets'][number] }) {
-  return <span className="search-snippet-text">{snippet.segments.map((segment, index) => <SearchSegment key={index} segment={segment} />)}</span>;
+  const segments = snippet.segments.map((segment) => ({ ...segment }));
+  return <span className="search-snippet-text">{segments.map((segment, index) => {
+    const next = segments[index + 1];
+    const punctuation = segment.type === 'math' && next && next.type !== 'math' ? next.text.match(leadingPunctuation)?.[0] : null;
+    if (!punctuation) return <SearchSegment key={index} segment={segment} />;
+    next.text = next.text.slice(punctuation.length);
+    return <span className="math-punctuation" key={index}><SearchSegment segment={segment} /><SearchSegment segment={{ ...next, text: punctuation }} /></span>;
+  })}</span>;
 }
 
 function SearchSegment({ segment }: { segment: MistakeSearch['snippets'][number]['segments'][number] }) {

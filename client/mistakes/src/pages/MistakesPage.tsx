@@ -9,6 +9,7 @@ import { MobileFiltersDrawer } from '../MobileFiltersDrawer';
 import { MistakeRow } from '../MistakeRow';
 import { MistakeExport } from '../MistakeExport';
 import { RATING_OPTIONS, StarRatingPicker } from '../StarRating';
+import { isLibraryPath } from '../LibraryLocation';
 import type { Mistake, MistakePage, Stats } from '../types';
 import '../export-selection.css';
 import '../library-pagination.css';
@@ -45,7 +46,7 @@ function currentTab(): LibraryTab {
   return query.get('trash') === '1' ? 'trash' : query.get('lifecycle') === 'draft' ? 'draft' : 'archived';
 }
 
-export function MistakesPage() {
+export function MistakesPage({ active = true }: { active?: boolean }) {
   const { notify } = useApp();
   const [mistakes, setMistakes] = useState<Mistake[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
@@ -114,7 +115,7 @@ export function MistakesPage() {
   }, [keyword]);
 
   useEffect(() => {
-    const update = () => setLifecycle(currentTab());
+    const update = () => { if (isLibraryPath(window.location.hash.slice(1))) setLifecycle(currentTab()); };
     window.addEventListener('hashchange', update);
     return () => window.removeEventListener('hashchange', update);
   }, []);
@@ -141,6 +142,12 @@ export function MistakesPage() {
   }, [filtersQuery, page, clearRatingRemovalTimers]);
   const reload = useRef(load);
   useEffect(() => { reload.current = load; void load(); }, [load]);
+  const wasActive = useRef(active);
+  useEffect(() => {
+    if (active && !wasActive.current) void reload.current(false);
+    wasActive.current = active;
+    if (!active) { setFilterOpen(false); setExportOpen(false); setAction(null); }
+  }, [active]);
   useEffect(() => {
     const updated = () => { void reload.current(false); };
     window.addEventListener('mistakes:record-view-updated', updated);

@@ -1,0 +1,16 @@
+/* Chinese closing punctuation follows the preceding character on screen and paper. */
+.markdown-content.markdown-content,
+.search-snippet-text.search-snippet-text {
+  word-break: normal;
+  line-break: strict;
+  overflow-wrap: break-word;
+}
+.math-punctuation {
+  white-space: nowrap;
+  word-break: normal;
+  overflow-wrap: normal;
+}
+.markdown-content .math-punctuation > .katex,
+.math-punctuation > .search-snippet-math {
+  max-width: calc(100% - 2em);
+}

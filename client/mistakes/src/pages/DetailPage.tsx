@@ -12,12 +12,14 @@ import { LoadingContent } from '../motion';
 import { StarRatingPicker, StarRatingDisplay } from '../StarRating';
 import { MistakeExport } from '../MistakeExport';
 import { useRecordView } from '../RecordView';
+import { useLibraryLocation } from '../LibraryLocation';
 import { useMobileLayout } from '../MobileDrawer';
 import type { Mistake, Review } from '../types';
 import '../export-selection.css';
 
 export function DetailPage({ id }: { id: number }) {
   const view = useRecordView();
+  const libraryPath = useLibraryLocation();
   const mobile = useMobileLayout();
   const { subjects, knowledgePoints, notify } = useApp();
   const { jobs } = useAiTasks();
@@ -63,7 +65,7 @@ export function DetailPage({ id }: { id: number }) {
       view?.updated(id);
       notify('错题已移入回收站，30 天内可恢复。');
       if (view) view.saved();
-      else navigate('/mistakes');
+      else navigate(libraryPath || '/mistakes');
     } catch (err) { notify((err as Error).message, 'error'); setDeleting(false); }
   }
 
@@ -74,7 +76,7 @@ export function DetailPage({ id }: { id: number }) {
       view?.updated(id);
       notify('错题及复习记录已恢复。');
       if (view) view.saved();
-      else navigate('/mistakes?trash=1');
+      else navigate(libraryPath || '/mistakes?trash=1');
     } catch (err) { notify((err as Error).message, 'error'); setRestoring(false); }
   }
 
@@ -94,7 +96,7 @@ export function DetailPage({ id }: { id: number }) {
   const subjectName = subjects.find((subject) => subject.id === mistake?.subjectId)?.name || mistake?.subjectId;
   return <LoadingContent loading={!mistake && !error} kind="detail" className="detail-page detail-reading">
     {error ? <ErrorState message={error} /> : mistake && <>
-      {!view && <a className="back-link" href={mistake.deletedAt ? '#/mistakes?trash=1' : '#/mistakes'}><ArrowLeft size={16} /> {mistake.deletedAt ? '返回回收站' : '返回我的错题'}</a>}
+      {!view && <a className="back-link" href={`#${libraryPath || (mistake.deletedAt ? '/mistakes?trash=1' : '/mistakes')}`}><ArrowLeft size={16} /> {mistake.deletedAt ? '返回回收站' : '返回我的错题'}</a>}
       <header className="detail-header detail-reading-header">
         <div className="detail-heading-copy">
           {!view && <><div className="eyebrow">浏览详情</div><h1>错题详情</h1></>}

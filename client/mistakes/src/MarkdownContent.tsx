@@ -3,11 +3,13 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import remarkBreaks from 'remark-breaks';
 import rehypeKatex from 'rehype-katex';
+import { rehypeKeepPunctuation } from './text-layout';
 import { ScrollArea } from './ScrollArea';
 import { Checkbox } from './components';
 import { MarkdownImage, MarkdownImageLink } from './MarkdownImage';
 import type { Nodes, PhrasingContent, Root } from 'mdast';
 import 'katex/dist/katex.min.css';
+import './text-layout.css';
 
 type MarkdownContentProps = {
   children: string;
@@ -96,7 +98,7 @@ export function MarkdownContent({ children, variant = 'full', className = '', em
   return <Tag className={`markdown-content markdown-content--${variant} ${className}${showEmptyText ? ' text-muted' : ''}`.trim()}>
     <ReactMarkdown
       remarkPlugins={compact ? [remarkGfm, remarkMath, remarkCompact] : [remarkGfm, remarkMath, remarkBreaks]}
-      rehypePlugins={[rehypeKatex]}
+      rehypePlugins={[rehypeKatex, rehypeKeepPunctuation]}
       components={compact ? compactComponents : imageUrls ? { ...fullComponents, img: ({ node: _node, src, ...props }) => {
         const resolved = src && imageUrls[src] ? imageUrls[src] : src;
         return <MarkdownImage key={resolved} {...props} src={resolved} />;

@@ -7,6 +7,7 @@ import { ResponsiveAiDialog } from './ResponsiveAiDialog';
 import { PageLoadBoundary } from './PageLoadBoundary';
 import { LoadingContent } from './motion';
 import { toastDestination } from './toast-navigation';
+import { useActivityToast, type ActivityNotice } from './useActivityToast';
 import type { AiApplyOptions, AiApplyResult, AiConfig, AiJob, AiJobRequest } from './ai-types';
 
 const AiTaskManager = lazy(() => import('./AiTaskManager').then((module) => ({ default: module.AiTaskManager })));
@@ -59,7 +60,7 @@ export function AiTasksProvider({ children }: { children: ReactNode }) {
   const configRequested = useRef(false);
   const revision = useRef(0);
   const mounted = useRef(true);
-  const toastId = `ai-activity-${user.id}`;
+  const report = useActivityToast(`ai-results-${user.id}`);
 
   // A mutation during polling must trigger another read, never restore an older snapshot.
   const mergeJobs = useCallback((next: AiJob[]) => {
@@ -123,9 +124,8 @@ export function AiTasksProvider({ children }: { children: ReactNode }) {
       window.removeEventListener('hashchange', route);
       window.removeEventListener('mistakes:open-ai-tasks', openFromToast);
       document.removeEventListener('visibilitychange', visibility);
-      toast.dismiss(toastId);
     };
-  }, [load, refresh, toastId]);
+  }, [load, refresh]);
   const active = jobs.filter(isActiveJob).length;
   useEffect(() => {
     if (!visible) return;
@@ -135,6 +135,7 @@ export function AiTasksProvider({ children }: { children: ReactNode }) {
   useEffect(() => { if (open) void refresh(); }, [open, refresh]);
 
   useEffect(() => {
+    const updates: ActivityNotice[] = [];
     if (previous.current) {
       for (const job of jobs) {
         const before = previous.current.get(job.id);
@@ -142,23 +143,17 @@ export function AiTasksProvider({ children }: { children: ReactNode }) {
         if (job.status === 'succeeded') {
           const review = job.applyStatus !== 'applied';
           const path = review ? `/mistakes/${job.mistakeId}/edit?aiJob=${job.id}` : `/mistakes/${job.mistakeId}`;
-          toast.success(<a className="ai-toast-link" href={`#${path}`}><span>记录 #{job.mistakeId} {aiJobLabel(job)}完成{review ? '，待校对。' : '，已填入。'}</span><small>{review ? '点击校对并填入' : '点击查看错题'}</small></a>, { autoClose: 8000, ...toastDestination(path) });
+          updates.push({ id: String(job.id), path, status: 'completed', message: `记录 #${job.mistakeId} ${aiJobLabel(job)}完成${review ? '，待校对。' : '，已填入。'}` });
         }
         if (job.status === 'failed') {
           const path = `/ai-tasks?job=${job.id}`;
-          toast.error(<a className="ai-toast-link" href={`#${path}`}><span>记录 #{job.mistakeId} {aiJobLabel(job)}失败。</span><small>点击查看原因并重试</small></a>, toastDestination(path));
+          updates.push({ id: String(job.id), path, status: 'failed', message: `记录 #${job.mistakeId} ${aiJobLabel(job)}失败，点击查看原因并重试。` });
         }
       }
     }
     previous.current = new Map(jobs.map((job) => [job.id, job.status]));
-  }, [jobs]);
-  useEffect(() => {
-    if (!active || open || onTasksPage) { toast.dismiss(toastId); return; }
-    const content = <a className="ai-toast-link" href="#/ai-tasks"><span>{active} 项 AI 操作正在处理</span><small>点击查看任务</small></a>;
-    const options = { type: 'info' as const, autoClose: false as const, ...toastDestination('/ai-tasks') };
-    if (toast.isActive(toastId)) toast.update(toastId, { render: content, ...options });
-    else toast(content, { toastId, ...options });
-  }, [active, open, onTasksPage, toastId]);
+    if (!open && !onTasksPage) report(updates);
+  }, [jobs, report, open, onTasksPage]);
 
   const createJob = useCallback(async (request: AiJobRequest) => {
     try { const job = await api<AiJob>('/ai/jobs', json(request)); mergeJobs([job]); return job; }
