@@ -133,6 +133,8 @@ export default function App() {
 
   useEffect(() => {
     let active = true;
+    const previousScrollRestoration = window.history.scrollRestoration;
+    window.history.scrollRestoration = 'manual';
     const openingRoute = (window.location.hash.slice(1) || '/mistakes').split('?')[0];
     api<{ user: User | null }>('/auth/me').then((result) => {
       if (!active) return;
@@ -161,16 +163,19 @@ export default function App() {
         return current;
       });
       setPath(nextPath);
-      if (!isLibraryPath(nextPath) || !libraryLocation.current) window.scrollTo(0, 0);
     };
     window.addEventListener('hashchange', onHash);
-    return () => { active = false; window.removeEventListener('hashchange', onHash); };
+    return () => {
+      active = false;
+      window.removeEventListener('hashchange', onHash);
+      window.history.scrollRestoration = previousScrollRestoration;
+    };
   }, []);
 
   useLayoutEffect(() => {
-    if (isLibraryPath(path) && libraryLocation.current) {
-      window.scrollTo(libraryLocation.current.x, libraryLocation.current.y);
-    }
+    // Reset only after the old page is hidden, so its layout cannot move the new page.
+    const position = isLibraryPath(path) ? libraryLocation.current : null;
+    window.scrollTo({ left: position?.x || 0, top: position?.y || 0, behavior: 'instant' });
   }, [path]);
 
   const notify = useCallback((message: string, kind: 'success' | 'error' = 'success') => { toast[kind](message); }, []);

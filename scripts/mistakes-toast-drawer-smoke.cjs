@@ -244,11 +244,16 @@ async function main() {
     const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
     await api(mobile, base, 'POST', '/auth/login', { username: 'toast_drawer_smoke', password: 'ToastDrawer2026!' });
     await libraryChecks(mobile, base, 'mobile');
-    await mobileChecks(mobile, base);
+    if (!process.argv.includes('--navigation-only')) await mobileChecks(mobile, base);
     await mobile.close();
     const desktop = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     await api(desktop, base, 'POST', '/auth/login', { username: 'toast_drawer_smoke', password: 'ToastDrawer2026!' });
     await libraryChecks(desktop, base, 'desktop');
+    if (process.argv.includes('--navigation-only')) {
+        await desktop.close();
+        console.log('Navigation smoke passed: mobile/desktop detail opens at the top and returns to the original library state and scroll position.');
+        return;
+    }
     await burstChecks(desktop, base);
     await printChecks(desktop, base);
     const record = await api(desktop, base, 'POST', '/mistakes', { subjectId: 'math', lifecycle: 'archived', question: '桌面 toast 保持页面跳转' });
@@ -318,6 +323,7 @@ async function libraryChecks(context, base, name) {
     await page.locator('.detail-document').waitFor();
     await page.locator('.detail-page > .loading-content-placeholder').waitFor({ state: 'detached' });
     await page.evaluate(() => document.fonts.ready);
+    assert.ok(await page.evaluate(() => scrollY) < 3, `${name}: detail opens at the top after leaving a scrolled library`);
     await punctuationChecks(page, '.question-text');
     await page.locator('.detail-document').evaluate((element) => element.scrollIntoView({ block: 'start', behavior: 'instant' }));
     await page.screenshot({ path: path.resolve(__dirname, `../docs/screenshots/reading-punctuation-${name}.png`) });
@@ -333,10 +339,21 @@ async function libraryChecks(context, base, name) {
     // Native browser Back follows the same restoration path.
     await page.locator('a.mistake-detail-link').nth(3).click();
     await page.locator('.detail-document').waitFor();
+    await page.locator('.detail-page > .loading-content-placeholder').waitFor({ state: 'detached' });
+    assert.ok(await page.evaluate(() => scrollY) < 3, `${name}: reopening detail also starts at the top`);
+    await page.locator('.detail-reading-footer').scrollIntoViewIfNeeded();
+    assert.ok(await page.evaluate(() => scrollY) > 100, 'Leave a scrolled detail entry in browser history');
     await page.goBack();
     await page.getByRole('heading', { name: '我的错题', exact: true }).waitFor();
     assert.ok(Math.abs(await page.evaluate(() => scrollY) - scroll) < 3, 'Browser Back restores scroll position');
     assert.equal(await page.locator('.mistake-row').count(), 6);
+    await page.goForward();
+    await page.locator('.detail-document').waitFor();
+    await page.locator('.detail-page > .loading-content-placeholder').waitFor({ state: 'detached' });
+    assert.ok(await page.evaluate(() => scrollY) < 3, `${name}: browser history does not overwrite the detail scroll reset`);
+    await page.goBack();
+    await page.getByRole('heading', { name: '我的错题', exact: true }).waitFor();
+    assert.ok(Math.abs(await page.evaluate(() => scrollY) - scroll) < 3, 'Back still restores the saved library position');
     await page.locator('a.mistake-detail-link').nth(3).click();
     await page.locator('.detail-document').waitFor();
     await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '我的错题' }).click();
