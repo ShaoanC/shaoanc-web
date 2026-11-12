@@ -153,12 +153,12 @@ export function MistakesPage({ active = true }: { active?: boolean }) {
     window.addEventListener('mistakes:record-view-updated', updated);
     return () => window.removeEventListener('mistakes:record-view-updated', updated);
   }, []);
+  useEffect(() => { setSelectionMode(false); }, [lifecycle]);
   useEffect(() => { setAction(null); }, [lifecycle, subjectId, knowledgePointId, status, rating, keyword, view]);
   useEffect(() => {
     setSelectedIds([]);
     setArchiveError('');
     setExportOpen(false);
-    if (lifecycle === 'trash') setSelectionMode(false);
   }, [lifecycle, subjectId, knowledgePointId, status, rating, keyword, page]);
 
   useEffect(() => {
@@ -316,11 +316,11 @@ export function MistakesPage({ active = true }: { active?: boolean }) {
         <label className="search-input"><Search size={18} /><input aria-label="搜索错题" placeholder={mobile ? '搜索错题' : '搜索错题内容、学科或知识点'} value={keyword} onChange={(event) => setKeyword(event.target.value)} />{keyword && <button className="icon-button" aria-label="清除搜索" onClick={() => setKeyword('')}><X size={15} /></button>}</label>
         {mobile ? <button ref={filterTrigger} type="button" className="library-filter-trigger" data-active={filterCount > 0} aria-haspopup="dialog" aria-expanded={filterOpen} aria-label={`筛选错题${filterCount ? `，已选 ${filterCount} 项条件` : ''}`} onClick={openFilters}><SlidersHorizontal size={17} /><span>筛选</span>{filterCount > 0 && <span className="library-filter-count">{filterCount}</span>}</button> : <LibraryFilterFields filters={appliedFilters} onChange={updateFilters} />}
       </div>
-      <div className="results-toolbar"><span><SlidersHorizontal size={14} /> {searching ? '搜索结果' : hasFilters ? '筛选结果' : trashed ? '暂存的错题' : lifecycle === 'draft' ? '继续完善你的草稿' : '你的学习积累'}<strong>{loading ? '…' : total}</strong> 道{hasFilters && <button className="reset-filter" onClick={clearFilters}>清除筛选</button>}</span><div className="library-toolbar-actions">{!trashed && !selectionMode && <button className="library-select-trigger" disabled={exportDisabled} onClick={startSelection}><ListChecks size={16} />选择题目</button>}<div className="view-switch" aria-label="展示方式"><button className={view === 'list' ? 'active' : ''} onClick={() => setView('list')} aria-label="列表视图" aria-pressed={view === 'list'}><List size={17} /></button><button className={view === 'grid' ? 'active' : ''} onClick={() => setView('grid')} aria-label="卡片视图" aria-pressed={view === 'grid'}><LayoutGrid size={16} /></button></div></div></div>
+      <div className="results-toolbar"><span><SlidersHorizontal size={14} /> {searching ? '搜索结果' : hasFilters ? '筛选结果' : trashed ? '暂存的错题' : lifecycle === 'draft' ? '继续完善你的草稿' : '你的学习积累'}<strong>{loading ? '…' : total}</strong> 道{hasFilters && <button className="reset-filter" onClick={clearFilters}>清除筛选</button>}</span><div className="library-toolbar-actions">{!trashed && <button className="library-select-trigger" disabled={selectionMode ? Boolean(busy) : exportDisabled} onClick={selectionMode ? exitSelection : startSelection}><ListChecks size={16} />{selectionMode ? '退出选择' : '选择题目'}</button>}<div className="view-switch" aria-label="展示方式"><button className={view === 'list' ? 'active' : ''} onClick={() => setView('list')} aria-label="列表视图" aria-pressed={view === 'list'}><List size={17} /></button><button className={view === 'grid' ? 'active' : ''} onClick={() => setView('grid')} aria-label="卡片视图" aria-pressed={view === 'grid'}><LayoutGrid size={16} /></button></div></div></div>
       {!trashed && selectionMode && <div className="library-selection-toolbar" aria-label="批量选择题目">
         <label className="library-select-all"><Checkbox checked={allSelected} indeterminate={selectedIds.length > 0 && !allSelected} disabled={exportDisabled} onChange={() => setSelectedIds(allSelected ? [] : mistakes.map((mistake) => mistake.id))} /><span>全选本页</span></label>
         <span className="library-selection-count" role="status">已选 <strong>{selectedIds.length}</strong> 道</span>
-        <div className="library-selection-actions"><button disabled={!selectedIds.length || Boolean(busy)} onClick={() => setSelectedIds([])}>清空</button><button disabled={Boolean(busy)} onClick={exitSelection}>退出选择</button></div>
+        <div className="library-selection-actions"><button disabled={!selectedIds.length || Boolean(busy)} onClick={() => setSelectedIds([])}>清空</button></div>
         {lifecycle === 'draft' && <div className="library-archive-dock">
           {mobile && <span>已选 <strong>{selectedIds.length}</strong> 道</span>}
           <button className="button primary" disabled={exportDisabled || !selectedIds.length} onClick={() => void archiveSelected()}>

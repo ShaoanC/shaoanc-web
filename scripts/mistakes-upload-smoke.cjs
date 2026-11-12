@@ -146,7 +146,7 @@ async function run() {
         await waitFor(queue, (batches) => batches[0].status === 'completed');
         assert.deepEqual(resumedUploads, ['saved', 'remaining', 'remaining', 'remaining', 'remaining', 'remaining'], 'Manual retry only uploads the unfinished image');
         assert.deepEqual(resumedJobs.map((job) => job.type), ['question', 'answer']);
-        assert.deepEqual(resumedJobs.map((job) => job.recognitionPrompt), ['只包含第 3 问', undefined], 'Manual upload retry keeps the captured prompt without inheriting it for answer reuse');
+        assert.deepEqual(resumedJobs.map((job) => job.recognitionPrompt), ['只包含第 3 问', '只包含第 3 问'], 'Deferred answer reuse and upload retries inherit the original question prompt snapshot');
         assert.ok(resumedJobs.every((job) => job.imageIds.join(',') === '201,202'));
         assert.equal(new Set(resumedSignals).size, 5, 'Automatic and manual retries each get a fresh request signal');
         assert.equal(resumedSignals.at(-1).aborted, false, 'Manual retry succeeds without reusing an aborted signal');

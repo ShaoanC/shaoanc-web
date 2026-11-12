@@ -61,6 +61,9 @@ async function run() {
                 assert.equal(req.headers['x-goog-api-key'], 'general-secret');
                 const prompt = body.systemInstruction.parts[0].text;
                 assert.ok(prompt.includes('蓝笔最终正确答案'));
+                assert.ok(prompt.includes('没有蓝笔订正的文字，也没有打叉'));
+                assert.ok(prompt.includes('黑笔写的答案'));
+                assert.ok(!prompt.includes('排除被划掉的旧答案、黑笔作答'));
                 const target = JSON.parse(body.contents[0].parts.find((part) => part.text?.includes('targetLabel')).text);
                 const images = body.contents[0].parts.filter((part) => part.inlineData);
                 assert.equal(images.length, 2, 'One call includes the crop and full-page context');

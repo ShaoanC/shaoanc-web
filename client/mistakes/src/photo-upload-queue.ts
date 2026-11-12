@@ -95,7 +95,7 @@ export class PhotoUploadQueue {
     const batch = this.batches.get(batchId);
     if (!batch || batch.view.purpose !== 'question' || batch.view.reuseRequested) return false;
     batch.reuseInput = copyInput(input);
-    batch.reuseRecognitionPrompt = recognitionPrompt?.trim() || undefined;
+    batch.reuseRecognitionPrompt = recognitionPrompt?.trim() || batch.recognitionPrompt;
     this.update(batch, { reuseRequested: true, reuseStatus: 'waiting' });
     // A failed upload stays available for manual retry; the answer intent is retained.
     if (batch.view.imageIds.length === batch.view.total) void this.run(batch);

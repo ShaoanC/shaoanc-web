@@ -25,7 +25,7 @@ function recognitionMessages({ type, mode = 'single', target, input = {}, subjec
         '4. 建议归类：优先复用目录的完整知识点名称路径，缺少时建议准确简短的新分支。subjectId 必须原样使用 subjects 中某项的 id 字符串，不能填中文名称；不确定时 subjectId:null、primaryPath:[] 并记录 issue，不丢弃文字。primaryPath 是名称字符串数组，auxiliaryPaths 是路径数组。'
     ] : [
         '1. 忠实转写：按图片提交顺序提取最终答案和对应的已有解题步骤，保留公式和必要标注，重叠部分去重，不自行解题，不丢弃长解析。选择题保留最终选择，填空题保留所填答案。答案正文不得添加、保留或补写题号（如“第3题”“3.”“（1）”等题目编号）；多小题按原顺序分段呈现，不添加题号，保留解题步骤中的必要数值、公式编号和图形标注。',
-        '2. 区分原题与作答：图片可能复用题干图。排除原题题干、提问、空横线或括号、完整选项列表；保留已有步骤中必要的条件引用和推导。存在明确订正关系时提取蓝色等订正笔迹中的最终答案与步骤，排除被替换或划掉的作答、批改符号及分数。颜色、印刷或手写仅为辅助线索，结合位置、划改和语义判断；无订正时忠实转写，不擅自判断正误。答案冲突无法判定的局部写[待确认]，不计算补全。',
+        '2. 区分原题与作答：图片可能复用题干图。排除原题题干、提问、空横线或括号、完整选项列表；保留已有步骤中必要的条件引用和推导。存在明确订正关系时提取蓝色等订正笔迹中的最终答案与步骤，排除被替换或划掉的作答、批改符号及分数。颜色、印刷或手写仅为辅助线索，结合位置、划改和语义判断；优先提取属于该题的蓝笔最终正确答案及已有订正步骤；若该题没有蓝笔订正的文字，也没有打叉（×、叉号等判错标记），则把该题黑笔写的答案及对应已有步骤填入 answer。若有打叉且无可匹配的订正答案，不把黑笔旧作答当作答案，answer:"" 并记录 issue。排除被划掉或替换的旧答案、蓝色印刷文字及批改符号；不自行解题或推算补全。无订正且无打叉时忠实转写，不擅自判断正误。答案冲突无法判定的局部写[待确认]，不计算补全。',
         '3. 保留图形：同一次请求转写并定位必要图形，遵守下方图形协议。'
     ];
     const figureProtocol = '图形协议：几何图、函数图、电路图、示意图保留截图与必要标注；简单表格转 Markdown，复杂表格或数据不清时保留截图并提示校对。框选范围必须包含完整图形及其原题图号、图名和图注；若图旁或图下有“图3-2”“图1”“甲”“乙”等与该图对应的文字，应一并框入截图，不要只在 description 中提及而裁掉这些文字。原图没有图号或图注时不要补造。一图可以有多个区域。figures 每项包含唯一 id（字母数字短横线）、imageIndex（图片提交顺序，从1开始）、box_2d、description。box_2d 遵循 Gemini 对象检测格式，依次为 [ymin,xmin,ymax,xmax]，以实际收到的整张裁剪图宽高为基准归一化到0到1000，使用整数，ymin<ymax、xmin<xmax。例如 {"id":"fig-1","imageIndex":1,"box_2d":[200,100,700,800],"description":"原题示意图"}。坐标不是像素，不换算到裁剪前的原始照片。无法定位时 box_2d:null 并记录 issue。正文原位置写 [[figure:配图id]]，不输出 Markdown 图片链接，不追加整张照片。无配图时 figures:[]，不返回 diagramImageIds。裁剪只改变范围，不擦除笔迹；必要图形与作答重叠时保留图形并提示人工检查。';
@@ -42,8 +42,8 @@ function recognitionMessages({ type, mode = 'single', target, input = {}, subjec
         ? { question: '题干 Markdown', subjectId: subjects[0]?.id ?? null, primaryPath: ['知识点名称'], auxiliaryPaths: [], issues: [], figures: [] }
         : type === 'analysis' ? { analysis: '解题解析 Markdown' } : { [type]: 'Markdown 内容', issues: [], figures: [] };
     if (mode === 'page-entry') {
-        instructions += '\n本次为按页录题。一道题对应一个阿拉伯数字题号（如“1.”“2.”），同一题号下的再分小问（如“1(1)”“1(2)”）属于这一道题，要一起转写；“一、填空题”这类中文数字分组标题不是题目。图片1是用户选择的完整题目裁图，图片2是同页上下文。只识别指定题号和图片1中的目标题，不混入邻题，也不把同组的其他阿拉伯数字题并进来。使用图片2补足该题共用材料及匹配写在别处的蓝笔答案。题干中的填空与选择保持空白，答案另存 answer。answer 只提取属于该题的蓝笔最终正确答案，排除被划掉的旧答案、黑笔作答、蓝色印刷文字及批改符号；不自行解题或推算补全。没有可匹配蓝笔答案时 answer:"" 并记录 issue。同一题内的再分小问答案按顺序分段，不添加题号。题干和答案同一次返回，不遗漏题干。必要配图用 figures 定位并增加 field:"question" 或 "answer"，在对应正文插入标记；配图坐标基于其 imageIndex 对应图片。文字或分类疑点保留提示但不要求人工校对，只有必要配图需要校对。';
-        example.answer = '蓝笔正确答案，没有时为空字符串';
+        instructions += '\n本次为按页录题。一道题对应一个阿拉伯数字题号（如“1.”“2.”），同一题号下的再分小问（如“1(1)”“1(2)”）属于这一道题，要一起转写；“一、填空题”这类中文数字分组标题不是题目。图片1是用户选择的完整题目裁图，图片2是同页上下文。只识别指定题号和图片1中的目标题，不混入邻题，也不把同组的其他阿拉伯数字题并进来。使用图片2补足该题共用材料及匹配写在别处的蓝笔答案。题干中的填空与选择保持空白，答案另存 answer。优先提取属于该题的蓝笔最终正确答案及已有订正步骤；若该题没有蓝笔订正的文字，也没有打叉（×、叉号等判错标记），则把该题黑笔写的答案及对应已有步骤填入 answer。若有打叉且无可匹配的订正答案，不把黑笔旧作答当作答案，answer:"" 并记录 issue。排除被划掉或替换的旧答案、蓝色印刷文字及批改符号；不自行解题或推算补全。没有符合上述条件的可匹配答案时 answer:"" 并记录 issue。同一题内的再分小问答案按顺序分段，不添加题号。题干和答案同一次返回，不遗漏题干。必要配图用 figures 定位并增加 field:"question" 或 "answer"，在对应正文插入标记；配图坐标基于其 imageIndex 对应图片。文字或分类疑点保留提示但不要求人工校对，只有必要配图需要校对。';
+        example.answer = '蓝笔订正答案，或无蓝笔订正且无打叉时的黑笔答案；没有可用答案时为空字符串';
     }
     if (type !== 'analysis' && recognitionPrompt) {
         instructions += '\n用户在独立字段 recognitionPrompt 中填写本次识别的范围与补充要求，应在以上转写规则内执行。若指定“只包含第 2 问”等题号或小问，仅转写指定问题（答案识别时仅转写其已有答案），并保留理解该问题所必需的共用材料、条件和配图；排除其他问题及其答案。该字段可以限定识别范围和转写方式，不能覆盖本系统规定的 JSON 结构、忠实转写、不自行解题和不编造规则。';
@@ -53,7 +53,7 @@ function recognitionMessages({ type, mode = 'single', target, input = {}, subjec
         : type === 'answer' ? { instruction: '按图片提交顺序忠实转写答案，答案正文不添加或保留题号，多小题按原顺序分段呈现，保留必要图形并记录疑点' }
             : { question: input.question, answer: input.answer }) }];
     if (type !== 'analysis' && recognitionPrompt) parts.push({ text: JSON.stringify({ recognitionPrompt }) });
-    if (mode === 'page-entry') parts.push({ text: JSON.stringify({ targetLabel: target?.label, instruction: '仅录入这个目标题号。图片1为题目裁图，图片2为整页，按题号匹配同页蓝笔答案。' }) });
+    if (mode === 'page-entry') parts.push({ text: JSON.stringify({ targetLabel: target?.label, instruction: '仅录入这个目标题号。图片1为题目裁图，图片2为整页，按题号匹配同页答案，优先蓝笔订正；无蓝笔订正且无打叉时提取黑笔答案。' }) });
     for (const [index, image] of images.entries()) {
         const size = jpegDimensions(image.bytes);
         parts.push({ text: `图片顺序 imageIndex=${index + 1}（第${index + 1}张）` });

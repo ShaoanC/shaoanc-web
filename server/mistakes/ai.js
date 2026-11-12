@@ -89,7 +89,7 @@ function normalizeResult(job, value, padFigures = false) {
         if (!result.figures.some((figure) => figure.id === marker && figure.box)) addIssue('unmatched_figure', `配图标记 ${marker} 没有有效选框，请补画或明确移除`);
     }
     if (markdownImages(combinedText).length) addIssue('unlocated_figure', '识别结果包含未定位的图片链接，请检查并改用确认后的本站配图');
-    if (pageEntry && !result.answer.trim()) addIssue('answer_missing', '未识别到可匹配的蓝笔答案，正确答案已留空');
+    if (pageEntry && !result.answer.trim()) addIssue('answer_missing', '未识别到可匹配的答案，正确答案已留空');
     result.needsReview = pageEntry
         ? Boolean(result.figures.length || /\[\[figure:/.test(combinedText) || markdownImages(combinedText).length)
         : Boolean(value.needsReview || result.issues.length || result.figures.length || incompletePattern.test(result[field]));

@@ -246,7 +246,8 @@ export function EditorPage({ id, onCreated }: { id?: number; onCreated?: (id: nu
         const message = hasEditorChanges(dataRef.current, baseline.current) ? '已保存本次提交的内容，仍有较新的修改未提交，请再次保存。' : '文字已保存，还有图片未上传，请处理后再离开。';
         setDraftNotice(message); notify(message); return;
       }
-      setDraftNotice(''); notify(lifecycle === 'draft' ? '草稿已保存。' : '错题已保存。');
+      setDraftNotice('');
+      if (lifecycle !== 'draft') notify('错题已保存。');
       if (recordView) recordView.saved();
       else navigate(`/mistakes/${item.id}`);
     }
@@ -262,7 +263,7 @@ export function EditorPage({ id, onCreated }: { id?: number; onCreated?: (id: nu
       return;
     }
     setReusingQuestionPhotos(true);
-    try { await recognize('answer', questionImageIds); }
+    try { await recognize('answer', questionImageIds, recognitionPrompts.answer.trim() || currentJobs.find((job) => job.type === 'question')?.recognitionPrompt || recognitionPrompts.question); }
     catch (err) { notify((err as Error).message, 'error'); }
     finally { setReusingQuestionPhotos(false); }
   }

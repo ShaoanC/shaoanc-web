@@ -10,7 +10,7 @@ import type { AiConfig } from './ai-types';
 
 type Profile = 'general' | 'segmentation' | 'analysis' | 'analysisFallback';
 const profiles: { id: Profile; title: string; description: string; testLabel: string }[] = [
-  { id: 'general', title: '通用识别', description: 'Gemini 原生接口，用于单题识别，以及按页录题中的题干、蓝笔答案和知识点识别。', testLabel: '测试图片识别' },
+  { id: 'general', title: '通用识别', description: 'Gemini 原生接口，用于单题识别，以及按页录题中的题干、答案和知识点识别。', testLabel: '测试图片识别' },
   { id: 'segmentation', title: '页面分题', description: '独立 Gemini 原生接口。请选择支持 Segmentation 的模型，用于按页框出每道题。', testLabel: '测试页面分题' },
   { id: 'analysis', title: '生成解析', description: 'OpenAI Chat Completions 接口，用于自动解析和手动生成解析；题目含图时，模型须支持图片输入。', testLabel: '测试生成解析' },
   { id: 'analysisFallback', title: '解析超时升级', description: '生成解析超过 90 秒或接口返回超时时，自动切换至此服务并通知用户。请配置不同且能力更强的模型；使用 OpenAI Chat Completions 接口，含图题目需要图片输入能力。关闭后保留原有重试方式。', testLabel: '测试升级模型' }

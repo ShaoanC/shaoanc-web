@@ -194,7 +194,7 @@ export function AiReview({ job, input, busy, onApply, onDismiss }: { job: AiJob;
     <h3>{pageEntry ? '按页录题' : job.type === 'question' ? '题干识别' : job.type === 'answer' ? '答案识别' : '生成解析'}结果</h3>
     <p className="ai-notice">{job.applyStatus === 'conflict' ? '内容已变化，识别结果已保留。校对后再选择是否替换。' : job.result?.needsReview ? '识别完成，待校对。请检查疑点、图形范围和插入位置。' : '结果已保留，校对后可填入。'}</p>
     <div className="ai-candidate-excerpt"><MarkdownContent>{job.result?.[job.type] || ''}</MarkdownContent></div>
-    {pageEntry && <div className="ai-candidate-excerpt"><strong>正确答案</strong><MarkdownContent>{job.result?.answer || '未识别到蓝笔答案，请补充。'}</MarkdownContent></div>}
+    {pageEntry && <div className="ai-candidate-excerpt"><strong>正确答案</strong><MarkdownContent>{job.result?.answer || '未识别到可用答案，请补充。'}</MarkdownContent></div>}
     <div className="photo-actions"><button type="button" className="button primary" disabled={busy} onClick={show}>校对并填入</button><button type="button" className="table-button" onClick={onDismiss}>暂不填入</button></div>
     <AiDialog open={open} onClose={() => { if (!locked) setOpen(false); }} title={pageEntry ? '校对题干、答案与配图' : job.type === 'question' ? '校对题干与配图' : job.type === 'answer' ? '校对答案' : '校对解析'} description="检查原题内容与图形。框选只改变截图范围，重叠笔迹可保留原样。" wide>
       <div className="ai-review-tabs" role="group" aria-label="校对视图"><button type="button" aria-pressed={mobileView === 'image'} onClick={() => setMobileView('image')}>图片</button><button type="button" aria-pressed={mobileView === 'result'} onClick={() => setMobileView('result')}>结果</button></div>

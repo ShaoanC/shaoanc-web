@@ -193,7 +193,7 @@ export function PageImportsPage() {
   }
   const disabled = uploading || Boolean(rotatingId);
   return <div className="page-imports">
-    <header className="page-import-heading"><div><a className="page-import-back" href="#/new"><ArrowLeft size={15} />单题录入</a><h1>按页批量录入</h1><p>上传整页 → 选择题目 → 自动填入草稿。蓝笔答案会一起识别。</p></div><a className="button secondary" href="#/ai-tasks">查看 AI 任务</a></header>
+    <header className="page-import-heading"><div><a className="page-import-back" href="#/new"><ArrowLeft size={15} />单题录入</a><h1>按页批量录入</h1><p>上传整页 → 选择题目 → 自动填入草稿。优先识别蓝笔订正；无订正且无打叉时识别黑笔答案。</p></div><a className="button secondary" href="#/ai-tasks">查看 AI 任务</a></header>
     <section className="page-import-upload" aria-label="添加页面图片">
       <div><h2><ImagePlus size={20} />添加页面</h2><p>每次最多 12 页，支持 JPG、PNG、WebP。先调整顺序和方向，再上传分题。</p></div>
       <input ref={album} type="file" multiple accept="image/jpeg,image/png,image/webp" hidden disabled={disabled} onChange={(event) => { add(Array.from(event.target.files || [])); event.target.value = ''; }} />
@@ -234,7 +234,7 @@ function PageRegionEditor({ page, draft, onDraft, canRecognize, onUpdate, onRetr
       const payload = regions.map(({ id, label, box, selected }) => ({ id, label, box, selected }));
       const result = await api<PageImport>(`/page-imports/${page.id}${submit ? '/import' : ''}`, json({ regions: payload }, submit ? 'POST' : 'PATCH'));
       setRegions(result.regions); setDirty(false); onDraft(); onUpdate(result);
-      if (submit) toast.success('已建立草稿，题干与蓝笔答案正在后台识别。');
+      if (submit) toast.success('已建立草稿，题干与答案正在后台识别。');
       else toast.success('题框已保存。');
     } catch (err) { toast.error((err as Error).message); }
     finally { setBusy(false); }
@@ -250,7 +250,7 @@ function PageRegionEditor({ page, draft, onDraft, canRecognize, onUpdate, onRetr
       return <div key={region.id} className={`page-region-row${activeId === region.id ? ' is-active' : ''}`} onFocus={() => setActiveId(region.id)}>
         <label className="page-region-select"><input type="checkbox" checked={region.selected || Boolean(mistakeId)} disabled={busy || linked.has(region.id)} onChange={() => toggle(region.id)} /><span>{index + 1}</span></label>
         <div className="page-region-row-content"><input className="page-region-label" value={region.label} disabled={busy || linked.has(region.id)} aria-label={`第 ${index + 1} 题题号`} onChange={(event) => update((items) => items.map((entry) => entry.id === region.id ? { ...entry, label: event.target.value } : entry))} />
-          {item && <small role="status">{item.status === 'succeeded' ? item.applyStatus === 'applied' ? '已填入草稿' : item.applyStatus === 'conflict' ? '内容已编辑，待确认' : '待配图校对' : item.status === 'preparing' ? '正在准备题目图片…' : item.status === 'failed' ? '处理失败' : item.status === 'cancelled' ? '处理已取消' : '题干与蓝笔答案识别中…'}</small>}
+          {item && <small role="status">{item.status === 'succeeded' ? item.applyStatus === 'applied' ? '已填入草稿' : item.applyStatus === 'conflict' ? '内容已编辑，待确认' : '待配图校对' : item.status === 'preparing' ? '正在准备题目图片…' : item.status === 'failed' ? '处理失败' : item.status === 'cancelled' ? '处理已取消' : '题干与答案识别中…'}</small>}
           {item?.error && <small className="form-error">{item.error}</small>}
         </div>
         <div className="page-region-row-actions">{mistakeId && <a className="button secondary" href={`#/mistakes/${mistakeId}/edit`}>打开草稿</a>}
