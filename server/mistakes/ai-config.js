@@ -7,7 +7,8 @@ const configPath = path.resolve(process.env.MISTAKES_AI_CONFIG_PATH || path.join
 const profiles = {
     general: { prefix: 'MISTAKES_AI', name: '通用识别' },
     segmentation: { prefix: 'MISTAKES_AI_SEGMENTATION', name: '页面分题' },
-    analysis: { prefix: 'MISTAKES_AI_ANALYSIS', name: '生成解析' }
+    analysis: { prefix: 'MISTAKES_AI_ANALYSIS', name: '生成解析' },
+    analysisFallback: { prefix: 'MISTAKES_AI_ANALYSIS_FALLBACK', name: '解析超时升级' }
 };
 
 function configProfile(profile = 'general') {
@@ -56,6 +57,12 @@ function saveConfig(body, profile = 'general') {
         config.baseUrl = config.baseUrl.replace(/\/+$/, '');
     }
     if (config.enabled && (!config.baseUrl || !config.model || !config.apiKey)) fail(400, '启用前请填写接口地址、模型和密钥');
+    if (profile === 'analysis' || profile === 'analysisFallback') {
+        const other = readConfig(profile === 'analysis' ? 'analysisFallback' : 'analysis');
+        if (config.enabled && other.enabled && config.baseUrl === other.baseUrl && config.model === other.model) {
+            fail(400, '解析超时升级须配置不同于生成解析的接口或模型');
+        }
+    }
     // dotenv supports quoted values; reject all quote forms so one key cannot escape its line.
     for (const value of [config.baseUrl, config.model, config.apiKey]) {
         if (/["'`]/.test(value)) fail(400, 'AI 配置不能包含引号');

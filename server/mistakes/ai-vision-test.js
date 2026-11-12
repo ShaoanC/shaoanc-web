@@ -4,8 +4,8 @@ const { requestCompletion, requestAnalysis } = require('./ai-request');
 const { parseRecognitionJson } = require('./ai-output');
 
 async function testVision(profile = 'general', userId) {
-    if (profile === 'analysis') {
-        await requestAnalysis({ input: { question: '计算 1 + 1。', answer: '2' }, context: { userId, type: 'analysis_test', imageCount: 0 } });
+    if (profile === 'analysis' || profile === 'analysisFallback') {
+        await requestAnalysis({ profile, input: { question: '计算 1 + 1。', answer: '2' }, context: { userId, type: 'analysis_test', imageCount: 0 } });
         return { message: '生成解析 API 连接测试通过。' };
     }
     const bytes = fs.readFileSync(path.join(__dirname, 'fixtures', 'vision-test.jpg'));

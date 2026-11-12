@@ -54,6 +54,8 @@ export function AiTasksProvider({ children }: { children: ReactNode }) {
   const [busyIds, setBusyIds] = useState(new Set<number>());
   const busy = useRef(new Set<number>());
   const [visible, setVisible] = useState(!document.hidden);
+  const routesLoaded = useRef(false);
+  const routeNotices = useRef(new Set<string>());
   const previous = useRef<Map<number, string> | null>(null);
   const inFlight = useRef<Promise<void> | null>(null);
   const requested = useRef(false);
@@ -154,6 +156,20 @@ export function AiTasksProvider({ children }: { children: ReactNode }) {
     previous.current = new Map(jobs.map((job) => [job.id, job.status]));
     if (!open && !onTasksPage) report(updates);
   }, [jobs, report, open, onTasksPage]);
+
+  useEffect(() => {
+    if (!loaded) return;
+    for (const job of jobs) {
+      if (!job.analysisRoute || job.mistakeDeleted) continue;
+      const key = `${job.id}:${job.analysisRoute.at}`;
+      if (routeNotices.current.has(key)) continue;
+      routeNotices.current.add(key);
+      if (!routesLoaded.current && !isActiveJob(job)) continue;
+      const path = `/ai-tasks?job=${job.id}`;
+      toast.info(<a className="ai-toast-link" href={`#${path}`}><span>记录 #{job.mistakeId} 解析响应超时，已自动切换至升级模型 {job.analysisRoute.model}。</span><small>查看任务进度</small></a>, { ...toastDestination(path), toastId: `analysis-route-${key}` });
+    }
+    routesLoaded.current = true;
+  }, [jobs, loaded]);
 
   const createJob = useCallback(async (request: AiJobRequest) => {
     try { const job = await api<AiJob>('/ai/jobs', json(request)); mergeJobs([job]); return job; }
