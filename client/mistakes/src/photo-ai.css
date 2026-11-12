@@ -260,3 +260,40 @@
   .ai-review-text { min-height: 40dvh; }
   .ai-review-footer .button { width: 100%; }
 }
+
+.ai-task-count { font-variant-numeric: tabular-nums; }
+.ai-task-count-increase { animation: ai-task-count-increase 360ms var(--motion-ease); }
+.ai-task-count-decrease { animation: ai-task-count-decrease 360ms var(--motion-ease); }
+.ai-task-count-replace { animation: ai-task-count-replace 360ms var(--motion-ease); }
+.ai-task-count-exit { animation: ai-task-count-exit 360ms var(--motion-ease) forwards; }
+@keyframes ai-task-count-increase {
+  from { opacity: .3; transform: translateY(5px) scale(.85); }
+  55% { transform: translateY(-2px) scale(1.12); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes ai-task-count-decrease {
+  from { opacity: .3; transform: translateY(-5px) scale(1.12); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes ai-task-count-replace {
+  40% { background: var(--primary-soft); color: var(--primary); transform: scale(1.18); }
+  to { transform: none; }
+}
+@keyframes ai-task-count-exit { to { opacity: 0; transform: translateY(5px) scale(.8); } }
+@media (prefers-reduced-motion: reduce) {
+  .ai-task-count { animation-name: ai-task-count-fade; animation-duration: 40ms; }
+  .ai-task-count-exit { animation-name: ai-task-count-fade-out; }
+  @keyframes ai-task-count-fade { from { opacity: .6; } to { opacity: 1; } }
+  @keyframes ai-task-count-fade-out { to { opacity: 0; } }
+}
+.nav-custom-item { display: flex; min-width: 0; }
+.nav-custom-item > .ai-tasks-trigger { width: 100%; position: relative; text-align: left; font-family: inherit; }
+.ai-tasks-trigger > .ai-task-indicators { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; }
+.ai-task-attention { width: 7px; height: 7px; border-radius: 50%; background: var(--warning); }
+@media (max-width: 1100px) {
+  .ai-tasks-trigger > .ai-task-indicators { position: absolute; top: 2px; right: 2px; margin: 0; }
+}
+@media (max-width: 640px) {
+  .ai-tasks-trigger > .ai-task-indicators { top: 1px; right: max(1px, calc(50% - 29px)); }
+}
+.ai-tasks-trigger:not(.active):not(:hover) { background: transparent; }

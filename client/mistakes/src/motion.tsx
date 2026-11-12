@@ -218,7 +218,7 @@ export function SlidingTabs({ tabs, value, onChange, ariaLabel, className = '' }
   </div>;
 }
 
-export type NavigationItem = { id: string; href: string; label: ReactNode };
+export type NavigationItem = { id: string; href: string; label: ReactNode; element?: ReactNode };
 
 export function SlidingNavigation({ items, value, ariaLabel = '主导航' }: {
   items: readonly NavigationItem[];
@@ -238,7 +238,7 @@ export function SlidingNavigation({ items, value, ariaLabel = '主导航' }: {
     let frame = 0;
     function measure() {
       if (disposed || !root) return;
-      const selected = Array.from(root.querySelectorAll<HTMLAnchorElement>('.nav-item')).find((item) => item.dataset.navId === value);
+      const selected = Array.from(root.querySelectorAll<HTMLElement>('.nav-item')).find((item) => item.dataset.navId === value);
       if (!selected) {
         setIndicator((previous) => previous.visible ? { ...previous, visible: false } : previous);
         return;
@@ -266,7 +266,7 @@ export function SlidingNavigation({ items, value, ariaLabel = '主导航' }: {
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(root);
-    root.querySelectorAll<HTMLAnchorElement>('.nav-item').forEach((item) => observer.observe(item));
+    root.querySelectorAll<HTMLElement>('.nav-item').forEach((item) => observer.observe(item));
     window.addEventListener('resize', measure);
     void document.fonts.ready.then(measure);
     return () => {
@@ -278,7 +278,7 @@ export function SlidingNavigation({ items, value, ariaLabel = '主导航' }: {
   }, [value, itemIds]);
 
   return <nav ref={container} className="navigation" aria-label={ariaLabel}>
-    {items.map((item) => <a key={item.id} href={item.href} data-nav-id={item.id} className={`nav-item${value === item.id ? ' active' : ''}`} aria-current={value === item.id ? 'page' : undefined}>{item.label}</a>)}
+    {items.map((item) => item.element ? <span className="nav-custom-item" key={item.id}>{item.element}</span> : <a key={item.id} href={item.href} data-nav-id={item.id} className={`nav-item${value === item.id ? ' active' : ''}`} aria-current={value === item.id ? 'page' : undefined}>{item.label}</a>)}
     <span className="nav-indicator" aria-hidden="true" style={{ transform: `translate(${indicator.x}px, ${indicator.y}px)`, width: indicator.width, height: indicator.height, opacity: ready && indicator.visible ? 1 : 0, ...(ready ? {} : { transition: 'none' }) }} />
   </nav>;
 }

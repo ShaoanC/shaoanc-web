@@ -32,12 +32,30 @@ interface TasksState {
 const Context = createContext<TasksState | null>(null);
 export function useAiTasks() { const value = useContext(Context); if (!value) throw new Error('AI tasks context missing'); return value; }
 
-export function AiTasksButton() {
+export function AiTasksButton({ selected = false }: { selected?: boolean }) {
   const { jobs, openTasks } = useAiTasks();
-  const active = jobs.filter(isActiveJob).length;
-  const attention = jobs.filter((job) => needsReview(job) || (!job.mistakeDeleted && job.status === 'failed')).length;
-  const count = active || attention;
-  return <button type="button" className="button ghost ai-tasks-trigger" onClick={openTasks} aria-label={`AI 任务${count ? `，${count} 项${active ? '处理中' : '待处理'}` : ''}`}><Sparkles size={17} /> AI 任务{count > 0 && <span className="count-pill">{count}</span>}</button>;
+  const active = jobs.filter(isActiveJob);
+  const attention = jobs.some((job) => needsReview(job) || (!job.mistakeDeleted && job.status === 'failed'));
+  const count = active.length;
+  const signature = active.map((job) => job.id).sort((a, b) => a - b).join(',');
+  const status = `${count ? `，${count} 项处理中` : ''}${attention ? '，有待校对或失败任务' : ''}`;
+  return <button type="button" data-nav-id="/ai-tasks" className={`nav-item ai-tasks-trigger${selected ? ' active' : ''}`} aria-current={selected ? 'page' : undefined} onClick={openTasks} aria-haspopup="dialog" aria-label={`AI 任务${status}`} title={`AI 任务${status}`}><Sparkles size={19} strokeWidth={1.8} /><span>AI 任务</span><span className="ai-task-indicators"><AiTaskCount count={count} signature={signature} />{attention && <span className="ai-task-attention" aria-hidden="true" />}</span></button>;
+}
+
+function AiTaskCount({ count, signature }: { count: number; signature: string }) {
+  const [change, setChange] = useState({ signature, count, revision: 0, motion: '', visible: count > 0 });
+  if (change.signature !== signature) {
+    setChange({ signature, count, revision: change.revision + 1,
+      motion: count === 0 ? 'exit' : count > change.count ? 'increase' : count < change.count ? 'decrease' : 'replace',
+      visible: count > 0 || change.count > 0 });
+  }
+  useEffect(() => {
+    if (change.count || !change.visible) return;
+    const timer = window.setTimeout(() => setChange((current) => ({ ...current, visible: false })), 360);
+    return () => window.clearTimeout(timer);
+  }, [change.count, change.visible, change.revision]);
+  if (!change.visible) return null;
+  return <span key={change.revision} aria-hidden="true" className={`count-pill ai-task-count${change.motion ? ` ai-task-count-${change.motion}` : ''}`}>{count}</span>;
 }
 
 export function AiTasksProvider({ children }: { children: ReactNode }) {
