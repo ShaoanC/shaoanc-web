@@ -2,6 +2,7 @@ import { api, ApiError, json } from './api';
 import type { AiInput, AiJob, ImagePurpose, MistakeImage } from './ai-types';
 
 export interface PreparedPhoto {
+  source?: { key: string; crop: { x: number; y: number; width: number; height: number }; rotation: number };
   clientId: string;
   original: File;
   crop: File;
@@ -139,6 +140,7 @@ export class PhotoUploadQueue {
           const index = batch.view.imageIds.length;
           const photo = batch.files[index];
           const image = await this.request<MistakeImage>(batch, 'uploading', `正在后台上传第 ${index + 1}/${batch.view.total} 张图片…`, 90000, (signal) => {
+            if (photo.source) return api<MistakeImage>(`/mistakes/${batch.view.mistakeId}/reuse-photo`, { ...json({ ...photo.source, purpose: batch.view.purpose, clientId: photo.clientId }), signal }, { background: true });
             const form = new FormData();
             form.append('original', photo.original, photo.originalName.replace(/\.[^.]+$/, '') + '.jpg');
             form.append('crop', photo.crop, 'crop.jpg');

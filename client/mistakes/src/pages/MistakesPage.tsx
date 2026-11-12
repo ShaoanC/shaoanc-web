@@ -265,12 +265,12 @@ export function MistakesPage({ active = true }: { active?: boolean }) {
     const archivedIds = new Set<number>();
     let failure = '';
     try {
-      for (const id of ids) {
-        try {
-          await api(`/mistakes/${id}`, json({ lifecycle: 'archived' }, 'PATCH'));
-          archivedIds.add(id);
-        } catch (err) { failure = (err as Error).message; }
-      }
+      try {
+        const result = await api<{ archivedIds: number[]; failures: { id: number; message: string }[] }>('/mistakes/archive', json({ ids }));
+        result.archivedIds.forEach((id) => archivedIds.add(id));
+        failure = [...new Set(result.failures.map((item) => item.message))].join('；');
+        setMistakes((items) => items.filter((item) => !archivedIds.has(item.id)));
+      } catch (err) { failure = (err as Error).message; }
       setSelectedIds((current) => current.filter((id) => !archivedIds.has(id)));
       if (archivedIds.size) notify(`已归档 ${archivedIds.size} 道错题。`);
       if (failure) {

@@ -7,6 +7,7 @@ const { testVision } = require('./ai-vision-test');
 const { createJob, serializeJob, ownJob, applyJob, retryJob, cancelJob } = require('./ai');
 
 module.exports = function mountAiRoutes(router, { success, ownMistake, serializeMistake, cleanupExpiredTrash }) {
+    require('./photo-library')(router, { success, ownMistake });
     require('./page-imports').mountPageImportRoutes(router, { success });
     router.get('/ai/config', (req, res) => { res.set('Cache-Control', 'no-store'); success(res, publicConfig(false, req.query.profile || 'general')); });
     router.get('/admin/ai/config', requireAdmin, (req, res) => { res.set('Cache-Control', 'no-store'); success(res, publicConfig(true, req.query.profile || 'general')); });

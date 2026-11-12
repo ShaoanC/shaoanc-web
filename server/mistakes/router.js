@@ -529,6 +529,31 @@ router.get('/mistakes/:id', (req, res) => {
     success(res, serializeMistake(ownMistake(req, true)));
 });
 
+router.post('/mistakes/archive', (req, res) => {
+    assertWritable();
+    const ids = req.body?.ids;
+    if (!Array.isArray(ids) || !ids.length || ids.length > 100 || ids.some((id) => !Number.isSafeInteger(id) || id <= 0)) fail(400, '请选择 1 至 100 道错题');
+    const result = db.transaction(() => {
+        const archivedIds = [], failures = [];
+        const read = db.prepare('SELECT * FROM mistakes WHERE id = ? AND user_id = ?');
+        const update = db.prepare("UPDATE mistakes SET lifecycle = 'archived', updated_at = ? WHERE id = ? AND user_id = ?");
+        for (const id of new Set(ids)) {
+            const row = read.get(id, req.user.id);
+            try {
+                if (!row || row.deleted_at) fail(409, '错题不存在或已删除');
+                validateMistake({ lifecycle: 'archived' }, serializeMistake(row), req.user.id);
+            } catch (error) {
+                if (!error.status || error.status >= 500) throw error;
+                failures.push({ id, message: error.message }); continue;
+            }
+            if (row.lifecycle !== 'archived') update.run(new Date().toISOString(), id, req.user.id);
+            archivedIds.push(id);
+        }
+        return { archivedIds, failures };
+    })();
+    success(res, result);
+});
+
 router.patch('/mistakes/:id', (req, res) => {
     const row = ownMistake(req);
     const existing = serializeMistake(row);

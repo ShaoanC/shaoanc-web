@@ -15,7 +15,7 @@ import type { Mistake } from './types';
 import 'react-image-crop/dist/ReactCrop.css';
 
 // file stays the untouched original; url previews it with rotation applied.
-type Entry = { key: string; clientId: string; file: File; url: string; crop: PercentCrop; rotation: number };
+type Entry = { sourceKey?: string; key: string; clientId: string; file: File; url: string; crop: PercentCrop; rotation: number };
 const fullCrop: PercentCrop = { unit: '%', x: 0, y: 0, width: 100, height: 100 };
 // The compression library's PNG helper quantizes colors; native PNG preserves the canvas pixels.
 const losslessFile = (canvas: HTMLCanvasElement, name: string) => new Promise<File>((resolve, reject) => {
@@ -48,7 +48,7 @@ export function PhotoInput({ purpose, recordId, ensureSaved, actions, aiAvailabl
   const mounted = useRef(true);
   const photo = useRef<HTMLImageElement>(null);
   const current = entries[selected];
-  const imageReady = Boolean(current && loadedUrl === current.url);
+  const imageReady = Boolean(current && loadedUrl === new URL(current.url, window.location.href).href);
   const previewRef = useCallback((image: HTMLImageElement | null) => {
     photo.current = image;
     // A cached blob can finish loading before React attaches its load handler.
@@ -82,14 +82,10 @@ export function PhotoInput({ purpose, recordId, ensureSaved, actions, aiAvailabl
     setEntries((items) => [...items, ...added]); setSelected(entries.length); setOpen(true);
   }
   async function reuse(image: UploadedPhoto) {
-    setBusy(true);
-    try {
-      const response = await fetch(image.originalUrl, { credentials: 'same-origin' });
-      if (!response.ok) throw new Error('无法读取照片，请重新选择。');
-      const blob = await response.blob();
-      if (!mounted.current) return;
-      add([new File([blob], image.originalName, { type: blob.type || 'image/jpeg', lastModified: Date.now() })]);
-    } finally { setBusy(false); }
+    if (entries.length >= 12) throw new Error('每次最多选择 12 张图片。');
+    const file = new File([], image.originalName, { type: 'image/jpeg' });
+    setEntries((items) => [...items, { key: crypto.randomUUID(), clientId: crypto.randomUUID(), sourceKey: image.key, file, url: `/api/mistakes/photo-library/${image.key}/preview`, crop: { ...fullCrop }, rotation: 0 }]);
+    setSelected(entries.length); setOpen(true);
   }
   function changeCrop(crop: PercentCrop) { setEntries((items) => items.map((entry, index) => index === selected ? { ...entry, crop, clientId: crypto.randomUUID() } : entry)); }
   async function rotate(direction: -1 | 1) {
@@ -98,9 +94,15 @@ export function PhotoInput({ purpose, recordId, ensureSaved, actions, aiAvailabl
     try {
       const rotation = quarterTurns(current.rotation + direction);
       const spin = spinPreview(direction);
-      const url = objectUrl(await rotatedPreview(current.file, rotation));
+      let file = current.file;
+      if (current.sourceKey && !file.size) {
+        const response = await fetch(`/api/mistakes/photo-library/${current.sourceKey}/preview`);
+        if (!response.ok) throw new Error('无法读取照片，请重试。');
+        file = new File([await response.blob()], file.name, { type: 'image/jpeg' });
+      }
+      const url = objectUrl(await rotatedPreview(file, rotation));
       await Promise.all([predecode(url), spin]);
-      setEntries((items) => items.map((entry) => entry.key === current.key ? { ...entry, url, rotation, crop: { ...fullCrop }, clientId: crypto.randomUUID() } : entry));
+      setEntries((items) => items.map((entry) => entry.key === current.key ? { ...entry, file, url, rotation, crop: { ...fullCrop }, clientId: crypto.randomUUID() } : entry));
       URL.revokeObjectURL(current.url); urls.current.delete(current.url);
     } catch (err) { quarterTurn.settle(); toast.error((err as Error).message); }
     finally { setBusy(false); }
@@ -156,6 +158,10 @@ export function PhotoInput({ purpose, recordId, ensureSaved, actions, aiAvailabl
       if (!mounted.current) return;
       const files: PreparedPhoto[] = [];
       for (const [index, entry] of snapshot.entries()) {
+        if (entry.sourceKey) {
+          files.push({ clientId: entry.clientId, original: entry.file, crop: entry.file, originalName: entry.file.name, source: { key: entry.sourceKey, crop: entry.crop, rotation: entry.rotation } });
+          continue;
+        }
         setStage(`正在压缩第 ${index + 1}/${snapshot.length} 张图片…`);
         // Rotate the full-size original only once, and reuse that canvas for both uploads.
         const [original, crop] = await withImage(entry.file, async (image) => {
