@@ -5,13 +5,17 @@ function countAiCall(context) {
     if (context?.userId) db.prepare('UPDATE users SET ai_call_count = ai_call_count + 1 WHERE id = ?').run(context.userId);
 }
 
+function isAiTimeout(error) {
+    return error.name === 'TimeoutError' || [408, 504].includes(error.status);
+}
+
 function aiErrorCategory(error) {
     if (error.code === 'AI_REFUSAL') return 'refusal';
     if (error.code === 'INCOMPLETE_AI_RESULT') return 'truncated';
     if (error.code === 'VISION_TEST_MISMATCH') return 'vision_mismatch';
     if (error instanceof SyntaxError || error.name === 'ZodError' || ['INVALID_AI_RESULT', 'INVALID_AI_SUBJECT'].includes(error.code)) return 'format';
     if (error.name === 'AbortError') return 'cancelled';
-    if (error.name === 'TimeoutError') return 'timeout';
+    if (isAiTimeout(error)) return 'timeout';
     if ([401, 403].includes(error.status)) return 'authentication';
     if (error.status === 429) return 'rate_limit';
     if (error.status) return `http_${error.status}`;
@@ -89,8 +93,8 @@ async function requestCompletion({ messages, responseFormat, signal, context, in
     }
 }
 
-async function requestAnalysis({ input = {}, images = [], signal, context, onMetrics }) {
-    const config = requireAiConfig('analysis');
+async function requestAnalysis({ input = {}, images = [], signal, context, onMetrics, profile = 'analysis' }) {
+    const config = requireAiConfig(profile);
     const endpoint = `${config.baseUrl.replace(/\/+$/, '')}/chat/completions`;
     const content = [{ type: 'text', text: JSON.stringify({ question: input.question || '', answer: input.answer || '' }) }];
     for (const [index, image] of images.entries()) {
@@ -100,8 +104,10 @@ async function requestAnalysis({ input = {}, images = [], signal, context, onMet
     const started = Date.now();
     let response;
     let category = null;
+    const timeout = AbortSignal.timeout(90000);
+    const requestSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
     try {
-        const timeout = AbortSignal.timeout(90000);
+        requestSignal.throwIfAborted();
         countAiCall(context);
         const httpResponse = await fetch(endpoint, {
             method: 'POST',
@@ -121,7 +127,7 @@ async function requestAnalysis({ input = {}, images = [], signal, context, onMet
                 ].join('\n') },
                 { role: 'user', content }
             ] }),
-            signal: signal ? AbortSignal.any([signal, timeout]) : timeout
+            signal: requestSignal
         });
         if (!httpResponse.ok) {
             const body = await httpResponse.json().catch(() => null);
@@ -135,11 +141,13 @@ async function requestAnalysis({ input = {}, images = [], signal, context, onMet
         if (!analysis.trim()) throw Object.assign(new Error('Empty AI analysis'), { code: 'INVALID_AI_RESULT' });
         return { analysis: analysis.trim() };
     } catch (error) {
+        // Reading an aborted response body may throw AbortError instead of the timeout reason.
+        if (requestSignal.aborted) error = requestSignal.reason;
         category = aiErrorCategory(error);
         throw error;
     } finally {
         const usage = response?.usage;
-        const record = { event: 'mistakes.ai.request', ...context, profile: 'analysis', model: config.model,
+        const record = { event: 'mistakes.ai.request', ...context, profile, model: config.model,
             elapsedMs: Date.now() - started, status: category ? 'failed' : 'succeeded', errorCategory: category, responseFormat: 'text',
             usage: usage ? { inputTokens: usage.prompt_tokens ?? null, outputTokens: usage.completion_tokens ?? null, totalTokens: usage.total_tokens ?? null } : null };
         console.info(JSON.stringify(record));
@@ -153,4 +161,4 @@ function analysisText(content) {
     return content.filter((part) => part && (part.type === 'text' || part.type === 'output_text') && typeof part.text === 'string').map((part) => part.text).join('');
 }
 
-module.exports = { requestCompletion, requestAnalysis, aiErrorCategory };
+module.exports = { requestCompletion, requestAnalysis, aiErrorCategory, isAiTimeout };

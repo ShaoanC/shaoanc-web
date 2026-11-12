@@ -17,6 +17,7 @@
 - `node --check server/app.js`: check server JavaScript syntax.
 - `curl.exe http://127.0.0.1:3000/api/hello`: smoke-test the running API on Windows; expect a JSON response with `success: true`.
 - `npm run test:ai`: run `scripts/mistakes-ai-smoke.cjs` with a local mock AI and isolated database/uploads to check photo entry, knowledge ownership, automatic analysis, retries, recovery, conflicts and cleanup.
+- `node scripts/mistakes-ai-fallback-smoke.cjs`: check analysis timeout routing, fallback retries/cancellation, and administrator settings/toasts on mobile and desktop with mocked AI and Chromium. Set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to use a system Chromium.
 - `npm run test:pages`: check page segmentation, per-question blue-answer entry, independent API profiles, figure review, background preparation, retries/recovery and shared-source cleanup using local mock Gemini/OpenAI services and an isolated database.
 - `node scripts/mistakes-library-performance-smoke.cjs`: verify batch archiving, photo pagination/cache/ownership, server-side crop retries, source deletion, and mobile/desktop picker behavior. Set `CHROMIUM_PATH` to use system Chromium.
 - `npm run test:client`: check editor saving/draft recovery/conflicts, page upload cancellation/retry batches and review response ordering with local mocks.

@@ -32,12 +32,30 @@ interface TasksState {
 const Context = createContext<TasksState | null>(null);
 export function useAiTasks() { const value = useContext(Context); if (!value) throw new Error('AI tasks context missing'); return value; }
 
-export function AiTasksButton() {
+export function AiTasksButton({ selected = false }: { selected?: boolean }) {
   const { jobs, openTasks } = useAiTasks();
-  const active = jobs.filter(isActiveJob).length;
-  const attention = jobs.filter((job) => needsReview(job) || (!job.mistakeDeleted && job.status === 'failed')).length;
-  const count = active || attention;
-  return <button type="button" className="button ghost ai-tasks-trigger" onClick={openTasks} aria-label={`AI 任务${count ? `，${count} 项${active ? '处理中' : '待处理'}` : ''}`}><Sparkles size={17} /> AI 任务{count > 0 && <span className="count-pill">{count}</span>}</button>;
+  const active = jobs.filter(isActiveJob);
+  const attention = jobs.some((job) => needsReview(job) || (!job.mistakeDeleted && job.status === 'failed'));
+  const count = active.length;
+  const signature = active.map((job) => job.id).sort((a, b) => a - b).join(',');
+  const status = `${count ? `，${count} 项处理中` : ''}${attention ? '，有待校对或失败任务' : ''}`;
+  return <button type="button" data-nav-id="/ai-tasks" className={`nav-item ai-tasks-trigger${selected ? ' active' : ''}`} aria-current={selected ? 'page' : undefined} onClick={openTasks} aria-haspopup="dialog" aria-label={`AI 任务${status}`} title={`AI 任务${status}`}><Sparkles size={19} strokeWidth={1.8} /><span>AI 任务</span><span className="ai-task-indicators"><AiTaskCount count={count} signature={signature} />{attention && <span className="ai-task-attention" aria-hidden="true" />}</span></button>;
+}
+
+function AiTaskCount({ count, signature }: { count: number; signature: string }) {
+  const [change, setChange] = useState({ signature, count, revision: 0, motion: '', visible: count > 0 });
+  if (change.signature !== signature) {
+    setChange({ signature, count, revision: change.revision + 1,
+      motion: count === 0 ? 'exit' : count > change.count ? 'increase' : count < change.count ? 'decrease' : 'replace',
+      visible: count > 0 || change.count > 0 });
+  }
+  useEffect(() => {
+    if (change.count || !change.visible) return;
+    const timer = window.setTimeout(() => setChange((current) => ({ ...current, visible: false })), 360);
+    return () => window.clearTimeout(timer);
+  }, [change.count, change.visible, change.revision]);
+  if (!change.visible) return null;
+  return <span key={change.revision} aria-hidden="true" className={`count-pill ai-task-count${change.motion ? ` ai-task-count-${change.motion}` : ''}`}>{count}</span>;
 }
 
 export function AiTasksProvider({ children }: { children: ReactNode }) {
@@ -54,6 +72,8 @@ export function AiTasksProvider({ children }: { children: ReactNode }) {
   const [busyIds, setBusyIds] = useState(new Set<number>());
   const busy = useRef(new Set<number>());
   const [visible, setVisible] = useState(!document.hidden);
+  const routesLoaded = useRef(false);
+  const routeNotices = useRef(new Set<string>());
   const previous = useRef<Map<number, string> | null>(null);
   const inFlight = useRef<Promise<void> | null>(null);
   const requested = useRef(false);
@@ -154,6 +174,20 @@ export function AiTasksProvider({ children }: { children: ReactNode }) {
     previous.current = new Map(jobs.map((job) => [job.id, job.status]));
     if (!open && !onTasksPage) report(updates);
   }, [jobs, report, open, onTasksPage]);
+
+  useEffect(() => {
+    if (!loaded) return;
+    for (const job of jobs) {
+      if (!job.analysisRoute || job.mistakeDeleted) continue;
+      const key = `${job.id}:${job.analysisRoute.at}`;
+      if (routeNotices.current.has(key)) continue;
+      routeNotices.current.add(key);
+      if (!routesLoaded.current && !isActiveJob(job)) continue;
+      const path = `/ai-tasks?job=${job.id}`;
+      toast.info(<a className="ai-toast-link" href={`#${path}`}><span>记录 #{job.mistakeId} 解析响应超时，已自动切换至升级模型 {job.analysisRoute.model}。</span><small>查看任务进度</small></a>, { ...toastDestination(path), toastId: `analysis-route-${key}` });
+    }
+    routesLoaded.current = true;
+  }, [jobs, loaded]);
 
   const createJob = useCallback(async (request: AiJobRequest) => {
     try { const job = await api<AiJob>('/ai/jobs', json(request)); mergeJobs([job]); return job; }

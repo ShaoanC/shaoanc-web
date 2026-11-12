@@ -3,9 +3,9 @@ const fs = require('node:fs');
 const { z } = require('zod');
 const { db } = require('./database');
 const { fail } = require('./auth');
-const { publicConfig, safeAiError } = require('./ai-config');
+const { readConfig, publicConfig, safeAiError } = require('./ai-config');
 const { recognitionMessages } = require('./ai-messages');
-const { requestCompletion, requestAnalysis, aiErrorCategory } = require('./ai-request');
+const { requestCompletion, requestAnalysis, aiErrorCategory, isAiTimeout } = require('./ai-request');
 const { recognitionFormat, parseRecognitionJson, sourceImageId, figureLocation } = require('./ai-output');
 const { imagePath, questionForMistake } = require('./images');
 const { markdownImages, legacyFigureText } = require('./question-images');
@@ -107,6 +107,7 @@ function serializeJob(row) {
     const result = row.result_json ? normalizeResult(row, JSON.parse(row.result_json)) : null;
     return { id: row.id, mistakeId: row.mistake_id, type: row.type, mode: row.mode || 'single', status: row.status, applyStatus: row.apply_status,
         ...(recognitionPrompt ? { recognitionPrompt } : {}),
+        analysisRoute: JSON.parse(row.source_json || '{}').analysisRoute || null,
         input: JSON.parse(row.input_json), imageIds, result, mistakeDeleted: Boolean(row.mistake_deleted_at),
         error: row.error, attempts: row.attempts, maxAttempts: row.max_attempts, createdAt: row.created_at,
         startedAt: row.started_at, finishedAt: row.finished_at, nextAttemptAt: row.next_attempt_at };
@@ -278,7 +279,23 @@ async function requestResult(job, signal) {
         return { id: image.id, bytes: fs.readFileSync(imagePath(image[`${image.variant}_path`])) };
     });
     const context = { userId: job.user_id, jobId: job.id, type: job.type, mode: job.mode, attempt: job.attempts + 1, imageCount: images.length };
-    if (job.type === 'analysis') return normalizeResult(job, await requestAnalysis({ input, images, signal, context }));
+    if (job.type === 'analysis') {
+        const source = JSON.parse(job.source_json || '{}');
+        const profile = source.analysisRoute ? 'analysisFallback' : 'analysis';
+        try {
+            return normalizeResult(job, await requestAnalysis({ input, images, signal, context, profile }));
+        } catch (error) {
+            if (signal.aborted || profile !== 'analysis' || !isAiTimeout(error)) throw error;
+            const fallback = readConfig('analysisFallback');
+            const primary = readConfig('analysis');
+            if (!fallback.enabled || !fallback.baseUrl || !fallback.model || !fallback.apiKey
+                || (fallback.baseUrl === primary.baseUrl && fallback.model === primary.model)) throw error;
+            // Persist the route before calling the stronger model, including across retries/restarts.
+            source.analysisRoute = { at: now(), model: fallback.model };
+            db.prepare('UPDATE ai_jobs SET source_json = ? WHERE id = ?').run(JSON.stringify(source), job.id);
+            return normalizeResult(job, await requestAnalysis({ input, images, signal, context, profile: 'analysisFallback' }));
+        }
+    }
     let target;
     if (job.mode === 'page-entry') {
         target = JSON.parse(job.source_json);
@@ -469,6 +486,9 @@ function retryJob(id, userId) {
         .get(job.mistake_id, job.type, job.fingerprint, id);
     if (duplicate) fail(409, '相同内容已有任务正在处理，请等待完成');
     db.prepare("UPDATE ai_jobs SET status = 'queued', apply_status = 'pending', result_json = NULL, attempts = 0, error = NULL, started_at = NULL, finished_at = NULL, next_attempt_at = NULL WHERE id = ?").run(id);
+    const source = JSON.parse(job.source_json || '{}');
+    delete source.analysisRoute;
+    db.prepare('UPDATE ai_jobs SET source_json = ? WHERE id = ?').run(JSON.stringify(source), id);
     // A cancelled request may still be unwinding. Queue again after its cleanup.
     const resume = () => { if (scheduled.has(id)) setTimeout(resume, 50).unref(); else schedule(id); };
     resume();

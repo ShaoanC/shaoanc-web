@@ -7,11 +7,10 @@ export const figureMarker = (id: string) => `[[figure:${id}]]`;
 export function validBox(box: unknown): box is FigureBox {
   return Array.isArray(box) && box.length === 4 && box.every((n) => typeof n === 'number' && Number.isFinite(n)) && box[0] >= 0 && box[1] >= 0 && box[2] > 0 && box[3] > 0 && box[0] + box[2] <= 1.000001 && box[1] + box[3] <= 1.000001;
 }
-export async function cropFigure(url: string, box: FigureBox): Promise<Blob> {
+export async function cropFigure(source: string | HTMLImageElement, box: FigureBox): Promise<Blob> {
   if (!validBox(box)) throw new Error('配图范围无效，请重新框选。');
-  const image = new Image();
-  image.src = url;
-  await image.decode();
+  const image = typeof source === 'string' ? new Image() : source;
+  if (typeof source === 'string') { image.src = source; await image.decode(); }
   const [x, y, width, height] = box;
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, Math.round(image.naturalWidth * width));

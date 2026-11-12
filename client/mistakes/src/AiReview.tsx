@@ -1,3 +1,4 @@
+import { useFigurePreviews } from './useFigurePreviews';
 import { useEffect, useRef, useState } from 'react';
 import { Check, ImagePlus, Trash2, ZoomIn } from 'lucide-react';
 import { api } from './api';
@@ -41,7 +42,7 @@ export function AiReview({ job, input, busy, onApply, onDismiss }: { job: AiJob;
   const [mobileView, setMobileView] = useState<'image' | 'result'>('result');
   const [preview, setPreview] = useState(true);
   const [full, setFull] = useState<string | null>(null);
-  const [previews, setPreviews] = useState<Record<string, string>>({});
+  const previews = useFigurePreviews(draft.figures, images, open);
   const [error, setError] = useState('');
   const [conflict, setConflict] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -92,17 +93,6 @@ export function AiReview({ job, input, busy, onApply, onDismiss }: { job: AiJob;
     api<MistakeImage[]>(`/mistakes/${job.mistakeId}/images`).then((items) => { if (active) { setImages(items.filter((image) => job.imageIds.includes(image.id) && image.sourceAvailable !== false && image.cropUrl)); setError(''); } }).catch((err: Error) => { if (active) setError(err.message); });
     return () => { active = false; };
   }, [open, job.id, job.mistakeId]);
-  useEffect(() => {
-    if (!open || !images.length) return;
-    let active = true;
-    const urls: string[] = [];
-    const timer = window.setTimeout(() => { void Promise.all(draft.figures.filter((figure) => validBox(figure.box)).map(async (figure) => {
-      const image = images.find((image) => image.id === figure.imageId);
-      if (!image?.cropUrl || !validBox(figure.box)) return null;
-      try { const blob = await cropFigure(image.cropUrl, figure.box); const url = URL.createObjectURL(blob); urls.push(url); return [figure.id, url] as const; } catch { return null; }
-    })).then((items) => { if (active) setPreviews(Object.fromEntries(items.filter((item) => item !== null))); else urls.forEach(URL.revokeObjectURL); }); }, 120);
-    return () => { active = false; window.clearTimeout(timer); urls.forEach(URL.revokeObjectURL); };
-  }, [draft.figures, images, open]);
   function show() {
     setPreview(true);
     setMobileView('result');
