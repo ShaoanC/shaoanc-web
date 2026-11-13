@@ -240,7 +240,7 @@ async function main() {
         .run('toast_drawer_smoke', hashPassword('ToastDrawer2026!'), new Date().toISOString()).lastInsertRowid;
     server = await new Promise((resolve) => { const listener = app.listen(0, '127.0.0.1', () => resolve(listener)); });
     const base = `http://127.0.0.1:${server.address().port}`;
-    browser = await chromium.launch({ headless: true });
+    browser = await chromium.launch({ headless: true, ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}) });
     const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
     await api(mobile, base, 'POST', '/auth/login', { username: 'toast_drawer_smoke', password: 'ToastDrawer2026!' });
     await libraryChecks(mobile, base, 'mobile');
@@ -289,14 +289,14 @@ async function punctuationChecks(page, selector) {
 }
 
 async function libraryChecks(context, base, name) {
-    for (let index = 0; name === 'mobile' && index < 30; index += 1) {
+    for (let index = 0; name === 'mobile' && index < 134; index += 1) {
         await api(context, base, 'POST', '/mistakes', { subjectId: 'math', lifecycle: 'draft', question: `状态恢复${name}${index}，求解 $x=2$。` });
     }
     const page = await context.newPage();
     if (name === 'desktop') await page.setViewportSize({ width: 1280, height: 720 });
     await page.goto(`${base}/mistakes/#/mistakes?lifecycle=draft`);
     await page.getByRole('textbox', { name: '搜索错题', exact: true }).fill('状态恢复mobile');
-    await page.waitForFunction(() => document.querySelector('.results-toolbar strong')?.textContent === '30');
+    await page.waitForFunction(() => document.querySelector('.results-toolbar strong')?.textContent === '134');
     if (name === 'mobile') {
         await page.getByRole('button', { name: /^筛选错题/ }).click();
         const filters = page.getByRole('dialog', { name: '筛选错题', exact: true });
@@ -309,6 +309,19 @@ async function libraryChecks(context, base, name) {
         await page.getByRole('option', { name: '数学', exact: true }).click();
     }
     await page.getByRole('button', { name: '卡片视图' }).click();
+    for (const count of [64, 96, 128]) {
+        await page.locator('.library-load-more').evaluate((element) => element.scrollIntoView({ block: 'center', behavior: 'instant' }));
+        await page.waitForFunction((expected) => document.querySelectorAll('.mistake-row').length === expected, count);
+    }
+    await page.locator('a.mistake-detail-link').nth(95).click();
+    await page.locator('.detail-document').waitFor();
+    const expandedRefresh = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return url.pathname === '/api/mistakes/mistakes' && url.searchParams.get('page') === '4';
+    });
+    await page.locator('.back-link').click();
+    await expandedRefresh;
+    await page.waitForFunction(() => document.querySelectorAll('.mistake-row').length === 128);
     await page.getByRole('button', { name: '下一页', exact: true }).click();
     await page.waitForFunction(() => document.querySelectorAll('.mistake-row').length === 6);
     await page.locator('.library-panel .loading-content-placeholder').waitFor({ state: 'detached' });

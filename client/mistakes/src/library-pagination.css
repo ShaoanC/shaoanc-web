@@ -13,6 +13,21 @@
   white-space: nowrap;
 }
 
+.library-load-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-height: 64px;
+  padding: 14px 16px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  text-align: center;
+}
+
+.library-load-more > span { overflow-wrap: anywhere; }
+
 @media (max-width: 640px) {
   .library-pagination { gap: 12px; }
   .library-pagination .button { min-height: 44px; padding-inline: 16px; }

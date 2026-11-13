@@ -189,6 +189,32 @@ async function main() {
     assert.equal(unmarkedMistake.primaryKnowledgePointId, null, 'Archived questions may remain unmarked');
     assert.deepEqual((await alice('GET', '/mistakes?rating=0')).map((mistake) => mistake.id), [unmarkedMistake.id],
         'Zero selects only unmarked mistakes');
+    const physicsMistake = await alice('POST', '/mistakes', {
+        subjectId: 'physics', primaryKnowledgePointId: physicsPoint.id, lifecycle: 'archived',
+        question: 'Multiselect physics question', rating: 4.5
+    }, 201);
+    await alice('POST', `/mistakes/${physicsMistake.id}/reviews`, { result: 'familiar' }, 201);
+    const multiFilters = new URLSearchParams({
+        subjectId: 'math,physics', status: 'unreviewed,familiar', rating: '0,3.5,4.5',
+        knowledgePointId: `${mathPoints[0].parentId},${mathPoints[0].id},${mathPoints[1].id},${physicsPoint.id}`,
+        page: '1', pageSize: '1'
+    });
+    const multiPage = await alice('GET', `/mistakes?${multiFilters}`);
+    assert.equal(multiPage.total, 2, 'Same-category filters match any value, overlapping point trees do not duplicate rows');
+    multiFilters.set('page', '2');
+    assert.deepEqual(new Set([...multiPage.items, ...(await alice('GET', `/mistakes?${multiFilters}`)).items].map((item) => item.id)),
+        new Set([aliceMistake.id, physicsMistake.id]));
+    assert.deepEqual((await alice('GET', '/mistakes?subjectId=math,physics&status=familiar,mastered&rating=0,3.5')).map((item) => item.id), [],
+        'Different filter categories must all match');
+    assert.deepEqual(new Set((await alice('GET', '/mistakes?subjectId=math,physics&rating=0,3.5')).map((item) => item.id)),
+        new Set([aliceMistake.id, unmarkedMistake.id]), 'Zero remains an explicit multiselect rating');
+    assert.deepEqual((await alice('GET', `/mistakes?knowledgePointId=${mathPoints[1].id},${physicsPoint.id}`)).map((item) => item.id).sort((a, b) => a - b),
+        [aliceMistake.id, physicsMistake.id], 'Knowledge filters match auxiliary points and points in multiple subjects');
+    await alice('GET', '/mistakes?subjectId=math,invalid', undefined, 400);
+    await alice('GET', '/mistakes?status=unknown,invalid', undefined, 400);
+    await alice('GET', '/mistakes?rating=0,3.25', undefined, 400);
+    await alice('DELETE', `/mistakes/${physicsMistake.id}`);
+    await alice('DELETE', `/mistakes/${physicsMistake.id}/permanent`);
     await alice('DELETE', `/mistakes/${unmarkedMistake.id}`);
     await alice('DELETE', `/mistakes/${unmarkedMistake.id}/permanent`);
 

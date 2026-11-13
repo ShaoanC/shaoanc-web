@@ -45,9 +45,9 @@ export function useActivityToast(toastId: string) {
       </div>;
       const content = items.length === 1 ? link(items[0]) : <div className="ai-toast-copy">
         <span>{[active && `${active} 项处理中`, completed && `${completed} 项完成`, failed && `${failed} 项失败`].filter(Boolean).join(' · ')}</span>
-        <details className="activity-toast-details"><summary>查看 {items.length} 项记录{failed ? '并重试' : ''}</summary>
+        {items.every((item) => item.path.startsWith('/ai-tasks')) ? <a href="#/ai-tasks" onClick={(event) => { toastDestination('/ai-tasks').onClick?.(event); toast.dismiss(toastId); }}>查看 {items.length} 项任务</a> : <details className="activity-toast-details"><summary>查看 {items.length} 项记录{failed ? '并重试' : ''}</summary>
           <div>{[...items].sort((a, b) => Number(b.status === 'failed') - Number(a.status === 'failed')).map(link)}</div>
-        </details>
+        </details>}
       </div>;
       const options = {
         type: failed ? 'error' as const : active ? 'info' as const : 'success' as const,

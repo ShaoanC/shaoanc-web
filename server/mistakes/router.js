@@ -354,7 +354,15 @@ router.delete('/knowledge-points/:id', (req, res) => {
     success(res, null);
 });
 
-function listMistakes(query, userId) {
+function filterValues(value, message) {
+    if (value === undefined || value === '') return [];
+    if (typeof value !== 'string') fail(400, message);
+    const values = [...new Set(value.split(',').map((item) => item.trim()))];
+    if (values.some((item) => !item)) fail(400, message);
+    return values;
+}
+
+function listMistakes(query, userId, idsOnly = false) {
     const deleted = query.deleted === 'true';
     if (deleted) {
         cleanupExpiredTrash(Date.now(), userId);
@@ -363,8 +371,8 @@ function listMistakes(query, userId) {
     if (!['draft', 'archived', 'all'].includes(lifecycle)) {
         fail(400, '无效的错题类型');
     }
-    const status = query.status;
-    if (status && !Object.hasOwn(STATUS_NAMES, status)) {
+    const statuses = filterValues(query.status, '无效的复习状态');
+    if (statuses.some((status) => !Object.hasOwn(STATUS_NAMES, status))) {
         fail(400, '无效的复习状态');
     }
     const where = ['m.user_id = ?', deleted ? 'm.deleted_at IS NOT NULL' : 'm.deleted_at IS NULL'];
@@ -380,37 +388,41 @@ function listMistakes(query, userId) {
         where.push('m.lifecycle = ?');
         parameters.push(lifecycle);
     }
-    if (query.subjectId) {
-        if (!subjectExists(query.subjectId)) {
+    const subjectIds = filterValues(query.subjectId, '请选择有效学科');
+    if (subjectIds.length) {
+        if (subjectIds.some((id) => !subjectExists(id))) {
             fail(400, '请选择有效学科');
         }
-        where.push('m.subject_id = ?');
-        parameters.push(query.subjectId);
+        where.push(`m.subject_id IN (${subjectIds.map(() => '?').join(',')})`);
+        parameters.push(...subjectIds);
     }
-    if (query.knowledgePointId) {
-        const pointId = idNumber(query.knowledgePointId);
-        if (!db.prepare('SELECT id FROM knowledge_points WHERE id = ? AND (owner_user_id IS NULL OR owner_user_id = ?)').get(pointId, userId)) fail(400, '知识点不存在');
+    const pointIds = [...new Set(filterValues(query.knowledgePointId, '知识点不存在').map(idNumber))];
+    if (pointIds.length) {
+        const placeholders = pointIds.map(() => '?').join(',');
+        const points = db.prepare(`SELECT id FROM knowledge_points WHERE id IN (${placeholders}) AND (owner_user_id IS NULL OR owner_user_id = ?)`).all(...pointIds, userId);
+        if (points.length !== pointIds.length) fail(400, '知识点不存在');
         where.push(`EXISTS (
             WITH RECURSIVE point_tree(id) AS (
-                SELECT id FROM knowledge_points WHERE id = ?
-                UNION ALL
+                SELECT id FROM knowledge_points WHERE id IN (${placeholders})
+                UNION
                 SELECT k.id FROM knowledge_points k JOIN point_tree ON k.parent_id = point_tree.id
             )
             SELECT 1 FROM point_tree WHERE point_tree.id = m.primary_knowledge_point_id OR
                 EXISTS (SELECT 1 FROM json_each(m.auxiliary_knowledge_point_ids) WHERE value = point_tree.id)
         )`);
-        parameters.push(pointId);
+        parameters.push(...pointIds);
     }
-    if (status) {
-        where.push("COALESCE((SELECT result FROM reviews WHERE mistake_id = m.id ORDER BY id DESC LIMIT 1), 'unreviewed') = ?");
-        parameters.push(status);
+    if (statuses.length) {
+        where.push(`COALESCE((SELECT result FROM reviews WHERE mistake_id = m.id ORDER BY id DESC LIMIT 1), 'unreviewed') IN (${statuses.map(() => '?').join(',')})`);
+        parameters.push(...statuses);
     }
     if (query.rating !== undefined) {
-        if (typeof query.rating !== 'string' || !query.rating.trim()) {
+        const ratings = filterValues(query.rating, '请选择有效星级');
+        if (!ratings.length) {
             fail(400, '请选择有效星级');
         }
-        where.push('m.rating = ?');
-        parameters.push(validateRating(Number(query.rating)));
+        where.push(`m.rating IN (${ratings.map(() => '?').join(',')})`);
+        parameters.push(...ratings.map((rating) => validateRating(Number(rating))));
     }
     if (query.keyword !== undefined && typeof query.keyword !== 'string') {
         fail(400, '关键词须为文本');
@@ -427,11 +439,13 @@ function listMistakes(query, userId) {
     if (query.keyword?.trim()) {
         const rows = db.prepare(`${mistakeSelect} WHERE ${condition} ORDER BY ${order}`).all(...parameters);
         const matches = searchMistakes(userId, rows, query.keyword);
+        if (idsOnly) return matches.map(({ row }) => row.id);
         const page = Math.min(requestedPage, Math.max(1, Math.ceil(matches.length / pageSize)));
         const visible = paginated ? matches.slice((page - 1) * pageSize, page * pageSize) : matches;
         const items = visible.map(({ row, search }) => ({ ...serializeMistake(row, summary), search }));
         return paginated ? { items, total: matches.length, page, pageSize } : items;
     }
+    if (idsOnly) return db.prepare(`SELECT m.id FROM mistakes m WHERE ${condition} ORDER BY ${order}`).all(...parameters).map((row) => row.id);
     const total = paginated ? db.prepare(`SELECT COUNT(*) AS count FROM mistakes m WHERE ${condition}`).get(...parameters).count : 0;
     const page = Math.min(requestedPage, Math.max(1, Math.ceil(total / pageSize)));
     const rows = db.prepare(`${mistakeSelect} WHERE ${condition} ORDER BY ${order}${paginated ? ' LIMIT ? OFFSET ?' : ''}`)
@@ -442,6 +456,10 @@ function listMistakes(query, userId) {
 
 router.get('/mistakes', (req, res) => {
     success(res, listMistakes(req.query, req.user.id));
+});
+
+router.get('/mistakes/selection', (req, res) => {
+    success(res, { ids: listMistakes({ ...req.query, lifecycle: 'draft', deleted: 'false' }, req.user.id, true) });
 });
 
 require('./pdf-export').mountPdfExportRoutes(router, { listMistakes, serializeMistake, mistakeSelect, pointSelect });

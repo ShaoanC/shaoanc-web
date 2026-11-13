@@ -79,7 +79,6 @@ export function TestDataSkeleton() {
 function EditorPhotoSkeleton({ answer = false }: { answer?: boolean }) {
   return <div className="photo-entry">
     <div className="photo-entry-title"><span className="skeleton-symbol skeleton-shimmer" /><Text>{answer ? '也可以拍下答案' : '从图片录入题目'}</Text></div>
-    <p><Text>{answer ? '题目和答案在同一张图里时，可直接复用题干图片识别答案。' : '选中错题部分，多张图片按顺序一起识别。'}</Text></p>
     <div className="photo-actions">{[answer ? '拍照识别答案' : '拍照', '选择图片', '选择已上传的照片', ...(answer ? ['复用题干图片'] : [])].map((label) => <span className="button secondary skeleton-button" key={label}><span className="skeleton-symbol skeleton-shimmer" style={{ width: 16, height: 16 }} /><Text>{label}</Text></span>)}</div>
   </div>;
 }
@@ -99,7 +98,7 @@ export function EditorContentSkeleton() {
     <div className="editor-mobile-tabs"><div className="sliding-tabs">{['题干', '解答', '笔记', '归类'].map((tab) => <span className="sliding-tab" key={tab}><i className="skeleton-text skeleton-shimmer">{tab}</i></span>)}</div></div>
     <div className="editor-layout"><div className="editor-main">
       <section className="editor-block editor-question-block"><EditorBlockHeading title="题目" required /><EditorPhotoSkeleton /><EditorFieldSkeleton label="题干 *" question /></section>
-      <section className="editor-block editor-answers-block skeleton-editor-secondary"><EditorBlockHeading title="答案与分析" /><EditorFieldSkeleton label="正确答案　选填" rows={3} /><EditorPhotoSkeleton answer /><p className="ai-notice"><Text>手动输入的短答案会在保存时自动生成解析；图片识别的短答案会在填入后生成。</Text></p><div className="photo-actions"><Button>生成解析</Button></div><EditorFieldSkeleton label="解题分析　选填" /></section>
+      <section className="editor-block editor-answers-block skeleton-editor-secondary"><EditorBlockHeading title="答案与分析" /><EditorFieldSkeleton label="正确答案　选填" rows={3} /><EditorPhotoSkeleton answer /><div className="photo-actions"><Button>生成解析</Button></div><EditorFieldSkeleton label="解题分析　选填" /></section>
       <section className="editor-block editor-note-block skeleton-editor-secondary"><EditorBlockHeading title="我的笔记" /><EditorFieldSkeleton label="我的笔记　选填" /></section>
     </div><aside className="editor-aside editor-classification editor-block skeleton-editor-secondary"><EditorBlockHeading title="学科与知识点" /><Field label="学科 *" /><Field label="主知识点　选填" /><div className="field"><span><Text>辅助知识点　可多选</Text></span><div className="knowledge-options skeleton-copy-lines"><Text>知识点名称</Text><Text>知识点名称</Text></div></div><div className="field"><span><Text>星级标记　选填</Text></span><Text>☆　☆　☆　☆　☆</Text></div></aside></div>
   </>;

@@ -6,16 +6,16 @@ import { ScrollArea } from './ScrollArea';
 
 type SelectOption = { value: string; label: string; disabled?: boolean };
 type SelectProps = {
-  value: string;
-  onChange: (value: string) => void;
   options: SelectOption[];
   ariaLabel: string;
   searchable?: boolean;
   disabled?: boolean;
   portalContainer?: HTMLElement | null;
-};
+} & ({ multiple?: false; value: string; onChange: (value: string) => void }
+  | { multiple: true; value: string[]; onChange: (value: string[]) => void });
 
-export function Select({ value, onChange, options, ariaLabel, searchable = false, disabled = false, portalContainer }: SelectProps) {
+export function Select(props: SelectProps) {
+  const { options, ariaLabel, searchable = false, disabled = false, portalContainer } = props;
   const id = useId();
   const trigger = useRef<HTMLButtonElement>(null);
   const popup = useRef<HTMLDivElement>(null);
@@ -31,7 +31,11 @@ export function Select({ value, onChange, options, ariaLabel, searchable = false
     if (!keyword) return options;
     return options.filter((option) => option.label.toLocaleLowerCase().includes(keyword) || PinyinMatch.match(option.label, keyword) !== false);
   }, [options, query]);
-  const selected = options.find((option) => option.value === value);
+  function isSelected(value: string) {
+    return props.multiple ? value === '' ? props.value.length === 0 : props.value.includes(value) : props.value === value;
+  }
+  const selected = options.filter((option) => isSelected(option.value));
+  const selectedLabel = selected[0]?.label || '请选择';
   const activeId = active >= 0 && filtered[active] ? `${id}-option-${active}` : undefined;
 
   function close(returnFocus = false) {
@@ -43,7 +47,7 @@ export function Select({ value, onChange, options, ariaLabel, searchable = false
     if (disabled) return;
     setQuery('');
     const indices = options.map((option, index) => option.disabled ? -1 : index).filter((index) => index >= 0);
-    const current = options.findIndex((option) => option.value === value && !option.disabled);
+    const current = options.findIndex((option) => isSelected(option.value) && !option.disabled);
     setActive(edge === 'last' ? indices.at(-1) ?? -1 : edge === 'first' ? indices[0] ?? -1 : current >= 0 ? current : indices[0] ?? -1);
     setPresent(true);
     setOpen(true);
@@ -51,8 +55,13 @@ export function Select({ value, onChange, options, ariaLabel, searchable = false
 
   function choose(option: SelectOption) {
     if (option.disabled) return;
-    onChange(option.value);
-    close(true);
+    if (props.multiple) {
+      props.onChange(option.value === '' ? [] : props.value.includes(option.value)
+        ? props.value.filter((value) => value !== option.value) : [...props.value, option.value]);
+    } else {
+      props.onChange(option.value);
+      close(true);
+    }
   }
 
   useEffect(() => {
@@ -181,8 +190,8 @@ export function Select({ value, onChange, options, ariaLabel, searchable = false
     setActive(indices[next]);
   }
 
-  return <div className="custom-select">
-    <button ref={trigger} type="button" className="custom-select-trigger" disabled={disabled} aria-label={`${ariaLabel}：${selected?.label || '请选择'}`} aria-haspopup="listbox" aria-expanded={open} aria-controls={open ? `${id}-listbox` : undefined}
+  return <div className={`custom-select${props.multiple ? ' is-multiple' : ''}`}>
+    <button ref={trigger} type="button" className="custom-select-trigger" disabled={disabled} aria-label={`${ariaLabel}：${selected.map((option) => option.label).join('、') || '请选择'}`} aria-haspopup="listbox" aria-expanded={open} aria-controls={open ? `${id}-listbox` : undefined}
       onClick={() => open ? close() : show()}
       onKeyDown={(event) => {
         if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
@@ -190,17 +199,19 @@ export function Select({ value, onChange, options, ariaLabel, searchable = false
           show(event.key === 'Home' ? 'first' : event.key === 'End' || event.key === 'ArrowUp' ? 'last' : undefined);
         }
       }}>
-      <span className="custom-select-value">{selected?.label || '请选择'}</span><ChevronDown className="custom-select-chevron" size={16} aria-hidden="true" />
+      <span className="custom-select-value">{selectedLabel}</span>{props.multiple && selected.length > 1 && <span className="custom-select-count" aria-hidden="true">+{selected.length - 1}</span>}<ChevronDown className="custom-select-chevron" size={16} aria-hidden="true" />
     </button>
     {present && createPortal(<div ref={popup} className={`custom-select-popup${open ? ' is-open' : ''}${position.above ? ' opens-above' : ''}`} aria-hidden={!open} inert={!open} data-base-ui-swipe-ignore="" style={{ position: portalContainer ? 'absolute' : 'fixed', top: position.top, left: position.left, width: position.width, maxHeight: position.maxHeight, transform: position.above ? 'translateY(-100%)' : undefined }} onKeyDown={navigate}
       onBlur={(event) => { if (event.relatedTarget && event.relatedTarget !== trigger.current && !event.currentTarget.contains(event.relatedTarget as Node)) close(); }}>
       {searchable && <div className="custom-select-search"><Search size={15} aria-hidden="true" /><input ref={search} className="custom-select-search-input" type="search" role="combobox" aria-label={`搜索${ariaLabel}`} aria-expanded={open} aria-autocomplete="list" aria-controls={`${id}-listbox`} aria-activedescendant={activeId} placeholder="汉字、拼音或首字母…" value={query}
         onChange={(event) => { setQuery(event.target.value); setActive(-1); }} /></div>}
-      <ScrollArea ref={list} id={`${id}-listbox`} className="custom-select-options" role="listbox" aria-label={ariaLabel} aria-activedescendant={activeId} tabIndex={-1} style={{ maxHeight: Math.max(0, position.maxHeight - (searchable ? 54 : 12)), overflowY: 'auto' }}>
-        {filtered.map((option, index) => <button key={option.value} id={`${id}-option-${index}`} type="button" role="option" tabIndex={-1} disabled={option.disabled} aria-selected={option.value === value}
-          className={`custom-select-option${index === active ? ' is-active' : ''}${option.value === value ? ' is-selected' : ''}`}
+      <ScrollArea ref={list} id={`${id}-listbox`} className="custom-select-options" role="listbox" aria-label={ariaLabel} aria-multiselectable={props.multiple || undefined} aria-activedescendant={activeId} tabIndex={-1} style={{ maxHeight: Math.max(0, position.maxHeight - (searchable ? 54 : 12)), overflowY: 'auto' }}>
+        {filtered.map((option, index) => <button key={option.value} id={`${id}-option-${index}`} type="button" role="option" tabIndex={-1} disabled={option.disabled} aria-selected={isSelected(option.value)}
+          className={`custom-select-option${index === active ? ' is-active' : ''}${isSelected(option.value) ? ' is-selected' : ''}`}
           onMouseDown={(event) => event.preventDefault()} onMouseMove={() => { if (!option.disabled) setActive(index); }} onClick={() => choose(option)}>
-          <span className="custom-select-option-label">{option.label}</span>{option.value === value && <Check size={16} aria-hidden="true" />}
+          <span className="custom-select-option-label">{option.label}</span>{props.multiple
+            ? <span className="custom-select-checkbox" aria-hidden="true">{isSelected(option.value) && <Check size={13} />}</span>
+            : isSelected(option.value) && <Check size={16} aria-hidden="true" />}
         </button>)}
         {!filtered.length && <p className="custom-select-empty" role="status">{query.trim() ? '没有找到匹配的知识点' : '暂无可选项'}</p>}
       </ScrollArea>

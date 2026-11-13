@@ -182,7 +182,6 @@ export function PhotoInput({ purpose, recordId, ensureSaved, actions, aiAvailabl
   function fileInput(event: React.ChangeEvent<HTMLInputElement>) { add(Array.from(event.target.files || [])); event.target.value = ''; }
   return <div className="photo-entry">
     <div className="photo-entry-title"><Camera size={18} />{purpose === 'question' ? '从图片录入题目' : '也可以拍下答案'}</div>
-    <p>{purpose === 'question' ? '选中错题部分，多张图片按顺序一起识别。' : '题目和答案在同一张图里时，可直接复用题干图片识别答案。'}</p>
     <input ref={camera} type="file" accept="image/jpeg,image/png,image/webp" capture="environment" hidden onChange={fileInput} disabled={busy} />
     <input ref={album} type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onChange={fileInput} disabled={busy} />
     <div className="photo-actions"><button type="button" className="button secondary" disabled={busy} onClick={(event) => { dialogTrigger.current = event.currentTarget; camera.current?.click(); }}><Camera size={16} />拍照{purpose === 'answer' ? '识别答案' : ''}</button><button type="button" className="button secondary" disabled={busy} onClick={(event) => { dialogTrigger.current = event.currentTarget; album.current?.click(); }}><ImagePlus size={16} />选择图片</button><UploadedPhotoPicker disabled={busy} onSelect={reuse} />{actions}{entries.length > 0 && <button type="button" className="table-button" onClick={(event) => { dialogTrigger.current = event.currentTarget; setOpen(true); }}><Crop size={15} />{entries.length} 张待选图片</button>}</div>

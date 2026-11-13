@@ -264,11 +264,13 @@ async function checkAiTasksViewport(context, base, name) {
     if (await welcomeClose.count()) await welcomeClose.first().click();
     await page.getByRole('button', { name: /^AI 任务/ }).click();
     const dialog = page.getByRole('dialog', { name: 'AI 任务', exact: true });
-    await dialog.locator('.task-row').first().waitFor();
-    await checkControls(dialog);
+    await dialog.locator('.quick-task-row').first().waitFor();
+    assert.equal(await dialog.getByRole('searchbox').count(), 0, `${name}: quick panel focuses on immediate actions`);
+    await dialog.getByRole('link', { name: '全部任务', exact: true }).waitFor();
     await dialog.evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished)));
     await page.screenshot({ path: path.join(dataDirectory, `mistakes-ai-tasks-${name}.png`) });
-    await closeAnimatedView(page, dialog, '.ai-tasks-dialog', '.ai-tasks-mobile-drawer', '.task-manager');
+    await dialog.getByRole('button', { name: '关闭 AI 任务', exact: true }).click();
+    await dialog.waitFor({ state: 'hidden' });
     await page.evaluate(() => { location.hash = '/ai-tasks'; });
     const manager = page.getByRole('region', { name: 'AI 任务列表', exact: true });
     await manager.locator('.task-row').first().waitFor();

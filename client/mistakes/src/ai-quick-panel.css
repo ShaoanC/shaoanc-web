@@ -1,0 +1,71 @@
+.Toastify__toast-container.mistakes-toast-container { top: calc(max(var(--workspace-header-bottom, 0px), env(safe-area-inset-top, 0px)) + 12px); }
+.app-shell .ai-tasks-trigger.button { position: relative; display: inline-flex; align-items: center; gap: 8px; min-width: 44px; min-height: 44px; padding: 8px 12px; overflow: visible; }
+.ai-tasks-trigger[aria-expanded="true"] { background: var(--primary-soft); color: var(--primary); }
+.app-shell .ai-tasks-trigger > .ai-task-indicators { position: static; display: inline-flex; margin: 0; gap: 4px; }
+.app-shell .ai-tasks-trigger.mobile-task-trigger { display: none; }
+.quick-task-backdrop { position: fixed; inset: 0; background: rgba(32,57,46,.16); z-index: 100; }
+.ai-quick-dialog { position: fixed; z-index: 101; top: calc(var(--workspace-header-bottom, 64px) + 12px); right: 24px; width: min(420px, calc(100vw - 32px)); max-height: calc(100dvh - var(--workspace-header-bottom, 64px) - 28px); display: flex; flex-direction: column; background: var(--surface-2); border: 1px solid var(--border-medium); border-radius: 8px; box-shadow: 0 12px 40px #20392e26; overflow: hidden; }
+.ai-quick-dialog.is-review { width: min(960px, calc(100vw - 48px)); }
+.ai-quick-dialog > header { display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; border-bottom: 1px solid var(--border-subtle); }
+.ai-quick-dialog h2 { font-size: 20px; }
+.ai-quick-dialog > footer, .ai-quick-drawer > .mobile-filters-footer { display: flex; justify-content: center; padding: 14px 20px; border-top: 1px solid var(--border-subtle); }
+.quick-panel-body { min-height: 0; overflow: auto; padding: 0 20px 16px; overscroll-behavior: contain; }
+.quick-task-list { max-height: 60dvh; overflow-y: auto; overscroll-behavior: contain; }
+.quick-summary, .quick-row-heading, .quick-review-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.quick-summary { font-size: 13px; color: var(--text-secondary); padding: 8px 0; }
+.quick-task-row { padding: 16px 0; border-top: 1px solid var(--border-subtle); }
+.quick-row-heading { font-size: 15px; }
+.quick-row-heading > span { font-size: 13px; color: var(--primary); }
+.quick-excerpt { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin: 9px 0; line-height: 1.65; overflow-wrap: anywhere; }
+.quick-row-actions { display: flex; align-items: center; gap: 14px; }
+.quick-row-actions .button { min-height: 40px; padding: 7px 14px; font-size: 14px; }
+.quick-more { margin-left: auto; font-size: 14px; }
+.quick-more summary { cursor: pointer; color: var(--text-secondary); }
+.quick-more > div { display: flex; flex-wrap: wrap; gap: 12px; padding-top: 10px; }
+.quick-error { font-size: 13px; color: var(--error); margin-bottom: 10px; }
+.quick-error summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.quick-error p { overflow-wrap: anywhere; }
+.quick-feedback { color: var(--primary); font-size: 13px; margin-top: 10px; }
+.quick-scope { display: flex; gap: 12px; padding-top: 12px; }
+.quick-scope button { border: 0; background: transparent; padding: 8px; color: var(--text-secondary); }
+.quick-scope button[aria-pressed="true"] { color: var(--primary); background: var(--primary-soft); }
+.quick-empty { padding: 36px 0; text-align: center; color: var(--text-secondary); }
+.quick-load-more { width: 100%; }
+.quick-review-heading { padding: 14px 0; }
+.ai-review-embedded .ai-review-grid { max-height: none; }
+.ai-review-embedded .ai-review-footer { position: sticky; bottom: 0; padding: 12px 0; background: var(--surface-2); }
+.ai-quick-drawer .ai-result { border: 0; padding: 0; }
+.ai-quick-drawer > .mobile-filters-heading { padding-bottom: 12px; }
+.ai-quick-dialog .ai-result { border: 0; padding: 0; }
+@media (max-width: 960px) {
+  .navigation { grid-template-columns: repeat(5,minmax(0,1fr)); }
+  .topbar { display: none; }
+  .app-shell .ai-tasks-trigger.mobile-task-trigger { display: inline-flex; }
+  .mobile-task-trigger .ai-task-label { display: none; }
+  .app-shell .mobile-task-trigger > .ai-task-indicators { position: absolute; top: 0; right: -3px; }
+  .sidebar { padding-top: calc(15px + env(safe-area-inset-top, 0px)); }
+}
+@media (max-width: 640px) {
+  .Toastify__toast-container.mistakes-toast-container { left: max(16px, env(safe-area-inset-left, 0px)); right: max(16px, env(safe-area-inset-right, 0px)); }
+  .mistakes-toast-container .Toastify__toast { padding: 12px 28px 12px 12px; font-size: 14px; line-height: 1.5; }
+  .ai-quick-drawer { max-height: 85dvh; }
+  .ai-quick-drawer > .mobile-filters-content { padding: 0 16px 16px; }
+  .ai-quick-drawer > .mobile-filters-footer { padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px)); }
+  .ai-review-embedded .ai-review-grid { display: block; }
+  .ai-review-embedded .ai-review-source:not(.is-mobile-active), .ai-review-embedded .ai-review-result:not(.is-mobile-active) { display: none; }
+  .ai-review-embedded .ai-review-tabs { display: flex; }
+}
+@media (max-width: 360px) { .sidebar .brand-text > span { display: none; } }
+
+body:has(.ai-quick-dialog, .ai-quick-drawer) .mistakes-toast-container { visibility: hidden; pointer-events: none; }
+
+/* The orbit occupies its own box, so it never extends into the label. */
+.app-shell .ai-tasks-trigger > .ai-task-icon { width: 32px; height: 32px; }
+.app-shell .ai-task-icon > svg { width: 18px; height: 18px; }
+.app-shell .ai-task-icon .ai-task-orbit { inset: 1px; border-width: 1px; border-color: var(--primary-glow); }
+.app-shell .ai-task-icon .ai-task-orbit::after { inset: -1px; border-width: 1px; border-right-color: transparent; animation-duration: 1.5s; }
+.app-shell .ai-tasks-trigger.button { gap: 10px; padding-block: 6px; }
+@media (max-width: 960px) {
+  .app-shell .ai-tasks-trigger.mobile-task-trigger { padding: 6px; }
+  .app-shell .mobile-task-trigger > .ai-task-indicators { top: -2px; right: -5px; }
+}

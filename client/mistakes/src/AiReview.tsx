@@ -1,5 +1,5 @@
 import { useFigurePreviews } from './useFigurePreviews';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ComponentProps } from 'react';
 import { Check, ImagePlus, Trash2, ZoomIn } from 'lucide-react';
 import { api } from './api';
 import { knowledgeLabel, useApp } from './context';
@@ -28,11 +28,15 @@ function initialDraft(job: AiJob, input: AiInput): ReviewDraft {
   return { text, answerText: job.result?.answer || '', figures, subjectId: job.result?.subjectId ?? input.subjectId, primaryKnowledgePointId: job.result?.primaryKnowledgePointId ?? null, auxiliaryKnowledgePointIds: job.result?.auxiliaryKnowledgePointIds || [], primaryPath: job.result?.primaryPath?.join(' / ') || '', auxiliaryPaths: job.result?.auxiliaryPaths?.map((path) => path.join(' / ')).join('\n') || '', expectedInput: structuredClone(input) };
 }
 
-export function AiReview({ job, input, busy, onApply, onDismiss }: { job: AiJob; input: AiInput; busy: boolean; onApply: (options: AiApplyOptions) => Promise<void>; onDismiss: () => void }) {
+function ReviewFrame({ embedded, ...props }: ComponentProps<typeof AiDialog> & { embedded?: boolean }) {
+  return embedded ? <div className="ai-review-embedded">{props.children}</div> : <AiDialog {...props} />;
+}
+
+export function AiReview({ job, input, busy, onApply, onDismiss, embedded = false, onApplied }: { embedded?: boolean; onApplied?: () => void; job: AiJob; input: AiInput; busy: boolean; onApply: (options: AiApplyOptions) => Promise<void>; onDismiss: () => void }) {
   const recordView = useRecordView();
   const { subjects, knowledgePoints } = useApp();
   const pageEntry = job.mode === 'page-entry';
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(embedded);
   const [draft, setDraft] = useState<ReviewDraft>(() => initialDraft(job, input));
   const draftRef = useRef(draft);
   const [images, setImages] = useState<MistakeImage[]>([]);
@@ -70,6 +74,7 @@ export function AiReview({ job, input, busy, onApply, onDismiss }: { job: AiJob;
     if (open) update({ expectedInput: structuredClone(input) });
   }, [open]);
   useEffect(() => {
+    if (embedded) return;
     function openRequestedReview() {
       const params = new URLSearchParams((recordView?.path || window.location.hash).split('?')[1] || '');
       const requestedId = params.get('aiJob');
@@ -172,7 +177,7 @@ export function AiReview({ job, input, busy, onApply, onDismiss }: { job: AiJob;
       const review = { [job.type]: text, ...(pageEntry ? { answer: answerText } : {}), ...(job.type === 'question' ? { subjectId: snapshot.subjectId, primaryKnowledgePointId: snapshot.primaryKnowledgePointId, auxiliaryKnowledgePointIds: snapshot.auxiliaryKnowledgePointIds, ...(!snapshot.primaryKnowledgePointId && snapshot.primaryPath.trim() ? { primaryPath: snapshot.primaryPath.split('/').map((part) => part.trim()).filter(Boolean) } : {}), ...(snapshot.auxiliaryPaths.trim() ? { auxiliaryPaths: snapshot.auxiliaryPaths.split('\n').filter((line) => line.trim()).map((line) => line.split('/').map((part) => part.trim()).filter(Boolean)) } : {}) } : {}) };
       setStage('正在填入校对结果…');
       await onApply({ review, force, mode, expectedInput: snapshot.expectedInput });
-      sessionStorage.removeItem(storeKey(job)); setOpen(false); setConflict(false);
+      sessionStorage.removeItem(storeKey(job)); setOpen(false); setConflict(false); onApplied?.();
     } catch (err) {
       const message = (err as Error).message;
       setError(`${message} 校对文字和选框已保留，可继续修改或重试。`);
@@ -191,12 +196,13 @@ export function AiReview({ job, input, busy, onApply, onDismiss }: { job: AiJob;
     else previewText = previewText.split(figureMarker(figure.id)).join(replacement);
   }
   return <section className="ai-result" data-ai-job={job.id}>
-    <h3>{pageEntry ? '按页录题' : job.type === 'question' ? '题干识别' : job.type === 'answer' ? '答案识别' : '生成解析'}结果</h3>
+    {!embedded && <><h3>{pageEntry ? '按页录题' : job.type === 'question' ? '题干识别' : job.type === 'answer' ? '答案识别' : '生成解析'}结果</h3>
     <p className="ai-notice">{job.applyStatus === 'conflict' ? '内容已变化，识别结果已保留。校对后再选择是否替换。' : job.result?.needsReview ? '识别完成，待校对。请检查疑点、图形范围和插入位置。' : '结果已保留，校对后可填入。'}</p>
     <div className="ai-candidate-excerpt"><MarkdownContent>{job.result?.[job.type] || ''}</MarkdownContent></div>
     {pageEntry && <div className="ai-candidate-excerpt"><strong>正确答案</strong><MarkdownContent>{job.result?.answer || '未识别到可用答案，请补充。'}</MarkdownContent></div>}
     <div className="photo-actions"><button type="button" className="button primary" disabled={busy} onClick={show}>校对并填入</button><button type="button" className="table-button" onClick={onDismiss}>暂不填入</button></div>
-    <AiDialog open={open} onClose={() => { if (!locked) setOpen(false); }} title={pageEntry ? '校对题干、答案与配图' : job.type === 'question' ? '校对题干与配图' : job.type === 'answer' ? '校对答案' : '校对解析'} description="检查原题内容与图形。框选只改变截图范围，重叠笔迹可保留原样。" wide>
+    </>}
+    <ReviewFrame embedded={embedded} open={open} onClose={() => { if (!locked) setOpen(false); }} title={pageEntry ? '校对题干、答案与配图' : job.type === 'question' ? '校对题干与配图' : job.type === 'answer' ? '校对答案' : '校对解析'} description="检查原题内容与图形。框选只改变截图范围，重叠笔迹可保留原样。" wide>
       <div className="ai-review-tabs" role="group" aria-label="校对视图"><button type="button" aria-pressed={mobileView === 'image'} onClick={() => setMobileView('image')}>图片</button><button type="button" aria-pressed={mobileView === 'result'} onClick={() => setMobileView('result')}>结果</button></div>
       <div className="ai-review-grid">
         <section ref={sourcePanel} className={`ai-review-source${mobileView === 'image' ? ' is-mobile-active' : ''}`}>
@@ -229,8 +235,8 @@ export function AiReview({ job, input, busy, onApply, onDismiss }: { job: AiJob;
       {changedDuringReview && <p className="ai-review-issues">编辑器内容在校对期间发生了修改。校对稿仍保留，填入时会继续检查冲突。</p>}
       {error && <p className="form-error" role="alert">{error}</p>}
       {stage && <p className="ai-notice" role="status">{stage}</p>}
-      <div className="photo-actions ai-review-footer"><button type="button" className="button primary" disabled={locked || unmatched.length > 0 || unplaced.length > 0} onClick={() => void apply()}><Check size={16} />{locked ? '正在处理…' : '填入校对结果'}</button>{(conflict || job.applyStatus === 'conflict' || Boolean(input[job.type].trim()) || (pageEntry && Boolean(input.answer.trim()))) && <button type="button" className="button secondary" disabled={locked || unmatched.length > 0 || unplaced.length > 0} onClick={() => void apply(true)}>确认替换当前内容</button>}{job.type === 'answer' && <button type="button" className="button secondary" disabled={locked || unmatched.length > 0 || unplaced.length > 0} onClick={() => void apply(true, 'append')}>追加到答案</button>}<button type="button" className="table-button" disabled={locked} onClick={() => setOpen(false)}>保留校对稿，稍后继续</button></div>
-    </AiDialog>
+      <div className="photo-actions ai-review-footer"><button type="button" className="button primary" disabled={locked || unmatched.length > 0 || unplaced.length > 0} onClick={() => void apply()}><Check size={16} />{locked ? '正在处理…' : '填入校对结果'}</button>{(conflict || job.applyStatus === 'conflict' || Boolean(input[job.type].trim()) || (pageEntry && Boolean(input.answer.trim()))) && <button type="button" className="button secondary" disabled={locked || unmatched.length > 0 || unplaced.length > 0} onClick={() => void apply(true)}>确认替换当前内容</button>}{job.type === 'answer' && <button type="button" className="button secondary" disabled={locked || unmatched.length > 0 || unplaced.length > 0} onClick={() => void apply(true, 'append')}>追加到答案</button>}<button type="button" className="table-button" disabled={locked} onClick={() => embedded ? onDismiss() : setOpen(false)}>保留校对稿，稍后继续</button></div>
+    </ReviewFrame>
     <AiDialog open={Boolean(full)} onClose={() => setFull(null)} title="查看配图" wide>{full && <div className="ai-zoom-image"><img src={full} alt="放大查看图片与标注" /></div>}</AiDialog>
   </section>;
 }

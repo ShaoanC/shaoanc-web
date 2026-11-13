@@ -49,9 +49,9 @@ export function MistakeExport({ mistakes, totalCount, filters, selectedIds = [],
   const busy = Boolean(preparing);
   const notesUnavailable = options.version === 'practice';
   const eligible = mistakes.filter((mistake) => !mistake.deletedAt);
-  const selected = eligible.filter((mistake) => selectedIds.includes(mistake.id));
+  const selected = selectedIds;
   const source = single || scope === 'selected' || !filters
-    ? { ids: (single || scope === 'all' ? eligible : selected).map((mistake) => mistake.id) }
+    ? { ids: single || scope === 'all' ? eligible.map((mistake) => mistake.id) : selected }
     : { filters };
   const chosenCount = single || scope === 'selected' ? (single ? eligible.length : selected.length) : totalCount ?? eligible.length;
   const payload: ExportRequest = { source, options: { ...options, title: options.title.trim() || defaultExportOptions.title } };
@@ -131,7 +131,7 @@ export function MistakeExport({ mistakes, totalCount, filters, selectedIds = [],
       <fieldset className="export-settings-fields" disabled={busy}>
         {!single && <fieldset className="export-options"><legend>导出范围</legend>
           <label><input type="radio" name="export-scope" checked={scope === 'all'} onChange={() => setScope('all')} /><span>当前筛选结果<small>{totalCount ?? eligible.length} 道题</small></span></label>
-          <label className={!selected.length ? 'is-disabled' : ''}><input type="radio" name="export-scope" disabled={!selected.length} checked={scope === 'selected'} onChange={() => setScope('selected')} /><span>已选题目<small>{selected.length} 道题 · 按列表顺序</small></span></label>
+          <label className={!selected.length ? 'is-disabled' : ''}><input type="radio" name="export-scope" disabled={!selected.length} checked={scope === 'selected'} onChange={() => setScope('selected')} /><span>已选题目<small>{selected.length} 道题</small></span></label>
         </fieldset>}
         <fieldset className="export-options"><legend>内容版本</legend>
           <label><input type="radio" name="export-version" checked={options.version === 'complete'} onChange={() => update('version', 'complete')} /><span>完整版<small>题干、答案与解析</small></span></label>

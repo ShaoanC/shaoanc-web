@@ -12,7 +12,7 @@ export function toastDestination(path: string): Pick<ToastOptions, 'className' |
         window.dispatchEvent(new CustomEvent(RECORD_TOAST_EVENT, { cancelable: true, detail: { path } }));
         return;
       }
-      if (window.matchMedia('(max-width: 640px)').matches && path.startsWith('/ai-tasks')) {
+      if (path.startsWith('/ai-tasks')) {
         event.preventDefault();
         window.dispatchEvent(new CustomEvent('mistakes:open-ai-tasks', { detail: { path } }));
         return;

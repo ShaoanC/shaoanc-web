@@ -193,7 +193,7 @@ export function PageImportsPage() {
   }
   const disabled = uploading || Boolean(rotatingId);
   return <div className="page-imports">
-    <header className="page-import-heading"><div><a className="page-import-back" href="#/new"><ArrowLeft size={15} />单题录入</a><h1>按页批量录入</h1><p>上传整页 → 选择题目 → 自动填入草稿。优先识别蓝笔订正；无订正且无打叉时识别黑笔答案。</p></div><a className="button secondary" href="#/ai-tasks">查看 AI 任务</a></header>
+    <header className="page-import-heading"><div><a className="page-import-back" href="#/new"><ArrowLeft size={15} />单题录入</a><h1>按页批量录入</h1><p>上传整页 → 选择题目 → 自动填入草稿。优先识别蓝笔订正；无订正且无打叉时识别黑笔答案。</p></div><button className="button secondary" onClick={() => tasks.openTasks()}>查看 AI 任务</button></header>
     <section className="page-import-upload" aria-label="添加页面图片">
       <div><h2><ImagePlus size={20} />添加页面</h2><p>每次最多 12 页，支持 JPG、PNG、WebP。先调整顺序和方向，再上传分题。</p></div>
       <input ref={album} type="file" multiple accept="image/jpeg,image/png,image/webp" hidden disabled={disabled} onChange={(event) => { add(Array.from(event.target.files || [])); event.target.value = ''; }} />
