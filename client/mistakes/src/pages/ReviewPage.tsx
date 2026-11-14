@@ -16,6 +16,7 @@ const REVIEW_OPTIONS = [
   { result: 'familiar', icon: Lightbulb },
   { result: 'mastered', icon: CheckCircle2 },
 ] as const;
+const RATING_FEEDBACK_DELAY = 300;
 
 export function ReviewPage() {
   const { subjects, knowledgePoints } = useApp();
@@ -29,14 +30,15 @@ export function ReviewPage() {
   const [step, setStep] = useState(0);
   const [mode, setMode] = useState<'select' | 'review' | 'complete'>('select');
   const [revealed, setRevealed] = useState(false);
-  const [ratingFeedback, setRatingFeedback] = useState<{ result: ReviewResult; phase: 'saving' | 'saved' } | null>(null);
+  const [rating, setRating] = useState<{ result: ReviewResult; phase: 'pending' | 'saving' | 'saved' } | null>(null);
   const [recordError, setRecordError] = useState('');
   const [results, setResults] = useState<ReviewResult[]>([]);
   const [skipped, setSkipped] = useState(0);
   const candidateRequest = useRef(new LatestRequest());
-  const recordInFlight = useRef(false);
+  const recordTimer = useRef<number | null>(null);
   const questionPanel = useRef<HTMLElement>(null);
-  const saving = ratingFeedback !== null;
+  const saving = rating !== null;
+  const ratingFeedback = rating?.phase === 'pending' ? null : rating;
 
   const load = useCallback(async () => {
     const query = mistakeFilterQuery(filters, { lifecycle: 'archived' });
@@ -70,9 +72,9 @@ export function ReviewPage() {
     if (step + 1 === queue.length) setMode('complete');
     else setStep((current) => current + 1);
     setRevealed(false);
-    setRatingFeedback(null);
+    setRating(null);
     setRecordError('');
-    recordInFlight.current = false;
+    recordTimer.current = null;
     window.scrollTo(0, 0);
   }, [step, queue.length]);
 
@@ -82,23 +84,38 @@ export function ReviewPage() {
     return () => window.clearTimeout(timer);
   }, [ratingFeedback, next]);
 
+  useEffect(() => () => {
+    if (recordTimer.current !== null) window.clearTimeout(recordTimer.current);
+    recordTimer.current = null;
+  }, []);
+
   useEffect(() => {
     if (mode === 'review' && step > 0) questionPanel.current?.focus({ preventScroll: true });
   }, [mode, step]);
 
   async function record(result: ReviewResult) {
-    if (recordInFlight.current) return;
-    recordInFlight.current = true;
+    if (recordTimer.current !== null) return;
     setRecordError('');
-    setRatingFeedback({ result, phase: 'saving' });
+    setRating({ result, phase: 'pending' });
+    let showedLoading = false;
+    const timer = window.setTimeout(() => {
+      showedLoading = true;
+      setRating({ result, phase: 'saving' });
+    }, RATING_FEEDBACK_DELAY);
+    recordTimer.current = timer;
     try {
       await api(`/mistakes/${queue[step].id}/reviews`, json({ result }));
+      if (recordTimer.current !== timer) return;
       setResults((current) => [...current, result]);
-      setRatingFeedback({ result, phase: 'saved' });
+      if (showedLoading) setRating({ result, phase: 'saved' });
+      else next();
     } catch (err) {
+      if (recordTimer.current !== timer) return;
       setRecordError((err as Error).message);
-      setRatingFeedback(null);
-      recordInFlight.current = false;
+      setRating(null);
+      recordTimer.current = null;
+    } finally {
+      window.clearTimeout(timer);
     }
   }
 
@@ -129,7 +146,7 @@ export function ReviewPage() {
           </section>
           <section className="review-rating">
             <div><h2>记录掌握情况</h2></div>
-            <div className="rating-options">
+            <div className={`rating-options${rating?.phase === 'pending' ? ' is-pending' : ''}`}>
               {REVIEW_OPTIONS.map(({ result, icon: Icon }) => {
                 const chosen = ratingFeedback?.result === result;
                 return <button className={`rating-button rating-${result}${chosen ? ' is-selected' : ''}`} key={result} disabled={saving} aria-label={STATUS_LABELS[result]} aria-pressed={chosen} aria-busy={chosen && ratingFeedback.phase === 'saving'} onClick={() => void record(result)}>

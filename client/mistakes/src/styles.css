@@ -831,6 +831,7 @@ input.checkbox-input {
   cursor: pointer;
 }
 .rating-button:hover:not(:disabled) { transform: translateY(-2px); }
+.rating-options.is-pending .rating-button:disabled { opacity: 1; }
 .rating-button > strong { font-weight: 700; font-size: 19px; }
 .rating-button > span { font-size: 14px; color: var(--text-tertiary); text-align: center; line-height: 1.4; }
 .rating-unknown:hover:not(:disabled), .rating-unknown.is-selected { border-color: var(--error); background: var(--error-bg); color: var(--error); }

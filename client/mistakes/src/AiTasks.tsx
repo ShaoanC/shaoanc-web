@@ -21,8 +21,12 @@ export const needsReview = (job: AiJob) => !job.mistakeDeleted && job.status ===
 export const canCancelJob = (job: AiJob) => isActiveJob(job) || job.status === 'failed' || (job.status === 'succeeded' && job.applyStatus !== 'applied');
 export type JobAction = 'retry' | 'cancel';
 export interface BatchResult { jobs: AiJob[]; errors: { id: number; message: string }[] }
+const FEEDBACK_PRIORITY = { cancelled: 0, active: 1, review: 2, failed: 3 } as const;
+type FeedbackTone = keyof typeof FEEDBACK_PRIORITY;
+interface TaskFeedback { revision: number; tone: FeedbackTone }
 interface TasksState {
   jobs: AiJob[]; config: AiConfig | null; error: string; loaded: boolean; refreshing: boolean; updatedAt: number | null;
+  feedback: TaskFeedback | null;
   busyIds: Set<number>;
   refresh: () => Promise<void>;
   createJob: (request: AiJobRequest) => Promise<AiJob>;
@@ -38,25 +42,21 @@ const Context = createContext<TasksState | null>(null);
 export function useAiTasks() { const value = useContext(Context); if (!value) throw new Error('AI tasks context missing'); return value; }
 
 export function AiTasksButton({ className = '' }: { className?: string }) {
-  const { jobs, loaded, openTasks, open } = useAiTasks();
+  const { jobs, feedback, openTasks, open } = useAiTasks();
   const active = jobs.filter(isActiveJob);
   const attention = jobs.some((job) => needsReview(job) || (!job.mistakeDeleted && job.status === 'failed'));
   const count = active.length;
   const signature = active.map((job) => job.id).sort((a, b) => a - b).join(',');
   const status = `${count ? `，${count} 项处理中` : ''}${attention ? '，有待校对或失败任务' : ''}`;
-  const updateSignature = jobs.map((job) => `${job.id}:${job.status}:${job.applyStatus}:${job.attempts}:${job.analysisRoute?.model || ''}`).sort().join(',');
-  const previousUpdate = useRef<string | null>(null);
-  const [updateRevision, setUpdateRevision] = useState(0);
-  useEffect(() => {
-    if (!loaded) return;
-    if (previousUpdate.current !== null && previousUpdate.current !== updateSignature) setUpdateRevision((current) => current + 1);
-    previousUpdate.current = updateSignature;
-  }, [loaded, updateSignature]);
   return <button type="button" className={`button ghost ai-tasks-trigger ${className}${count ? ' has-active-tasks' : ''}`} aria-expanded={open} onClick={() => openTasks()} aria-haspopup="dialog" aria-label={`AI 任务${status}`} title="AI 任务">
-    <span className="ai-task-icon" aria-hidden="true">{count > 0 && <span className="ai-task-orbit" />}<Sparkles size={19} strokeWidth={1.8} /></span>
+    <span className="ai-task-icon" aria-hidden="true">
+      {count > 0 && <span className="ai-task-orbit" />}
+      <span key={feedback?.revision} className="ai-task-sparkles" data-feedback={feedback?.tone}>
+        <Sparkles size={19} strokeWidth={1.8} />
+      </span>
+    </span>
     <span className="ai-task-label">AI 任务</span>
     <span className="ai-task-indicators"><AiTaskCount count={count} signature={signature} />{attention && <span className="ai-task-attention" aria-hidden="true" />}</span>
-    {updateRevision > 0 && <span key={updateRevision} className="ai-task-update-flash" aria-hidden="true" />}
   </button>;
 }
 
@@ -99,6 +99,8 @@ export function AiTasksProvider({ children }: { children: ReactNode }) {
   const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
+  const [feedback, setFeedback] = useState<TaskFeedback | null>(null);
+  const feedbackSnapshot = useRef<Map<number, Pick<AiJob, 'status' | 'applyStatus'>> | null>(null);
   const [busyIds, setBusyIds] = useState(new Set<number>());
   const busy = useRef(new Set<number>());
   const [visible, setVisible] = useState(!document.hidden);
@@ -183,6 +185,27 @@ export function AiTasksProvider({ children }: { children: ReactNode }) {
   useEffect(() => { if (open) void refresh(); }, [open, refresh]);
 
   useEffect(() => {
+    if (updatedAt === null) return;
+    const previous = feedbackSnapshot.current;
+    feedbackSnapshot.current = new Map(jobs.map(({ id, status, applyStatus }) => [id, { status, applyStatus }]));
+    if (!previous) return;
+
+    let tone: FeedbackTone | null = null;
+    for (const job of jobs) {
+      const before = previous.get(job.id);
+      if (job.mistakeDeleted || (before?.status === job.status && before.applyStatus === job.applyStatus)) continue;
+      const next = job.status === 'failed' ? 'failed'
+        : needsReview(job) ? 'review'
+        : job.status === 'cancelled' ? 'cancelled' : 'active';
+      if (tone === null || FEEDBACK_PRIORITY[next] > FEEDBACK_PRIORITY[tone]) tone = next;
+    }
+    if (tone !== null) {
+      const nextTone = tone;
+      setFeedback((current) => ({ revision: (current?.revision ?? 0) + 1, tone: nextTone }));
+    }
+  }, [jobs, updatedAt]);
+
+  useEffect(() => {
     const updates: ActivityNotice[] = [];
     if (previous.current) {
       for (const job of jobs) {
@@ -250,7 +273,7 @@ export function AiTasksProvider({ children }: { children: ReactNode }) {
     }
   }, [load, mergeJobs, open]);
 
-  return <Context.Provider value={{ jobs, config, error, loaded, refreshing, updatedAt, busyIds, refresh, createJob, applyJob, actJobs, open, openTasks, registerEditor, editorSession, closeTasks: () => setOpen(false) }}>
+  return <Context.Provider value={{ jobs, config, error, loaded, refreshing, updatedAt, feedback, busyIds, refresh, createJob, applyJob, actJobs, open, openTasks, registerEditor, editorSession, closeTasks: () => setOpen(false) }}>
     {children}
     <PageLoadBoundary><Suspense fallback={null}><AiQuickPanel key={request.revision} open={open} onOpenChange={setOpen} request={request} triggerRef={tasksTrigger} /></Suspense></PageLoadBoundary>
   </Context.Provider>;

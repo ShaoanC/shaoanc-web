@@ -61,7 +61,43 @@ body:has(.ai-quick-dialog, .ai-quick-drawer) .mistakes-toast-container { visibil
 
 /* The orbit occupies its own box, so it never extends into the label. */
 .app-shell .ai-tasks-trigger > .ai-task-icon { width: 32px; height: 32px; }
-.app-shell .ai-task-icon > svg { width: 18px; height: 18px; }
+.ai-task-sparkles { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+.app-shell .ai-task-sparkles > svg { width: 18px; height: 18px; }
+.ai-task-sparkles[data-feedback="active"] { --task-feedback-color: var(--primary); }
+.ai-task-sparkles[data-feedback="review"] { --task-feedback-color: var(--warning); }
+.ai-task-sparkles[data-feedback="failed"] { --task-feedback-color: var(--error); }
+.ai-task-sparkles[data-feedback="cancelled"] { --task-feedback-color: var(--info); }
+.ai-task-sparkles[data-feedback] > svg {
+  animation: ai-task-sparkle-pulse 360ms var(--motion-ease), ai-task-feedback-color 560ms var(--motion-ease);
+}
+.ai-task-sparkles[data-feedback]::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--task-feedback-color);
+  border-radius: 50%;
+  opacity: 0;
+  animation: ai-task-feedback-ring 560ms var(--motion-ease);
+}
+@keyframes ai-task-sparkle-pulse {
+  45% { transform: scale(1.12); }
+}
+@keyframes ai-task-feedback-color {
+  0%, 40% { color: var(--task-feedback-color); }
+  100% { color: inherit; }
+}
+@keyframes ai-task-feedback-ring {
+  from { opacity: .55; transform: scale(.625); }
+  to { opacity: 0; transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ai-task-sparkles[data-feedback] > svg {
+    animation: ai-task-feedback-color 240ms var(--motion-ease);
+    /* Keep the color cue visible despite the global reduced-motion duration. */
+    animation-duration: 240ms !important;
+  }
+  .ai-task-sparkles[data-feedback]::before { content: none; }
+}
 .app-shell .ai-task-icon .ai-task-orbit { inset: 1px; border-width: 1px; border-color: var(--primary-glow); }
 .app-shell .ai-task-icon .ai-task-orbit::after { inset: -1px; border-width: 1px; border-right-color: transparent; animation-duration: 1.5s; }
 .app-shell .ai-tasks-trigger.button { gap: 10px; padding-block: 6px; }
