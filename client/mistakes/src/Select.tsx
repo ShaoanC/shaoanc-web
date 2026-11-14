@@ -192,7 +192,10 @@ export function Select(props: SelectProps) {
 
   return <div className={`custom-select${props.multiple ? ' is-multiple' : ''}`}>
     <button ref={trigger} type="button" className="custom-select-trigger" disabled={disabled} aria-label={`${ariaLabel}：${selected.map((option) => option.label).join('、') || '请选择'}`} aria-haspopup="listbox" aria-expanded={open} aria-controls={open ? `${id}-listbox` : undefined}
-      onClick={() => open ? close() : show()}
+      // Keep focus in the popup until click toggles it; blur must not close it
+      // before the same click can run and reopen it.
+      onMouseDown={(event) => { if (open) event.preventDefault(); }}
+      onClick={() => open ? close(true) : show()}
       onKeyDown={(event) => {
         if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
           event.preventDefault();
