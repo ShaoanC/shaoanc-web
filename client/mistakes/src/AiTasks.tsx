@@ -1,4 +1,4 @@
-import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Sparkles } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { api, json } from './api';
@@ -16,14 +16,26 @@ export interface TaskEditorSession { input: () => AiInput; apply: (job: AiJob, o
 
 export const AI_LABELS = { question: '题干识别', answer: '答案识别', analysis: '生成解析' };
 export const aiJobLabel = (job: AiJob) => job.mode === 'page-entry' ? '按页录题' : AI_LABELS[job.type];
-export const isActiveJob = (job: AiJob) => ['queued', 'running', 'retrying'].includes(job.status);
+export const isActiveJob = (job: Pick<AiJob, 'status'>) => ['queued', 'running', 'retrying'].includes(job.status);
 export const needsReview = (job: AiJob) => !job.mistakeDeleted && job.status === 'succeeded' && job.applyStatus !== 'applied';
 export const canCancelJob = (job: AiJob) => isActiveJob(job) || job.status === 'failed' || (job.status === 'succeeded' && job.applyStatus !== 'applied');
+export const canRetryJob = (job: AiJob) => !job.mistakeDeleted && ['failed', 'cancelled'].includes(job.status);
 export type JobAction = 'retry' | 'cancel';
 export interface BatchResult { jobs: AiJob[]; errors: { id: number; message: string }[] }
-const FEEDBACK_PRIORITY = { cancelled: 0, active: 1, review: 2, failed: 3 } as const;
-type FeedbackTone = keyof typeof FEEDBACK_PRIORITY;
-interface TaskFeedback { revision: number; tone: FeedbackTone }
+/** Visual tone shared by the trigger, task rows and status pills. */
+export type TaskTone = 'active' | 'review' | 'failed' | 'done' | 'cancelled';
+export function taskTone(job: AiJob): TaskTone {
+  if (job.status === 'failed') return 'failed';
+  if (job.status === 'cancelled') return 'cancelled';
+  if (isActiveJob(job)) return 'active';
+  return needsReview(job) ? 'review' : 'done';
+}
+// When several jobs change in one update, the trigger reports the one that most needs attention.
+const FEEDBACK_PRIORITY: Record<TaskTone, number> = { cancelled: 0, active: 1, done: 2, review: 3, failed: 4 };
+interface TaskFeedback { revision: number; tone: TaskTone }
+type OrbitPhase = 'idle' | 'running' | 'settling';
+const ORBIT_SETTLE_MS = 900;
+const ORBIT_FLASH_MS = 680;
 interface TasksState {
   jobs: AiJob[]; config: AiConfig | null; error: string; loaded: boolean; refreshing: boolean; updatedAt: number | null;
   feedback: TaskFeedback | null;
@@ -44,20 +56,63 @@ export function useAiTasks() { const value = useContext(Context); if (!value) th
 export function AiTasksButton({ className = '' }: { className?: string }) {
   const { jobs, feedback, openTasks, open } = useAiTasks();
   const active = jobs.filter(isActiveJob);
-  const attention = jobs.some((job) => needsReview(job) || (!job.mistakeDeleted && job.status === 'failed'));
+  const attention = jobs.some((job) => !job.mistakeDeleted && job.status === 'failed') ? 'failed' : jobs.some(needsReview) ? 'review' : null;
   const count = active.length;
   const signature = active.map((job) => job.id).sort((a, b) => a - b).join(',');
-  const status = `${count ? `，${count} 项处理中` : ''}${attention ? '，有待校对或失败任务' : ''}`;
+  const status = `${count ? `，${count} 项处理中` : ''}${attention === 'failed' ? '，有失败任务' : attention ? '，有待校对任务' : ''}`;
   return <button type="button" className={`button ghost ai-tasks-trigger ${className}${count ? ' has-active-tasks' : ''}`} aria-expanded={open} onClick={() => openTasks()} aria-haspopup="dialog" aria-label={`AI 任务${status}`} title="AI 任务">
-    <span className="ai-task-icon" aria-hidden="true">
-      {count > 0 && <span className="ai-task-orbit" />}
-      <span key={feedback?.revision} className="ai-task-sparkles" data-feedback={feedback?.tone}>
-        <Sparkles size={19} strokeWidth={1.8} />
-      </span>
-    </span>
+    <AiTaskIcon active={count > 0} feedback={feedback} />
     <span className="ai-task-label">AI 任务</span>
-    <span className="ai-task-indicators"><AiTaskCount count={count} signature={signature} />{attention && <span className="ai-task-attention" aria-hidden="true" />}</span>
+    <span className="ai-task-indicators"><AiTaskCount count={count} signature={signature} />{attention && <span className="ai-task-attention" data-tone={attention} aria-hidden="true" />}</span>
   </button>;
+}
+
+/**
+ * The orbit stays mounted and is driven by a phase, never by mounting: removing a composited,
+ * still-rotating layer can leave its last frame painted on some mobile engines.
+ * running → settling closes the ring from the comet's position in the result tone, then releases it.
+ */
+function AiTaskIcon({ active, feedback }: { active: boolean; feedback: TaskFeedback | null }) {
+  const [phase, setPhase] = useState<OrbitPhase>(active ? 'running' : 'idle');
+  if (active && phase !== 'running') setPhase('running');
+  else if (!active && phase === 'running') setPhase('settling');
+  const rotor = useRef<HTMLSpanElement>(null);
+  const [settleFrom, setSettleFrom] = useState(0);
+  const [flash, setFlash] = useState<number | null>(null);
+  const seenRevision = useRef(feedback?.revision);
+
+  useLayoutEffect(() => {
+    if (phase !== 'settling') return;
+    const transform = rotor.current ? getComputedStyle(rotor.current).transform : 'none';
+    if (transform && transform !== 'none') {
+      const matrix = new DOMMatrixReadOnly(transform);
+      setSettleFrom(Math.round(Math.atan2(matrix.b, matrix.a) * 180 / Math.PI));
+    }
+    const timer = window.setTimeout(() => setPhase('idle'), ORBIT_SETTLE_MS);
+    return () => window.clearTimeout(timer);
+  }, [phase]);
+
+  // Partial progress (one job of several finishing) pulses the ring without stopping it.
+  useEffect(() => {
+    if (!feedback || feedback.revision === seenRevision.current) return;
+    seenRevision.current = feedback.revision;
+    if (phase !== 'running') { setFlash(null); return; }
+    setFlash(feedback.revision);
+    const timer = window.setTimeout(() => setFlash(null), ORBIT_FLASH_MS);
+    return () => window.clearTimeout(timer);
+  }, [feedback?.revision]);
+
+  const tone = phase === 'settling' ? feedback?.tone ?? 'done' : flash !== null ? feedback?.tone : undefined;
+  return <span className="ai-task-icon" data-phase={phase} data-tone={tone} aria-hidden="true">
+    <span className="ai-orbit">
+      <span className="ai-orbit-track" />
+      <span ref={rotor} className="ai-orbit-rotor motion-essential"><span className="ai-orbit-comet" /><span className="ai-orbit-head" /></span>
+      <span key={phase === 'settling' ? 'settle' : flash !== null ? `flash-${flash}` : 'rest'} className="ai-orbit-halo motion-essential" data-flash={flash !== null || undefined} style={{ '--orbit-from': `${settleFrom}deg` } as CSSProperties} />
+    </span>
+    <span key={feedback?.revision} className="ai-task-sparkles" data-feedback={feedback?.tone}>
+      <Sparkles size={19} strokeWidth={1.8} />
+    </span>
+  </span>;
 }
 
 function AiTaskCount({ count, signature }: { count: number; signature: string }) {
@@ -190,13 +245,13 @@ export function AiTasksProvider({ children }: { children: ReactNode }) {
     feedbackSnapshot.current = new Map(jobs.map(({ id, status, applyStatus }) => [id, { status, applyStatus }]));
     if (!previous) return;
 
-    let tone: FeedbackTone | null = null;
+    let tone: TaskTone | null = null;
     for (const job of jobs) {
       const before = previous.get(job.id);
       if (job.mistakeDeleted || (before?.status === job.status && before.applyStatus === job.applyStatus)) continue;
-      const next = job.status === 'failed' ? 'failed'
-        : needsReview(job) ? 'review'
-        : job.status === 'cancelled' ? 'cancelled' : 'active';
+      // Queue → running → retry steps are progress, not news; only starts and outcomes are reported.
+      if (isActiveJob(job) && before && isActiveJob(before)) continue;
+      const next = taskTone(job);
       if (tone === null || FEEDBACK_PRIORITY[next] > FEEDBACK_PRIORITY[tone]) tone = next;
     }
     if (tone !== null) {

@@ -62,13 +62,30 @@ async function main() {
         app.db.prepare("UPDATE ai_jobs SET apply_status='pending' WHERE id=?").run(jobId);
         await page.evaluate(id => window.dispatchEvent(new CustomEvent('mistakes:open-ai-tasks', { detail: { path: `/ai-tasks?job=${id}&view=review` } })), jobId);
         await panel.getByRole('button', { name: '填入校对结果', exact: true }).waitFor();
+        // Editing hands the visible strip to the text: the action bar and sheet chrome step aside for the keyboard.
+        await panel.getByRole('button', { name: '编辑', exact: true }).click();
+        const reviewText = panel.getByRole('textbox', { name: '校对识别文字' });
+        await reviewText.focus();
+        if (width < 641) {
+            await page.setViewportSize({ width, height: 420 });
+            await page.locator('.ai-quick-panel.is-typing').waitFor();
+            assert.equal(await panel.getByRole('button', { name: '填入校对结果', exact: true }).isVisible(), false, 'keyboard hides the action bar');
+            const textBox = await reviewText.boundingBox();
+            assert.ok(textBox.y >= 0 && textBox.y + 80 <= 420, 'the edited text stays above the keyboard');
+            await panel.getByRole('button', { name: '完成', exact: true }).click();
+            await page.locator('.ai-quick-panel.is-typing').waitFor({ state: 'detached' });
+            await page.setViewportSize({ width, height: 900 });
+            await panel.getByRole('button', { name: '填入校对结果', exact: true }).waitFor();
+        } else {
+            await page.waitForTimeout(150);
+            assert.equal(await page.locator('.ai-quick-panel.is-typing').count(), 0, 'a physical keyboard keeps the action bar');
+        }
         await api('PATCH', `/mistakes/${record.id}`, { answer: '其他页面的新答案' });
         await panel.getByRole('button', { name: '填入校对结果', exact: true }).click();
         await panel.locator('[role="alert"]').filter({ hasText: /保留/ }).waitFor();
         assert.equal((await api('GET', `/mistakes/${record.id}`)).answer, '其他页面的新答案');
         await panel.getByRole('button', { name: '返回任务' }).click();
         const row = panel.locator(`[data-job-id="${jobId}"]`);
-        await row.getByText('更多', { exact: true }).click();
         await row.getByRole('button', { name: '取消任务' }).click();
         await row.getByText('已取消任务', { exact: true }).waitFor();
         await panel.getByRole('link', { name: '全部任务', exact: true }).click();
@@ -107,13 +124,23 @@ async function main() {
         await panel.getByText('已重新加入队列', { exact: true }).waitFor();
         await panel.getByRole('button', { name: '关闭 AI 任务' }).click();
         await panel.waitFor({ state: 'hidden' });
+        const icon = trigger.locator('.ai-task-icon');
+        await trigger.locator('.ai-task-icon[data-phase="running"]').waitFor();
         await page.screenshot({ path: path.join(data, `ai-orbit-${width}.png`) });
-        const iconBox = await trigger.locator('.ai-task-icon').boundingBox();
-        const orbitBox = await trigger.locator('.ai-task-orbit').boundingBox();
+        const iconBox = await icon.boundingBox();
+        const orbitBox = await trigger.locator('.ai-orbit').boundingBox();
         assert.ok(orbitBox.x >= iconBox.x && orbitBox.x + orbitBox.width <= iconBox.x + iconBox.width, 'orbit stays within its reserved space');
+        // Finishing closes the ring, then leaves nothing painted or animating behind.
+        await page.unroute('**/api/mistakes/ai/jobs/batch');
+        app.db.prepare("UPDATE ai_jobs SET status='succeeded', apply_status='pending' WHERE id=?").run(jobId);
+        await trigger.locator('.ai-task-icon[data-phase="settling"]').waitFor({ timeout: 5000 });
+        await trigger.locator('.ai-task-icon[data-phase="idle"]').waitFor({ timeout: 3000 });
+        await page.waitForTimeout(400);
+        assert.equal(await trigger.locator('.ai-orbit').evaluate((element) => getComputedStyle(element).visibility), 'hidden', 'orbit disappears once the task ends');
+        assert.deepEqual(await icon.evaluate((element) => element.getAnimations({ subtree: true }).map((animation) => animation.animationName || 'transition')), [], 'no orbit animation keeps running after the task ends');
         assert.deepEqual(errors, []);
         await context.close();
-        console.log(`Quick panel ${width}: navigation, first notification, apply, conflict, cancel, reopening, full page passed`);
+        console.log(`Quick panel ${width}: navigation, first notification, apply, keyboard editing, conflict, cancel, reopening, full page, orbit settle passed`);
     }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {

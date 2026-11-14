@@ -26,10 +26,13 @@ interface MobileDrawerProps {
   triggerRef?: RefObject<HTMLElement | null>;
   className?: string;
   footer?: ReactNode;
+  /** Replaces the default title block; it must render a `Drawer.Title`. */
+  heading?: ReactNode;
+  headerActions?: ReactNode;
   children: (portalContainer: HTMLElement | null) => ReactNode;
 }
 
-export function MobileDrawer({ open, onOpenChange, onOpenChangeComplete, title, description, closeLabel = '关闭', triggerRef, className = '', footer, children }: MobileDrawerProps) {
+export function MobileDrawer({ open, onOpenChange, onOpenChangeComplete, title, description, closeLabel = '关闭', triggerRef, className = '', footer, heading, headerActions, children }: MobileDrawerProps) {
   const [mounted, setMounted] = useState(false);
   const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
@@ -45,10 +48,11 @@ export function MobileDrawer({ open, onOpenChange, onOpenChangeComplete, title, 
           <Drawer.Popup ref={setPortalContainer} className={`mobile-filters-popup mobile-drawer-popup ${className}`.trim()} initialFocus={closeButton} finalFocus={triggerRef}>
             <div className="mobile-filters-drag-area" aria-hidden="true"><span className="mobile-filters-handle" /></div>
             <header className="mobile-filters-heading" data-base-ui-swipe-ignore>
-              <div>
+              {heading ?? <div>
                 <Drawer.Title className="mobile-filters-title">{title}</Drawer.Title>
                 {description && <Drawer.Description className="mobile-filters-description">{description}</Drawer.Description>}
-              </div>
+              </div>}
+              {headerActions}
               <Drawer.Close ref={closeButton} className="icon-button mobile-filters-close" aria-label={closeLabel}><X size={20} /></Drawer.Close>
             </header>
             <Drawer.Content className="mobile-filters-content scroll-area scroll-area--vertical" data-base-ui-swipe-ignore>{children(portalContainer)}</Drawer.Content>

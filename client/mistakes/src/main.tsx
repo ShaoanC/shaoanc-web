@@ -16,4 +16,5 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   </React.StrictMode>,
 );
 
+import './ai-task-button.css';
 import './ai-quick-panel.css';

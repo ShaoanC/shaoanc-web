@@ -1,5 +1,6 @@
 import { useFigurePreviews } from './useFigurePreviews';
 import { useEffect, useRef, useState, type ComponentProps } from 'react';
+import { createPortal } from 'react-dom';
 import { Check, ImagePlus, Trash2, ZoomIn } from 'lucide-react';
 import { api } from './api';
 import { knowledgeLabel, useApp } from './context';
@@ -32,7 +33,8 @@ function ReviewFrame({ embedded, ...props }: ComponentProps<typeof AiDialog> & {
   return embedded ? <div className="ai-review-embedded">{props.children}</div> : <AiDialog {...props} />;
 }
 
-export function AiReview({ job, input, busy, onApply, onDismiss, embedded = false, onApplied }: { embedded?: boolean; onApplied?: () => void; job: AiJob; input: AiInput; busy: boolean; onApply: (options: AiApplyOptions) => Promise<void>; onDismiss: () => void }) {
+/** `footerContainer` lets an embedding panel pin the actions outside its scroll area. */
+export function AiReview({ job, input, busy, onApply, onDismiss, embedded = false, onApplied, footerContainer }: { embedded?: boolean; onApplied?: () => void; footerContainer?: HTMLElement | null; job: AiJob; input: AiInput; busy: boolean; onApply: (options: AiApplyOptions) => Promise<void>; onDismiss: () => void }) {
   const recordView = useRecordView();
   const { subjects, knowledgePoints } = useApp();
   const pageEntry = job.mode === 'page-entry';
@@ -195,6 +197,16 @@ export function AiReview({ job, input, busy, onApply, onDismiss, embedded = fals
     if (pageEntry && figureField(figure) === 'answer') previewAnswer = previewAnswer.split(figureMarker(figure.id)).join(replacement);
     else previewText = previewText.split(figureMarker(figure.id)).join(replacement);
   }
+  const blocked = locked || unmatched.length > 0 || unplaced.length > 0;
+  const fill = <button type="button" className="button primary" disabled={blocked} onClick={() => void apply()}><Check size={16} />{locked ? '正在处理…' : '填入校对结果'}</button>;
+  const replace = (conflict || job.applyStatus === 'conflict' || Boolean(input[job.type].trim()) || (pageEntry && Boolean(input.answer.trim())))
+    && <button type="button" className="button secondary" disabled={blocked} onClick={() => void apply(true)}>确认替换当前内容</button>;
+  const append = job.type === 'answer' && <button type="button" className="button secondary" disabled={blocked} onClick={() => void apply(true, 'append')}>追加到答案</button>;
+  const messages = <>
+    {changedDuringReview && <p className="ai-review-issues">编辑器内容在校对期间发生了修改。校对稿仍保留，填入时会继续检查冲突。</p>}
+    {error && <p className="form-error" role="alert">{error}</p>}
+    {stage && <p className="ai-notice" role="status">{stage}</p>}
+  </>;
   return <section className="ai-result" data-ai-job={job.id}>
     {!embedded && <><h3>{pageEntry ? '按页录题' : job.type === 'question' ? '题干识别' : job.type === 'answer' ? '答案识别' : '生成解析'}结果</h3>
     <p className="ai-notice">{job.applyStatus === 'conflict' ? '内容已变化，识别结果已保留。校对后再选择是否替换。' : job.result?.needsReview ? '识别完成，待校对。请检查疑点、图形范围和插入位置。' : '结果已保留，校对后可填入。'}</p>
@@ -232,10 +244,17 @@ export function AiReview({ job, input, busy, onApply, onDismiss, embedded = fals
           <details className="ai-original-result"><summary>查看原始识别结果</summary><MarkdownContent>{job.result?.[job.type] || ''}</MarkdownContent>{pageEntry && <><h4>正确答案</h4><MarkdownContent>{job.result?.answer || ''}</MarkdownContent></>}</details>
         </section>
       </div>
-      {changedDuringReview && <p className="ai-review-issues">编辑器内容在校对期间发生了修改。校对稿仍保留，填入时会继续检查冲突。</p>}
-      {error && <p className="form-error" role="alert">{error}</p>}
-      {stage && <p className="ai-notice" role="status">{stage}</p>}
-      <div className="photo-actions ai-review-footer"><button type="button" className="button primary" disabled={locked || unmatched.length > 0 || unplaced.length > 0} onClick={() => void apply()}><Check size={16} />{locked ? '正在处理…' : '填入校对结果'}</button>{(conflict || job.applyStatus === 'conflict' || Boolean(input[job.type].trim()) || (pageEntry && Boolean(input.answer.trim()))) && <button type="button" className="button secondary" disabled={locked || unmatched.length > 0 || unplaced.length > 0} onClick={() => void apply(true)}>确认替换当前内容</button>}{job.type === 'answer' && <button type="button" className="button secondary" disabled={locked || unmatched.length > 0 || unplaced.length > 0} onClick={() => void apply(true, 'append')}>追加到答案</button>}<button type="button" className="table-button" disabled={locked} onClick={() => embedded ? onDismiss() : setOpen(false)}>保留校对稿，稍后继续</button></div>
+      {embedded && footerContainer ? createPortal(<div className="ai-review-dock">
+        {messages}
+        <div className="ai-review-dock-actions">
+          {(replace || append) && <div className="ai-review-dock-options">{replace}{append}</div>}
+          <button type="button" className="button secondary ai-review-later" title="保留校对稿，稍后继续" disabled={locked} onClick={onDismiss}>稍后继续</button>
+          {fill}
+        </div>
+      </div>, footerContainer) : <>
+        {messages}
+        <div className="photo-actions ai-review-footer">{fill}{replace}{append}<button type="button" className="table-button" disabled={locked} onClick={() => embedded ? onDismiss() : setOpen(false)}>保留校对稿，稍后继续</button></div>
+      </>}
     </ReviewFrame>
     <AiDialog open={Boolean(full)} onClose={() => setFull(null)} title="查看配图" wide>{full && <div className="ai-zoom-image"><img src={full} alt="放大查看图片与标注" /></div>}</AiDialog>
   </section>;

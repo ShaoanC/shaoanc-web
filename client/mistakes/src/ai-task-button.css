@@ -1,0 +1,111 @@
+/* AI task trigger. Loaded with the shell so its first paint never waits for a lazy chunk. */
+@property --orbit-sweep { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+
+.app-shell .ai-tasks-trigger.button { position: relative; display: inline-flex; align-items: center; gap: 10px; min-width: 44px; min-height: 44px; padding: 6px 12px; overflow: visible; background: transparent; font-family: inherit; }
+.app-shell .ai-tasks-trigger.button:hover:not(:disabled) { background: var(--surface-3); color: var(--text-primary); }
+.app-shell .ai-tasks-trigger.button[aria-expanded="true"] { background: var(--primary-soft); color: var(--primary); }
+.app-shell .ai-tasks-trigger.has-active-tasks { color: var(--primary); }
+.app-shell .ai-tasks-trigger.mobile-task-trigger { display: none; }
+.ai-task-label { white-space: nowrap; }
+.app-shell .ai-tasks-trigger > .ai-task-indicators { display: inline-flex; align-items: center; gap: 5px; margin: 0; }
+.ai-task-count { font-variant-numeric: tabular-nums; }
+.ai-task-attention { width: 7px; height: 7px; border-radius: 50%; background: var(--warning); }
+.ai-task-attention[data-tone="failed"] { background: var(--error); }
+
+/* Icon and orbit: a faint track, a rotating comet, and a halo that closes and releases the ring. */
+.ai-task-icon { --orbit-tone: var(--primary); position: relative; display: inline-grid; place-items: center; flex-shrink: 0; width: 32px; height: 32px; }
+.ai-task-icon[data-tone="review"] { --orbit-tone: var(--accent); }
+.ai-task-icon[data-tone="failed"] { --orbit-tone: var(--error); }
+.ai-task-icon[data-tone="cancelled"] { --orbit-tone: var(--text-tertiary); }
+.ai-orbit { position: absolute; inset: 1px; border-radius: 50%; pointer-events: none; opacity: 0; visibility: hidden; transform: scale(.6); transition: opacity 200ms var(--motion-ease), transform 320ms var(--motion-ease), visibility 0s linear 320ms; }
+.ai-task-icon:not([data-phase="idle"]) .ai-orbit { opacity: 1; visibility: visible; transform: none; transition: opacity 200ms var(--motion-ease), transform 420ms cubic-bezier(.34, 1.56, .64, 1), visibility 0s; }
+.ai-orbit-track, .ai-orbit-rotor, .ai-orbit-comet, .ai-orbit-halo { position: absolute; inset: 0; border-radius: 50%; }
+.ai-orbit-track { border: 1.5px solid var(--primary-glow); transition: opacity 320ms var(--motion-ease); }
+.ai-orbit-rotor { transition: opacity 280ms var(--motion-ease); }
+.ai-task-icon:not([data-phase="idle"]) .ai-orbit-rotor { animation: ai-orbit-rotate 1.15s linear infinite; }
+.ai-orbit-comet, .ai-orbit-halo {
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px));
+}
+.ai-orbit-comet { background: conic-gradient(transparent 0turn .4turn, rgba(23, 100, 72, .14) .62turn, var(--primary) 1turn); }
+.ai-orbit-head { position: absolute; top: -1px; left: 50%; width: 3.5px; height: 3.5px; margin-left: -1.75px; border-radius: 50%; background: var(--primary); box-shadow: 0 0 4px rgba(23, 100, 72, .45); }
+.ai-orbit-halo { opacity: 0; background: conic-gradient(from var(--orbit-from, 0deg), var(--orbit-tone) var(--orbit-sweep), transparent 0); }
+.ai-task-icon[data-phase="settling"] .ai-orbit-rotor, .ai-task-icon[data-phase="settling"] .ai-orbit-track { opacity: 0; }
+.ai-task-icon[data-phase="settling"] .ai-orbit-halo { animation: ai-orbit-sweep 420ms var(--motion-ease) forwards, ai-orbit-release 900ms var(--motion-ease) forwards; }
+.ai-orbit-halo[data-flash] { --orbit-sweep: 360deg; animation: ai-orbit-flash 680ms var(--motion-ease); }
+@keyframes ai-orbit-rotate { to { transform: rotate(1turn); } }
+@keyframes ai-orbit-sweep { from { --orbit-sweep: 0deg; } to { --orbit-sweep: 360deg; } }
+@keyframes ai-orbit-release {
+  0%, 52% { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: scale(1.32); }
+}
+@keyframes ai-orbit-flash {
+  0% { opacity: 0; transform: scale(.88); }
+  30% { opacity: .9; }
+  100% { opacity: 0; transform: scale(1.24); }
+}
+
+.ai-task-sparkles { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+.app-shell .ai-task-sparkles > svg { width: 18px; height: 18px; }
+.ai-task-icon[data-phase="running"] .ai-task-sparkles > svg { animation: ai-sparkle-breathe 2.4s ease-in-out infinite; }
+.ai-task-sparkles[data-feedback="active"], .ai-task-sparkles[data-feedback="done"] { --feedback-color: var(--primary); }
+.ai-task-sparkles[data-feedback="review"] { --feedback-color: var(--warning); }
+.ai-task-sparkles[data-feedback="failed"] { --feedback-color: var(--error); }
+.ai-task-sparkles[data-feedback="cancelled"] { --feedback-color: var(--info); }
+.ai-task-sparkles[data-feedback] { animation: ai-task-sparkle-pulse 420ms var(--motion-ease), ai-task-feedback-color 900ms var(--motion-ease); }
+@keyframes ai-sparkle-breathe {
+  0%, 100% { transform: none; }
+  50% { transform: scale(1.08) rotate(8deg); opacity: .8; }
+}
+@keyframes ai-task-sparkle-pulse { 40% { transform: scale(1.16); } }
+@keyframes ai-task-feedback-color {
+  0%, 55% { color: var(--feedback-color); }
+  100% { color: inherit; }
+}
+
+/* Running-count badge. */
+.ai-task-count-increase { animation: ai-task-count-increase 360ms var(--motion-ease); }
+.ai-task-count-decrease { animation: ai-task-count-decrease 360ms var(--motion-ease); }
+.ai-task-count-replace { animation: ai-task-count-replace 360ms var(--motion-ease); }
+.ai-task-count-exit { animation: ai-task-count-exit 360ms var(--motion-ease) forwards; }
+@keyframes ai-task-count-increase {
+  from { opacity: .3; transform: translateY(5px) scale(.85); }
+  55% { transform: translateY(-2px) scale(1.12); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes ai-task-count-decrease {
+  from { opacity: .3; transform: translateY(-5px) scale(1.12); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes ai-task-count-replace {
+  40% { background: var(--primary-soft); color: var(--primary); transform: scale(1.18); }
+  to { transform: none; }
+}
+@keyframes ai-task-count-exit { to { opacity: 0; transform: translateY(5px) scale(.8); } }
+
+@media (max-width: 960px) {
+  .app-shell .ai-tasks-trigger.mobile-task-trigger { display: inline-flex; padding: 6px; }
+  .mobile-task-trigger .ai-task-label { display: none; }
+  .app-shell .mobile-task-trigger > .ai-task-indicators { position: absolute; top: -1px; right: -4px; gap: 3px; pointer-events: none; }
+  .mobile-task-trigger .ai-task-count { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--primary); color: #fff; font-size: 11px; font-weight: 600; line-height: 18px; box-shadow: 0 0 0 2px var(--surface-1); }
+  .mobile-task-trigger .ai-task-attention { box-shadow: 0 0 0 2px var(--surface-1); }
+}
+
+/* The ring still communicates progress, but slowly and without scaling or sweeping. */
+@media (prefers-reduced-motion: reduce) {
+  .ai-orbit, .ai-task-icon:not([data-phase="idle"]) .ai-orbit { transform: none; }
+  .ai-task-icon:not([data-phase="idle"]) .ai-orbit-rotor { animation-duration: 2.6s; }
+  .ai-task-icon[data-phase="settling"] .ai-orbit-halo { --orbit-sweep: 360deg; animation: ai-orbit-fade 900ms var(--motion-ease) forwards; }
+  .ai-orbit-halo[data-flash] { animation: ai-orbit-fade 680ms var(--motion-ease); }
+  .ai-task-icon[data-phase="running"] .ai-task-sparkles > svg { animation: none; }
+  .ai-task-sparkles[data-feedback] { animation: ai-task-feedback-color 640ms var(--motion-ease); animation-duration: 640ms !important; }
+  .ai-task-count { animation-name: ai-task-count-fade; animation-duration: 40ms; }
+  .ai-task-count-exit { animation-name: ai-task-count-fade-out; }
+  @keyframes ai-task-count-fade { from { opacity: .6; } to { opacity: 1; } }
+  @keyframes ai-task-count-fade-out { to { opacity: 0; } }
+  @keyframes ai-orbit-fade {
+    0% { opacity: 0; }
+    25%, 55% { opacity: 1; }
+    100% { opacity: 0; }
+  }
+}

@@ -47,14 +47,6 @@
   -webkit-overflow-scrolling: touch;
 }
 
-.ai-tasks-dialog .task-manager-compact {
-  background: transparent;
-}
-
-.ai-tasks-mobile-drawer .task-manager-compact {
-  background: transparent;
-}
-
 .ai-tasks-dialog-backdrop[data-starting-style],
 .ai-tasks-dialog-backdrop[data-ending-style],
 .ai-tasks-dialog[data-starting-style],
