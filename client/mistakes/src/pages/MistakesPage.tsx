@@ -397,7 +397,7 @@ export function MistakesPage({ active = true }: { active?: boolean }) {
       {!trashed && selectionMode && <div className="library-selection-toolbar" aria-label="批量选择题目">
         <label className="library-select-all"><Checkbox checked={allSelected} indeterminate={someSelected && !allSelected} disabled={exportDisabled} onChange={togglePageSelection} /><span>全选已加载</span></label>
         <span className="library-selection-count" role="status">已选 <strong>{selectedIds.length}</strong> 道</span>
-        <div className="library-selection-actions">{lifecycle === 'draft' && <button disabled={exportDisabled} onClick={() => void selectAllDrafts()}>{busy?.kind === 'select' ? '正在全选…' : hasFilters ? `全选筛选结果（${total}）` : `全选全部草稿（${total}）`}</button>}<button disabled={!selectedIds.length || Boolean(busy)} onClick={() => setSelectedIds([])}>清空</button></div>
+        {lifecycle === 'draft' && <button className="library-select-drafts" disabled={exportDisabled} onClick={() => void selectAllDrafts()}>{busy?.kind === 'select' ? '正在全选…' : hasFilters ? `全选筛选结果（${total}）` : `全选全部草稿（${total}）`}</button>}
         {lifecycle === 'draft' && <div className="library-archive-dock">
           {mobile && <span>已选 <strong>{selectedIds.length}</strong> 道</span>}
           <button className="button primary" disabled={exportDisabled || !selectedIds.length} onClick={() => void archiveSelected()}>

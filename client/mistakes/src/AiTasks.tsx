@@ -235,7 +235,8 @@ export function AiTasksProvider({ children }: { children: ReactNode }) {
       routeNotices.current.add(key);
       if (!routesLoaded.current && !isActiveJob(job)) continue;
       const path = `/ai-tasks?job=${job.id}`;
-      if (!open) toast.info(<a className="ai-toast-link" href={`#${path}`}><span>记录 #{job.mistakeId} 解析响应超时，已自动切换至升级模型 {job.analysisRoute.model}。</span><small>查看任务进度</small></a>, { ...toastDestination(path), toastId: `analysis-route-${key}` });
+      const reason = job.analysisRoute.reason === 'model_request' ? '常规模型请求升级' : '解析响应超时';
+      if (!open) toast.info(<a className="ai-toast-link" href={`#${path}`}><span>记录 #{job.mistakeId} {reason}，已自动切换至升级模型 {job.analysisRoute.model}。</span><small>查看任务进度</small></a>, { ...toastDestination(path), toastId: `analysis-route-${key}` });
     }
     routesLoaded.current = true;
   }, [jobs, loaded, open]);

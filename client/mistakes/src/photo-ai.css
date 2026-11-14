@@ -267,9 +267,6 @@
 .ai-tasks-trigger > .ai-task-icon { display: inline-flex; position: relative; align-items: center; justify-content: center; width: 19px; height: 19px; flex-shrink: 0; }
 .ai-task-orbit { position: absolute; inset: -5px; border: 2px solid var(--primary-glow); border-radius: 50%; }
 .ai-task-orbit::after { content: ''; position: absolute; inset: -2px; border: 2px solid transparent; border-top-color: var(--primary); border-right-color: var(--primary); border-radius: 50%; animation: spin 1.1s linear infinite; }
-@media (prefers-reduced-motion: reduce) {
-  .ai-task-orbit::after { animation: none; }
-}
 .ai-task-count-increase { animation: ai-task-count-increase 360ms var(--motion-ease); }
 .ai-task-count-decrease { animation: ai-task-count-decrease 360ms var(--motion-ease); }
 .ai-task-count-replace { animation: ai-task-count-replace 360ms var(--motion-ease); }

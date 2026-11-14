@@ -45,7 +45,7 @@ export interface AiJob {
   input: AiInput;
   imageIds: number[];
   recognitionPrompt?: string;
-  analysisRoute?: { at: string; model: string } | null;
+  analysisRoute?: { at: string; model: string; reason?: 'timeout' | 'model_request' } | null;
   result: AiReviewResult | null;
   error: string | null;
   attempts: number;

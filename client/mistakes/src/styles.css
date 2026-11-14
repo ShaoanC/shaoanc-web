@@ -1929,7 +1929,11 @@ input:focus, textarea:focus, select:focus { outline: 2px solid rgba(23,100,72,.1
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; }
-  *:not(.Toastify__progress-bar), *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 40ms !important; }
+  *:not(.Toastify__progress-bar), *::before, *::after { transition-duration: 40ms !important; }
+  *:not(.Toastify__progress-bar, .Toastify__spinner, .spin), *::before, :not(.ai-task-orbit)::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+  }
   .skeleton-shimmer::after { animation: none !important; }
   .loading-progress-fill { transition-duration: 60ms !important; }
 }

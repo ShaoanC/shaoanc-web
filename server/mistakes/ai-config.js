@@ -8,7 +8,7 @@ const profiles = {
     general: { prefix: 'MISTAKES_AI', name: '通用识别' },
     segmentation: { prefix: 'MISTAKES_AI_SEGMENTATION', name: '页面分题' },
     analysis: { prefix: 'MISTAKES_AI_ANALYSIS', name: '生成解析' },
-    analysisFallback: { prefix: 'MISTAKES_AI_ANALYSIS_FALLBACK', name: '解析超时升级' }
+    analysisFallback: { prefix: 'MISTAKES_AI_ANALYSIS_FALLBACK', name: '解析模型升级' }
 };
 
 function configProfile(profile = 'general') {
@@ -60,7 +60,7 @@ function saveConfig(body, profile = 'general') {
     if (profile === 'analysis' || profile === 'analysisFallback') {
         const other = readConfig(profile === 'analysis' ? 'analysisFallback' : 'analysis');
         if (config.enabled && other.enabled && config.baseUrl === other.baseUrl && config.model === other.model) {
-            fail(400, '解析超时升级须配置不同于生成解析的接口或模型');
+            fail(400, '解析模型升级须配置不同于生成解析的接口或模型');
         }
     }
     // dotenv supports quoted values; reject all quote forms so one key cannot escape its line.
@@ -112,6 +112,7 @@ function safeAiError(error, { details = false } = {}) {
         }
     }
     if (error.code === 'AI_REFUSAL') return 'AI 未提供识别结果，请检查图片内容后重试';
+    if (error.code === 'ANALYSIS_UPGRADE_REQUESTED') return 'AI 无法可靠生成解析，请检查题干、答案和配图，或联系管理员确认升级模型配置';
     if (error.code === 'VISION_TEST_MISMATCH') return 'AI 请求已连通，但未正确读出测试图片内容，请检查模型的图片输入能力';
     if (error.code === 'SEGMENTATION_TEST_MISMATCH') return 'AI 请求已连通，但未返回有效的分题区域，请检查模型的分割能力';
     if (error.name === 'TimeoutError') return 'AI 响应超时，请重试';

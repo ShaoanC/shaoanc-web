@@ -285,13 +285,14 @@ async function requestResult(job, signal) {
         try {
             return normalizeResult(job, await requestAnalysis({ input, images, signal, context, profile }));
         } catch (error) {
-            if (signal.aborted || profile !== 'analysis' || !isAiTimeout(error)) throw error;
+            const reason = error.code === 'ANALYSIS_UPGRADE_REQUESTED' ? 'model_request' : 'timeout';
+            if (signal.aborted || profile !== 'analysis' || (reason === 'timeout' && !isAiTimeout(error))) throw error;
             const fallback = readConfig('analysisFallback');
             const primary = readConfig('analysis');
             if (!fallback.enabled || !fallback.baseUrl || !fallback.model || !fallback.apiKey
                 || (fallback.baseUrl === primary.baseUrl && fallback.model === primary.model)) throw error;
             // Persist the route before calling the stronger model, including across retries/restarts.
-            source.analysisRoute = { at: now(), model: fallback.model };
+            source.analysisRoute = { at: now(), model: fallback.model, reason };
             db.prepare('UPDATE ai_jobs SET source_json = ? WHERE id = ?').run(JSON.stringify(source), job.id);
             return normalizeResult(job, await requestAnalysis({ input, images, signal, context, profile: 'analysisFallback' }));
         }
@@ -404,7 +405,7 @@ function applyJob(id, userId, options = {}) {
 
 function canRetry(error, attempts) {
     if (error.name === 'AbortError') return false;
-    if (['INCOMPLETE_AI_RESULT', 'AI_REFUSAL'].includes(error.code)) return false;
+    if (['INCOMPLETE_AI_RESULT', 'AI_REFUSAL', 'ANALYSIS_UPGRADE_REQUESTED'].includes(error.code)) return false;
     if (aiErrorCategory(error) === 'format') return attempts < 2;
     return !error.status || [408, 409, 429].includes(error.status) || error.status >= 500;
 }

@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { setTimeout: delay } = require('node:timers/promises');
 const directory = fs.mkdtempSync(path.resolve(__dirname, '../data/ai-fallback-smoke-'));
@@ -15,6 +16,8 @@ let failure = 'timeout';
 let fallbackFailure = false;
 let releaseFallback;
 const calls = [];
+const upgradeMarker = '[[UPGRADE_ANALYSIS_MODEL]]';
+const completion = (content) => Response.json({ choices: [{ message: { content }, finish_reason: 'stop' }] });
 global.fetch = async (url, options) => {
     if (!String(url).startsWith('https://ai-test.invalid/')) return originalFetch(url, options);
     options.signal.throwIfAborted();
@@ -23,6 +26,7 @@ global.fetch = async (url, options) => {
     if (request.model === 'primary') {
         if (failure === 'timeout') throw new DOMException('Timeout', 'TimeoutError');
         if (failure === 'cancel') throw new DOMException('Cancelled', 'AbortError');
+        if (failure === 'upgrade' || failure === 'upgrade-twice') return completion(`  ${upgradeMarker}\n`);
         if (failure) return Response.json({ error: { message: 'mock error' } }, { status: Number(failure) });
     } else {
         assert.equal(options.headers.Authorization, 'Bearer stronger-secret');
@@ -31,8 +35,9 @@ global.fetch = async (url, options) => {
             options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true });
         });
         if (fallbackFailure) throw new DOMException('Timeout', 'TimeoutError');
+        if (failure === 'upgrade-twice') return completion(upgradeMarker);
     }
-    return Response.json({ choices: [{ message: { content: '升级模型生成的解析。' }, finish_reason: 'stop' }] });
+    return completion('升级模型生成的解析。');
 };
 
 async function main() {
@@ -61,14 +66,19 @@ async function main() {
         }
         throw new Error('Job did not settle');
     }
-    for (const reason of ['timeout', '408', '504']) {
+    for (const reason of ['timeout', '408', '504', 'upgrade']) {
         failure = reason;
         const before = calls.length;
         const result = await wait(create());
         assert.equal(result.status, 'succeeded');
         assert.equal(result.analysisRoute.model, 'stronger');
+        assert.equal(result.analysisRoute.reason, reason === 'upgrade' ? 'model_request' : 'timeout');
+        assert.equal(result.result.analysis, '升级模型生成的解析。');
         assert.deepEqual(calls.slice(before).map((call) => call.model), ['primary', 'stronger']);
-        assert.deepEqual(calls[before].messages, calls[before + 1].messages, 'Routing preserves input');
+        const [primary, stronger] = calls.slice(before);
+        assert.ok(primary.messages[0].content.includes(upgradeMarker));
+        assert.ok(!stronger.messages[0].content.includes(upgradeMarker));
+        assert.deepEqual(primary.messages[1], stronger.messages[1], 'Routing preserves input');
     }
     for (const reason of ['', '401', 'cancel']) {
         failure = reason;
@@ -97,45 +107,71 @@ async function main() {
     const manual = await wait(ai.retryJob(exhausted.id, userId));
     assert.equal(manual.status, 'succeeded');
     assert.equal(manual.analysisRoute, null, 'Manual retry starts a fresh route');
+    failure = 'upgrade-twice';
+    const repeated = await wait(create());
+    assert.equal(repeated.status, 'failed');
+    assert.equal(repeated.attempts, 1);
+    assert.equal(repeated.result, null);
     failure = 'timeout';
     saveConfig({ enabled: false }, 'analysisFallback');
     const disabled = create();
     assert.equal((await wait(disabled, (job) => job.status === 'retrying')).analysisRoute, null);
     ai.cancelJob(disabled.id, userId);
+    failure = 'upgrade';
+    const unavailable = await wait(create());
+    assert.equal(unavailable.status, 'failed');
+    assert.equal(unavailable.analysisRoute, null);
+    assert.equal(unavailable.result, null);
+    assert.match(unavailable.error, /AI 无法可靠生成解析/);
     saveConfig({ enabled: true }, 'analysisFallback');
 
     server = await new Promise((resolve) => { const listener = app.listen(0, '127.0.0.1', () => resolve(listener)); });
     const base = `http://127.0.0.1:${server.address().port}`;
     browser = await chromium.launch({ headless: true, ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH } : {}) });
     for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 900 }]) {
-        const context = await browser.newContext({ viewport });
+        const context = await browser.newContext({ viewport, reducedMotion: viewport.width === 390 ? 'reduce' : 'no-preference' });
         const login = await context.request.post(`${base}/api/mistakes/auth/login`, { data: { username: 'fallback_admin', password: 'Fallback2026!' } });
         assert.equal(login.status(), 200);
         const page = await context.newPage();
         await page.goto(`${base}/mistakes/#/settings`);
         await page.getByRole('tab', { name: 'AI 设置', exact: true }).click();
-        const section = page.locator('.ai-profile-settings').filter({ has: page.getByRole('heading', { name: '解析超时升级', exact: true }) });
-        await section.getByRole('button', { name: '保存解析超时升级配置' }).waitFor();
+        const section = page.locator('.ai-profile-settings').filter({ has: page.getByRole('heading', { name: '解析模型升级', exact: true }) });
+        await section.getByRole('button', { name: '保存解析模型升级配置' }).waitFor();
         assert.equal(await section.getByLabel('模型名称').inputValue(), 'stronger');
-        await section.getByRole('button', { name: '保存解析超时升级配置' }).click();
-        await page.getByText('解析超时升级配置已保存。', { exact: true }).waitFor();
+        await section.getByRole('button', { name: '保存解析模型升级配置' }).click();
+        const savedToast = page.locator('.Toastify__toast').filter({ hasText: '解析模型升级配置已保存。' });
+        await savedToast.locator('.Toastify__close-button').click();
+        await savedToast.waitFor({ state: 'hidden' });
+        let finishTest;
+        const heldTest = new Promise((resolve) => { finishTest = resolve; });
+        await page.route('**/admin/ai/test?profile=analysisFallback', async (route) => { await heldTest; await route.continue(); });
         await section.getByRole('button', { name: '测试升级模型', exact: true }).click();
-        await page.getByText('生成解析 API 连接测试通过。', { exact: true }).waitFor();
+        try {
+            const spinner = page.locator('.Toastify__spinner');
+            await spinner.waitFor();
+            assert.equal(await spinner.evaluate((node) => getComputedStyle(node).animationIterationCount), 'infinite');
+        } finally { finishTest(); }
+        const testToast = page.locator('.Toastify__toast').filter({ hasText: '生成解析 API 连接测试通过。' });
+        await testToast.waitFor();
         assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'No horizontal overflow');
         await section.scrollIntoViewIfNeeded();
-        await page.screenshot({ path: `/tmp/ai-fallback-settings-${viewport.width}.png` });
+        await page.screenshot({ path: path.join(os.tmpdir(), `ai-fallback-settings-${viewport.width}.png`) });
         releaseFallback = {};
+        failure = viewport.width === 390 ? 'upgrade' : 'timeout';
         const routed = create();
         await wait(routed, (job) => Boolean(job.analysisRoute));
-        await page.getByText(`记录 #${mistakeId} 解析响应超时，已自动切换至升级模型 stronger。`, { exact: true }).waitFor();
+        await testToast.waitFor({ state: 'hidden' });
+        await page.evaluate(() => window.dispatchEvent(new Event('mistakes:updated')));
+        const reason = failure === 'upgrade' ? '常规模型请求升级' : '解析响应超时';
+        await page.getByText(`记录 #${mistakeId} ${reason}，已自动切换至升级模型 stronger。`, { exact: true }).waitFor();
         await delay(400); // Let the toast entrance animation finish before capture.
-        await page.screenshot({ path: `/tmp/ai-fallback-toast-${viewport.width}.png` });
+        await page.screenshot({ path: path.join(os.tmpdir(), `ai-fallback-toast-${viewport.width}.png`) });
         ai.cancelJob(routed.id, userId);
         releaseFallback.resolve?.(); releaseFallback = null;
         assert.equal((await wait(routed)).status, 'cancelled');
         await context.close();
     }
-    console.log('AI timeout routing passed: timeout/408/504, non-timeout isolation, retry persistence, disabled fallback, cancellation, settings and toast on mobile/desktop.');
+    console.log('AI analysis routing passed: model request, timeout/408/504, unrelated errors, retries, disabled fallback, cancellation, settings and toast on mobile/desktop.');
 }
 main().catch((error) => { console.error(error); process.exitCode = 1; }).finally(async () => {
     releaseFallback?.resolve?.();

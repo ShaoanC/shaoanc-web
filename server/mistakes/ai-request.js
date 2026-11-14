@@ -1,6 +1,8 @@
 const { requireAiConfig } = require('./ai-config');
 const { db } = require('./database');
 
+const analysisUpgradeMarker = '[[UPGRADE_ANALYSIS_MODEL]]';
+
 function countAiCall(context) {
     if (context?.userId) db.prepare('UPDATE users SET ai_call_count = ai_call_count + 1 WHERE id = ?').run(context.userId);
 }
@@ -10,6 +12,7 @@ function isAiTimeout(error) {
 }
 
 function aiErrorCategory(error) {
+    if (error.code === 'ANALYSIS_UPGRADE_REQUESTED') return 'upgrade_requested';
     if (error.code === 'AI_REFUSAL') return 'refusal';
     if (error.code === 'INCOMPLETE_AI_RESULT') return 'truncated';
     if (error.code === 'VISION_TEST_MISMATCH') return 'vision_mismatch';
@@ -118,6 +121,7 @@ async function requestAnalysis({ input = {}, images = [], signal, context, onMet
                     '不要校对、评判或质疑给定答案，不要重新作答、纠错、替换答案或给出与给定答案不同的结论。选择题围绕给定选项解释，填空题或多小题按给定答案的顺序逐项展开。',
                     '已有步骤可用于组织解析，但不要只重复答案；若某一步缺少必要条件或配图信息，只简要指出该步所缺信息，不编造条件或推导，也不据此改判给定答案。',
                     '仅返回标准 Markdown 格式的解析正文，不返回 JSON 或代码围栏，不重复题干，不返回或改写 question、answer。',
+                    ...(profile === 'analysis' ? [`如果判断自己无法可靠地讲清关键推导，可以立即停止并只返回 ${analysisUpgradeMarker}，触发升级模型。标记须是完整回复，不能附带解析、引号或代码围栏。`] : []),
                     '数学排版规则（必须遵守）：使用标准 LaTeX 和 Markdown 数学语法，所有数学表达式和 LaTeX 命令都必须用美元符号包围。行内公式使用 $...$；独立公式使用 $$，起始和结束的 $$ 必须各自独占一行，公式写在中间。',
                     '禁止使用 \\(...\\) 或 \\[...\\] 作为公式定界符，禁止在数学定界符外裸写 LaTeX 命令，也不要用行内代码或代码围栏包裹公式。即使题干或答案使用其他定界符，解析也必须转换为上述美元符号格式。',
                     '独立公式错误示例：\\[\n(3-m)x=8.\n\\]\n正确写法：\n$$\n(3-m)x = 8\n$$',
@@ -137,9 +141,10 @@ async function requestAnalysis({ input = {}, images = [], signal, context, onMet
         const choice = response.choices?.[0];
         if (choice?.finish_reason === 'length') throw Object.assign(new Error('Truncated AI result'), { code: 'INCOMPLETE_AI_RESULT' });
         if (choice?.message?.refusal || choice?.finish_reason === 'content_filter') throw Object.assign(new Error('AI declined analysis'), { code: 'AI_REFUSAL' });
-        const analysis = analysisText(choice?.message?.content);
-        if (!analysis.trim()) throw Object.assign(new Error('Empty AI analysis'), { code: 'INVALID_AI_RESULT' });
-        return { analysis: analysis.trim() };
+        const analysis = analysisText(choice?.message?.content).trim();
+        if (!analysis) throw Object.assign(new Error('Empty AI analysis'), { code: 'INVALID_AI_RESULT' });
+        if (analysis === analysisUpgradeMarker) throw Object.assign(new Error('AI requested a stronger analysis model'), { code: 'ANALYSIS_UPGRADE_REQUESTED' });
+        return { analysis };
     } catch (error) {
         // Reading an aborted response body may throw AbortError instead of the timeout reason.
         if (requestSignal.aborted) error = requestSignal.reason;

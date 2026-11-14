@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import ReactCrop, { type PercentCrop } from 'react-image-crop';
+import ReactCrop, { areCropsEqual, type PercentCrop } from 'react-image-crop';
 import { ArrowLeft, ArrowRight, Camera, Crop, ImagePlus, RotateCcw, RotateCw, Trash2 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { ResponsiveAiDialog } from './ResponsiveAiDialog';
@@ -17,6 +17,35 @@ import 'react-image-crop/dist/ReactCrop.css';
 // file stays the untouched original; url previews it with rotation applied.
 type Entry = { sourceKey?: string; key: string; clientId: string; file: File; url: string; crop: PercentCrop; rotation: number };
 const fullCrop: PercentCrop = { unit: '%', x: 0, y: 0, width: 100, height: 100 };
+
+function PhotoCropFrame({ initialCrop, disabled, onCommit, children }: { initialCrop: PercentCrop; disabled: boolean; onCommit: (crop: PercentCrop) => void; children: ReactNode }) {
+  const [crop, setCrop] = useState(initialCrop);
+  const pending = useRef<PercentCrop | null>(null);
+  const frame = useRef(0);
+  useLayoutEffect(() => () => cancelAnimationFrame(frame.current), []);
+
+  return <ReactCrop className="ReactCrop--no-animate" crop={crop} minWidth={20} minHeight={20} disabled={disabled}
+    onChange={(_, percent) => {
+      pending.current = percent;
+      if (!frame.current) frame.current = requestAnimationFrame(() => {
+        frame.current = 0;
+        if (pending.current) setCrop(pending.current);
+      });
+    }}
+    onComplete={() => {
+      // The last pointer move can arrive before its animation frame is painted.
+      const finalCrop = pending.current;
+      if (!finalCrop) return;
+      pending.current = null;
+      cancelAnimationFrame(frame.current);
+      frame.current = 0;
+      setCrop(finalCrop);
+      onCommit(finalCrop);
+    }}>
+    {children}
+  </ReactCrop>;
+}
+
 // The compression library's PNG helper quantizes colors; native PNG preserves the canvas pixels.
 const losslessFile = (canvas: HTMLCanvasElement, name: string) => new Promise<File>((resolve, reject) => {
   canvas.toBlob((blob) => blob ? resolve(new File([blob], name, { type: 'image/png', lastModified: Date.now() })) : reject(new Error('浏览器无法生成裁剪图片，请重试。')), 'image/png');
@@ -87,7 +116,11 @@ export function PhotoInput({ purpose, recordId, ensureSaved, actions, aiAvailabl
     setEntries((items) => [...items, { key: crypto.randomUUID(), clientId: crypto.randomUUID(), sourceKey: image.key, file, url: `/api/mistakes/photo-library/${image.key}/preview`, crop: { ...fullCrop }, rotation: 0 }]);
     setSelected(entries.length); setOpen(true);
   }
-  function changeCrop(crop: PercentCrop) { setEntries((items) => items.map((entry, index) => index === selected ? { ...entry, crop, clientId: crypto.randomUUID() } : entry)); }
+  function changeCrop(crop: PercentCrop) {
+    if (!current || areCropsEqual(crop, current.crop)) return;
+    const clientId = crypto.randomUUID();
+    setEntries((items) => items.map((entry) => entry.key === current.key ? { ...entry, crop, clientId } : entry));
+  }
   async function rotate(direction: -1 | 1) {
     if (!current || busy) return;
     setBusy(true);
@@ -193,9 +226,9 @@ export function PhotoInput({ purpose, recordId, ensureSaved, actions, aiAvailabl
         <div className="photo-thumbnail-controls"><button type="button" className="icon-button" aria-label="向前移动" disabled={busy || index === 0} onClick={() => move(index, -1)}><ArrowLeft size={14} /></button><button type="button" className="icon-button" aria-label="移出本次识别" disabled={busy} onClick={() => remove(index)}><Trash2 size={14} /></button><button type="button" className="icon-button" aria-label="向后移动" disabled={busy || index === entries.length - 1} onClick={() => move(index, 1)}><ArrowRight size={14} /></button></div>
       </div>)}</div>
       {current && <div className="photo-rotation-actions"><button type="button" className="button secondary" disabled={busy || !imageReady} onClick={() => void rotate(-1)}><RotateCcw size={16} />左转 90°</button><button type="button" className="button secondary" disabled={busy || !imageReady} onClick={() => void rotate(1)}><RotateCw size={16} />右转 90°</button></div>}
-      {current ? <div className="photo-crop-stage"><ReactCrop crop={current.crop} onChange={(_, percent) => changeCrop(percent)} minWidth={20} minHeight={20} disabled={busy}>
+      {current ? <div className="photo-crop-stage"><PhotoCropFrame key={`${current.key}:${current.url}`} initialCrop={current.crop} onCommit={changeCrop} disabled={busy}>
         <img key={current.url} ref={previewRef} src={current.url} onLoad={(event) => { if (photo.current === event.currentTarget) setLoadedUrl(event.currentTarget.src); }} onError={(event) => { if (photo.current === event.currentTarget) { setLoadedUrl(null); toast.error('图片无法读取，请移除后重新选择。'); } }} alt={`裁剪第 ${selected + 1} 张${label}图片`} />
-      </ReactCrop></div> : <p className="ai-empty">添加图片开始裁剪。</p>}
+      </PhotoCropFrame></div> : <p className="ai-empty">添加图片开始裁剪。</p>}
       <div className="photo-crop-footer"><button type="button" className="button ghost" disabled={busy} onClick={() => album.current?.click()}><ImagePlus size={16} />追加图片</button><p>{stage || '旋转会重置选框。按显示方向备份整图与裁剪图，保留彩色笔迹。'}</p></div>
       <RecognitionPrompt purpose={purpose} value={recognitionPrompt} onChange={onRecognitionPromptChange} disabled={busy} />
       {!aiAvailable && <p className="ai-notice">AI 尚未启用，可以先保存图片。</p>}
