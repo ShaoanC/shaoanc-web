@@ -11,7 +11,7 @@ const { getPublicCaptchaConfig, verifyCaptcha } = require('./captcha');
 const { loginIpLimit, loginFailureLimit, registrationLimit } = require('./auth-limits');
 const {
     fail, validateCredentials, validateUsername, validatePassword, hashPassword, verifyPassword, publicUser,
-    createSession, clearSession, loadSession, requireUser, requireAdmin
+    createSession, clearSession, loadSession, requireSession, requireUser, requireAdmin
 } = require('./auth');
 
 const router = express.Router();
@@ -143,6 +143,7 @@ router.get('/auth/config', (req, res) => {
 });
 
 router.get('/auth/me', (req, res) => {
+    res.set('Cache-Control', 'no-store');
     success(res, { user: req.user ? publicUser(req.user) : null });
 });
 
@@ -186,9 +187,6 @@ router.post('/auth/login', loginIpLimit, loginFailureLimit, async (req, res) => 
     if (!user || !verifyPassword(password, user.password_hash)) {
         fail(401, '用户名或密码错误');
     }
-    if (!user.active) {
-        fail(403, '账号已停用，请联系管理员');
-    }
     clearSession(req, res);
     createSession(user.id, res);
     success(res, { user: publicUser(user) });
@@ -198,6 +196,8 @@ router.post('/auth/logout', (req, res) => {
     clearSession(req, res);
     success(res, null);
 });
+
+router.get('/auth/data-export', requireSession, require('./personal-export').downloadPersonalData);
 
 router.use(requireUser);
 require('./ai-router')(router, { success, ownMistake, serializeMistake, cleanupExpiredTrash });
@@ -707,7 +707,7 @@ router.patch('/admin/users/:id', (req, res) => {
     db.transaction(() => {
         db.prepare('UPDATE users SET active = ?, password_hash = ? WHERE id = ?')
             .run(active ? 1 : 0, password === undefined ? user.password_hash : hashPassword(password), id);
-        if (!active || password !== undefined) {
+        if (password !== undefined) {
             db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id);
         }
     })();

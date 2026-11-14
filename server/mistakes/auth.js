@@ -85,7 +85,7 @@ function loadSession(req, res, next) {
             SELECT users.*, sessions.expires_at FROM sessions
             JOIN users ON users.id = sessions.user_id WHERE sessions.token_hash = ?
         `).get(hashedToken);
-        if (session && session.active && session.expires_at > new Date().toISOString()) {
+        if (session && session.expires_at > new Date().toISOString()) {
             req.user = session;
             if (!isReadOnly()) {
                 const seenAt = new Date().toISOString();
@@ -99,15 +99,22 @@ function loadSession(req, res, next) {
     next();
 }
 
-function requireUser(req, res, next) {
+function requireSession(req, res, next) {
     if (!req.user) {
         return res.status(401).json({ success: false, message: '请先登录' });
     }
     next();
 }
 
+function requireUser(req, res, next) {
+    requireSession(req, res, () => {
+        if (!req.user.active) return res.status(403).json({ success: false, code: 'ACCOUNT_FROZEN', message: '您的账号已被冻结，仍可下载自己的数据。' });
+        next();
+    });
+}
+
 function requireAdmin(req, res, next) {
-    if (req.user.role !== 'admin') {
+    if (!req.user.active || req.user.role !== 'admin') {
         return res.status(403).json({ success: false, message: '需要管理员权限' });
     }
     next();
@@ -115,5 +122,5 @@ function requireAdmin(req, res, next) {
 
 module.exports = {
     fail, validateCredentials, validateUsername, validatePassword, hashPassword, verifyPassword, publicUser,
-    createSession, clearSession, loadSession, requireUser, requireAdmin
+    createSession, clearSession, loadSession, requireSession, requireUser, requireAdmin
 };

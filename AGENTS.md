@@ -31,6 +31,7 @@
 - `npm run test:export-preview`: check PDF preview/retry, export settings, shared desktop dialogs/mobile drawers, AI task filters and homepage layout after closing using real Chromium and an isolated database.
 - `npm run test:export-practice`: check practice PDF dividers/10–70mm spacing, desktop steppers, mobile wheel gestures and nested scrolling using real Chromium and an isolated database.
 - `npm run test:backup`: check WAL snapshots, complete data/image/config restoration, graceful AI pause, read-only protection, administrator access, scheduling/retention and restore rollback using isolated local data and a mock AI.
+- `node scripts/mistakes-frozen-account-smoke.cjs`: after building, check frozen-account login/access restrictions, owner-only data downloads, trash retention, reactivation and mobile/desktop download retry/logout. Set `CHROMIUM_PATH` to use system Chromium.
 - `npm run backup:restore -- <archive.tar.gz> --confirm`: restore a full backup after stopping the Node service; creates a pre-restore rollback backup when current data exists.
 - `node scripts/mistakes-upload-smoke.cjs`: check background photo uploads, deferred answer reuse, automatic retries and resume using mocked requests.
 - `node scripts/mistakes-photo-preparation-smoke.cjs`: check compression worker deadlines and main-thread recovery using mocked compression.

@@ -44,6 +44,7 @@ export async function api<T>(path: string, options: RequestInit = {}, activity: 
       throw error;
     });
     if (!response.ok || !result?.success) {
+      if (result?.code === 'ACCOUNT_FROZEN') window.dispatchEvent(new Event('mistakes:account-frozen'));
       if (result?.code === 'BACKUP_READ_ONLY') window.dispatchEvent(new CustomEvent('mistakes:backup-status', { detail: { readOnly: true } }));
       throw new ApiError(result?.message || '请求失败，请稍后重试。', response.status, result?.code);
     }

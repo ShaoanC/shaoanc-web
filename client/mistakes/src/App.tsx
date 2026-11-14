@@ -5,6 +5,7 @@ import { api, json } from './api';
 import { AppContext, sortDirectory } from './context';
 import { GlobalLoadingProgress, LoadingContent, SlidingNavigation, type SkeletonKind } from './motion';
 import { LogoMark } from './Logo';
+import { FrozenAccountPage } from './FrozenAccountPage';
 import { FriendlyCaptcha, type CaptchaState } from './FriendlyCaptcha';
 import { AiTasksProvider, AiTasksButton } from './AiTasks';
 import { PhotoUploadsProvider } from './PhotoUploads';
@@ -81,7 +82,7 @@ function AuthPage({ onLogin, onNotify }: { onLogin: (user: User) => void; onNoti
     setError('');
     try {
       const result = await api<{ user: User }>(registering ? '/auth/register' : '/auth/login', json({ username: username.trim(), password, captchaResponse: captchaConfig?.enabled ? captchaState.response : '', ...(registering ? { inviteCode: inviteCode.trim() } : {}) }));
-      onNotify(registering ? `欢迎，${result.user.username}！账号已创建。` : `欢迎回来，${result.user.username}！`);
+      if (result.user.active) onNotify(registering ? `欢迎，${result.user.username}！账号已创建。` : `欢迎回来，${result.user.username}！`);
       onLogin(result.user);
     } catch (err) {
       setError((err as Error).message);
@@ -137,7 +138,7 @@ export default function App() {
     const openingRoute = (window.location.hash.slice(1) || '/mistakes').split('?')[0];
     api<{ user: User | null }>('/auth/me').then((result) => {
       if (!active) return;
-      if (result.user && ['/mistakes', '/'].includes(openingRoute)) {
+      if (result.user?.active && ['/mistakes', '/'].includes(openingRoute)) {
         pendingWelcome.current = `欢迎回来，${result.user.username}！`;
       }
       setUser(result.user);
@@ -180,7 +181,7 @@ export default function App() {
   const notify = useCallback((message: string, kind: 'success' | 'error' = 'success') => { toast[kind](message); }, []);
 
   useEffect(() => {
-    if (user && pendingWelcome.current) {
+    if (user?.active && pendingWelcome.current) {
       const message = pendingWelcome.current;
       pendingWelcome.current = null;
       notify(message);
@@ -198,10 +199,10 @@ export default function App() {
     }
   }, []);
 
-  useEffect(() => { if (user) void refreshDirectory(); }, [user, refreshDirectory]);
+  useEffect(() => { if (user?.active) void refreshDirectory(); }, [user, refreshDirectory]);
 
   useEffect(() => {
-    if (!user) { setBackupReadOnly(false); return; }
+    if (!user?.active) { setBackupReadOnly(false); return; }
     let active = true;
     let checking = false;
     let revision = 0;
@@ -226,7 +227,17 @@ export default function App() {
     const interval = window.setInterval(() => { void refreshStatus(); }, 15000);
     void refreshStatus();
     return () => { active = false; window.clearInterval(interval); window.removeEventListener('mistakes:backup-status', onBackupStatus); window.removeEventListener('focus', onFocus); document.removeEventListener('visibilitychange', onFocus); };
-  }, [user?.id]);
+  }, [user?.id, user?.active]);
+
+  useEffect(() => {
+    const onFrozen = () => {
+      pendingWelcome.current = null;
+      setUser((current) => current ? { ...current, active: false } : current);
+      window.location.hash = '/frozen';
+    };
+    window.addEventListener('mistakes:account-frozen', onFrozen);
+    return () => window.removeEventListener('mistakes:account-frozen', onFrozen);
+  }, []);
 
   const logout = useCallback(async () => {
     if (!window.dispatchEvent(new Event('mistakes:before-logout', { cancelable: true }))) return;
@@ -268,10 +279,10 @@ export default function App() {
     {!onLibrary && page}
   </LibraryLocationContext.Provider>;
 
-  const workspace = user ? <AppContext.Provider value={{ user, updateUser: setUser, subjects, knowledgePoints, refreshDirectory, notify, logout }}><AiTasksProvider key={user.id}><PhotoUploadsProvider><div className="app-shell">
+  const workspace = user && !user.active ? <FrozenAccountPage user={user} logout={logout} /> : user ? <AppContext.Provider value={{ user, updateUser: setUser, subjects, knowledgePoints, refreshDirectory, notify, logout }}><AiTasksProvider key={user.id}><PhotoUploadsProvider><div className="app-shell">
     <aside className="sidebar"><a className="brand" href={`#${libraryReturnPath}`}><LogoMark /><span className="brand-text">拾题<span>把错题，学明白。</span></span></a><div className="sidebar-label">学习空间</div><SlidingNavigation value={activePath} ariaLabel="主导航" items={navItems.map(({ path: itemPath, label, icon: Icon }) => ({ id: itemPath, href: `#${itemPath === '/mistakes' ? libraryReturnPath : itemPath}`, label: <><Icon size={19} strokeWidth={1.8} /><span>{label}</span></> }))} /><div className="sidebar-bottom"><div className="sidebar-reminder"><span className="reminder-icon"><RotateCcw size={22} /></span><strong>温故而知新，可以为师矣</strong><a href="#/review">打开复习页</a></div><div className="account"><AiTasksButton className="mobile-task-trigger" /><a className="account-profile" href="#/settings"><span className="avatar">{user.avatar ? <img src={user.avatar} alt="" /> : user.username.slice(0, 1).toUpperCase()}</span><span className="account-name"><strong title={user.username}>{user.username}</strong><small>{user.role === 'admin' ? '管理员' : '我的账号'}</small></span></a><button className="icon-button" title="退出登录" aria-label="退出登录" onClick={logout}><LogOut size={17} /></button></div></div></aside>
     <div className="main-shell"><header className="topbar"><span className="topbar-label"><BookOpen size={15} /> 个人学习空间</span><div className="topbar-right"><AiTasksButton className="desktop-task-trigger" /><a className="topbar-avatar" href="#/settings" aria-label="账号设置">{user.avatar ? <img src={user.avatar} alt="" /> : user.username.slice(0, 1).toUpperCase()}</a></div></header><main className="main-content">{backupReadOnly && <div className="backup-readonly-banner" role="status"><DatabaseBackup size={20} /><p><strong>正在备份，暂时只读</strong><span>已输入的内容会保留，请稍后重试保存。</span></p></div>}{directoryError && <div className="inline-alert" role="alert">基础目录加载失败：{directoryError}<button onClick={refreshDirectory}>重试</button></div>}<RecordWorkspace path={path} editorId={backgroundEditorId} skeletonKind={skeletonKind}>{page}</RecordWorkspace><footer className="page-footer"><span>拾题 · © {new Date().getFullYear()} ShaoanC</span></footer></main></div>
-  </div></PhotoUploadsProvider></AiTasksProvider></AppContext.Provider> : <AuthPage onLogin={(nextUser) => { setUser(nextUser); setPath('/mistakes'); window.location.hash = '/mistakes'; }} onNotify={(msg) => { pendingWelcome.current = msg; }} />;
+  </div></PhotoUploadsProvider></AiTasksProvider></AppContext.Provider> : <AuthPage onLogin={(nextUser) => { setUser(nextUser); setPath(nextUser.active ? '/mistakes' : '/frozen'); window.location.hash = nextUser.active ? '/mistakes' : '/frozen'; }} onNotify={(msg) => { pendingWelcome.current = msg; }} />;
 
   return <><GlobalLoadingProgress /><LoadingContent loading={initializing} kind="shell" className="app-entrance">{!initializing && workspace}</LoadingContent></>;
 }

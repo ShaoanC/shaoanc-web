@@ -134,7 +134,7 @@ async function main() {
         await request('/auth/register', registration(token), { status: 503, code: 'CAPTCHA_UNAVAILABLE' });
     }
     await request('/auth/login', login('http-503', { password: 'WrongPassword2026!' }), { status: 401 });
-    await request('/auth/login', login('http-503', { username: 'captcha_disabled' }), { status: 403 });
+    await request('/auth/login', login('http-503', { username: 'captcha_disabled' }), { status: 200 });
     for (const token of ['http-400', 'http-401']) {
         await request('/auth/login', login(token), { status: 503, code: 'CAPTCHA_CONFIG' });
     }

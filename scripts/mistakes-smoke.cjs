@@ -436,8 +436,9 @@ async function main() {
     await runSearchSmoke({ alice, bob, admin });
 
     await admin('PATCH', `/admin/users/${registrationBob.user.id}`, { active: false });
-    await bob('GET', '/mistakes', undefined, 401);
-    await client()('POST', '/auth/login', { username: 'smoke_bob', password: initialPassword }, 403);
+    await bob('GET', '/mistakes', undefined, 403);
+    const frozenLogin = await client()('POST', '/auth/login', { username: 'smoke_bob', password: initialPassword });
+    assert.equal(frozenLogin.user.active, false);
 }
 
 async function run() {

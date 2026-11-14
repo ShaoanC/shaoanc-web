@@ -9,7 +9,7 @@ const TRASH_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 function cleanupExpiredTrash(now = Date.now(), userId) {
     if (isReadOnly()) return 0;
     const cutoff = new Date(now - TRASH_RETENTION_MS).toISOString();
-    const where = 'deleted_at IS NOT NULL AND deleted_at <= ?' + (userId === undefined ? '' : ' AND user_id = ?');
+    const where = 'deleted_at IS NOT NULL AND deleted_at <= ? AND user_id IN (SELECT id FROM users WHERE active = 1)' + (userId === undefined ? '' : ' AND user_id = ?');
     const parameters = userId === undefined ? [cutoff] : [cutoff, userId];
     const result = db.transaction(() => {
         const users = db.prepare(`SELECT DISTINCT user_id FROM mistakes WHERE ${where}`).all(...parameters);

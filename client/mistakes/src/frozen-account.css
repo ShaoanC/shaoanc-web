@@ -1,0 +1,17 @@
+.frozen-page { min-height: 100dvh; padding: 24px; background: var(--surface-0); display: grid; grid-template-rows: auto 1fr auto; }
+.frozen-header { width: 100%; max-width: 1080px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+.frozen-header .brand { flex-shrink: 0; }
+.frozen-username { color: var(--text-secondary); overflow-wrap: anywhere; text-align: right; }
+.frozen-content, .frozen-footer { width: 100%; max-width: 620px; margin-inline: auto; }
+.frozen-content { margin-block: 56px 32px; }
+.frozen-icon { color: var(--text-secondary); margin-bottom: 24px; }
+.frozen-content h1 { font-size: clamp(26px, 5vw, 36px); line-height: 1.4; margin: 0 0 24px; }
+.frozen-content p { color: var(--text-secondary); line-height: 1.85; }
+.frozen-content .frozen-reassurance { font-size: 19px; color: var(--text-primary); }
+.frozen-download { margin: 28px 0 20px; }
+.frozen-download .button { min-height: 48px; width: 100%; }
+.frozen-download p { margin: 12px 0 0; }
+.frozen-content > .button { min-height: 44px; }
+.frozen-footer { color: var(--text-secondary); font-size: 14px; line-height: 1.65; }
+.frozen-footer p { margin: 0; }
+@media (min-width: 768px) { .frozen-page { padding: 32px 48px; } .frozen-content { margin-top: 80px; } .frozen-download .button { width: auto; min-width: 210px; } }
