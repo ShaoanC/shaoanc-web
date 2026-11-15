@@ -27,9 +27,17 @@ export interface PageImport {
   batchId: string; pageOrder: number;
   regions: PageRegion[]; items: PageImportItem[]; error: string | null; attempts: number; createdAt: string;
 }
+type PageImportSummary = Pick<PageImport, 'id' | 'batchId' | 'pageOrder' | 'originalName' | 'status' | 'createdAt'> & { itemCount: number };
+type PageImportList = { items: PageImportSummary[]; hasMore: boolean; current: PageImport | null };
+const pageSize = 24;
 const statusLabel: Record<ImportStatus, string> = { queued: '等待分题', running: '正在分题', retrying: '等待重试', succeeded: '分题完成', failed: '分题失败', cancelled: '已取消' };
 const activeStatus = (status: ImportStatus) => ['queued', 'running', 'retrying'].includes(status);
 const clamp = (value: number, min = 0, max = 1) => Math.min(max, Math.max(min, value));
+const pagePhotoUrl = (id: number, size: 'thumb' | 'preview') => `/api/mistakes/photo-library/page-${id}/${size}`;
+
+function summarizePage({ id, batchId, pageOrder, originalName, status, createdAt, items }: PageImport): PageImportSummary {
+  return { id, batchId, pageOrder, originalName, status, createdAt, itemCount: items.length };
+}
 
 async function preparePage(file: File, rotation: number) {
   let input = file;
@@ -42,7 +50,7 @@ async function preparePage(file: File, rotation: number) {
   return compressJpeg(input, { maxSizeMB: 3.8, maxWidthOrHeight: 3200, initialQuality: .92 });
 }
 
-function sortPages(pages: PageImport[]) {
+function sortPages(pages: PageImportSummary[]) {
   const newest = new Map<string, number>();
   for (const page of pages) newest.set(page.batchId, Math.max(newest.get(page.batchId) || 0, page.id));
   return [...pages].sort((a, b) => a.batchId === b.batchId ? a.pageOrder - b.pageOrder || a.id - b.id : (newest.get(b.batchId) || b.id) - (newest.get(a.batchId) || a.id));
@@ -51,8 +59,11 @@ function sortPages(pages: PageImport[]) {
 export function PageImportsPage() {
   const { user } = useApp();
   const tasks = useAiTasks();
-  const [pages, setPages] = useState<PageImport[]>([]);
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [pages, setPages] = useState<PageImportSummary[]>([]);
+  const [selection, setSelection] = useState<number | null>(null);
+  const [detail, setDetail] = useState<PageImport | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [pending, setPending] = useState<PendingPage[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState('');
@@ -66,27 +77,50 @@ export function PageImportsPage() {
   const urls = useRef(new Set<string>());
   const revision = useRef(0);
   const mounted = useRef(true);
-  const inflight = useRef(false);
+  const inflight = useRef<AbortController | null>(null);
+  const selectedId = useRef<number | null>(null);
+  const requestedLimit = useRef(pageSize);
+  const loadedLimit = useRef(pageSize);
   const uploadController = useRef<AbortController | null>(null);
   const drafts = useRef(new Map<number, PageRegion[]>());
   const configured = tasks.config?.segmentation?.configured && tasks.config.segmentation.enabled;
   const recognition = tasks.config;
   const canRecognize = recognition?.configured && recognition.enabled;
-  const current = pages.find((page) => page.id === selectedId) || pages[0];
+  const current = pages.find((page) => page.id === selection) || (detail && detail.id === selection ? summarizePage(detail) : pages[0]);
+  const currentDetail = detail && detail.id === current?.id ? detail : null;
   const quarterTurn = useQuarterTurn();
   const { settle } = quarterTurn;
   // A rotated page remounts with its new preview; clear the held spin before that frame paints.
   useLayoutEffect(settle, [pending, settle]);
 
-  const refresh = useCallback(async () => {
-    if (inflight.current) return;
-    inflight.current = true;
+  const refresh = useCallback(async (reason: 'poll' | 'selection' | 'more' = 'poll') => {
+    if (!mounted.current || (inflight.current && reason === 'poll')) return;
+    inflight.current?.abort();
+    const controller = new AbortController();
+    inflight.current = controller;
+    if (reason === 'more') requestedLimit.current = loadedLimit.current + pageSize;
+    const limit = requestedLimit.current;
+    const query = new URLSearchParams({ limit: String(limit) });
+    if (selectedId.current !== null) query.set('selectedId', String(selectedId.current));
+    setLoadingMore(limit > loadedLimit.current);
     const version = revision.current;
     try {
-      const result = await api<PageImport[]>('/page-imports', {}, { background: true });
-      if (mounted.current && version === revision.current) { setPages(sortPages(result)); setError(''); }
-    } catch (err) { if (mounted.current) setError((err as Error).message); }
-    finally { inflight.current = false; if (mounted.current) setLoaded(true); }
+      const result = await api<PageImportList>(`/page-imports?${query}`, { signal: controller.signal }, { background: true });
+      if (!controller.signal.aborted && version === revision.current) {
+        loadedLimit.current = limit;
+        setPages(result.items);
+        setDetail(result.current);
+        setHasMore(result.hasMore);
+        setError('');
+      }
+    } catch (err) { if (!controller.signal.aborted) setError((err as Error).message); }
+    finally {
+      if (inflight.current === controller) {
+        inflight.current = null;
+        setLoaded(true);
+        setLoadingMore(false);
+      }
+    }
   }, []);
   useEffect(() => {
     mounted.current = true;
@@ -96,13 +130,20 @@ export function PageImportsPage() {
     const focus = () => { void refresh(); };
     window.addEventListener('focus', focus);
     window.addEventListener('mistakes:session-ending', cancelUploads);
-    return () => { mounted.current = false; cancelUploads(); clearInterval(timer); window.removeEventListener('focus', focus); window.removeEventListener('mistakes:session-ending', cancelUploads); };
+    return () => { mounted.current = false; inflight.current?.abort(); inflight.current = null; cancelUploads(); clearInterval(timer); window.removeEventListener('focus', focus); window.removeEventListener('mistakes:session-ending', cancelUploads); };
   }, [refresh, user.id]);
   useEffect(() => () => { urls.current.forEach(URL.revokeObjectURL); }, []);
   function mergePage(page: PageImport) {
     revision.current += 1;
     if (!mounted.current) return;
-    setPages((items) => sortPages([page, ...items.filter((item) => item.id !== page.id)]));
+    setPages((items) => sortPages([summarizePage(page), ...items.filter((item) => item.id !== page.id)]));
+    setDetail((item) => item?.id === page.id ? page : item);
+  }
+  function selectPage(id: number | null, uploaded?: PageImport) {
+    selectedId.current = id;
+    setSelection(id);
+    if (uploaded) setDetail(uploaded);
+    void refresh('selection');
   }
   function makeUrl(file: Blob) { const url = URL.createObjectURL(file); urls.current.add(url); return url; }
   function releaseUrl(url: string) { URL.revokeObjectURL(url); urls.current.delete(url); }
@@ -158,7 +199,7 @@ export function PageImportsPage() {
         onProgress: (index) => setUploadStage(`正在压缩并上传第 ${index + 1}/${snapshot.length} 页…`),
         onSuccess: (entry, page) => {
           mergePage(page);
-          if (!selected) { setSelectedId(page.id); selected = true; }
+          if (!selected) { selectPage(page.id, page); selected = true; }
           setPending((items) => items.filter((item) => item.id !== entry.id));
           releaseUrl(entry.url);
         },
@@ -172,13 +213,18 @@ export function PageImportsPage() {
       if (mounted.current) { setUploading(false); setUploadStage(''); }
     }
   }
-  async function pageAction(page: PageImport, action: 'retry' | 'cancel' | 'delete') {
+  async function pageAction(page: PageImportSummary, action: 'retry' | 'cancel' | 'delete') {
     setBusyIds((ids) => new Set(ids).add(page.id));
     try {
       if (action === 'delete') {
         await api(`/page-imports/${page.id}`, { method: 'DELETE' });
         drafts.current.delete(page.id);
-        revision.current += 1; setPages((items) => items.filter((item) => item.id !== page.id)); setDeleteId(null);
+        revision.current += 1;
+        setPages((items) => items.filter((item) => item.id !== page.id));
+        setDetail((item) => item?.id === page.id ? null : item);
+        setDeleteId(null);
+        if (selectedId.current === page.id) selectPage(null);
+        else void refresh('selection');
       } else mergePage(await api<PageImport>(`/page-imports/${page.id}/${action}`, json({})));
     } catch (err) { toast.error((err as Error).message); }
     finally { setBusyIds((ids) => { const next = new Set(ids); next.delete(page.id); return next; }); }
@@ -205,10 +251,18 @@ export function PageImportsPage() {
     {error && <p className="form-error" role="alert">{error} <button className="table-button" onClick={() => void refresh()}>重新加载</button></p>}
     {!loaded && <p className="page-import-loading"><LoaderCircle className="spin" size={18} />正在读取页面…</p>}
     {loaded && !pages.length && !error && <div className="page-import-empty"><CheckSquare size={34} /><h2>从一整页开始</h2><p>每道题会显示独立题框，点选需要整理的错题，即可批量建立草稿。</p></div>}
-    {pages.length > 0 && <div className="page-import-workspace"><aside className="page-import-list" aria-label="已上传页面">{pages.map((page) => <button key={page.id} type="button" className={`page-import-tab${current?.id === page.id ? ' is-active' : ''}`} onClick={() => setSelectedId(page.id)} aria-pressed={current?.id === page.id}><img src={page.imageUrl} alt="" /><span><strong>{page.originalName}</strong><small>{statusLabel[page.status]} · {page.items?.length || 0} 道已录入</small><small>{formatDate(page.createdAt, true)}</small></span>{activeStatus(page.status) && <LoaderCircle size={16} className="spin" />}</button>)}</aside>
+    {pages.length > 0 && <div className="page-import-workspace"><aside className="page-import-sidebar" aria-label="已上传页面">
+      <div className="page-import-list">{pages.map((page) => <button key={page.id} type="button" className={`page-import-tab${current?.id === page.id ? ' is-active' : ''}`} onClick={() => { if (current?.id !== page.id) selectPage(page.id); }} aria-pressed={current?.id === page.id}>
+        <img src={pagePhotoUrl(page.id, 'thumb')} alt="" width={42} height={58} loading="lazy" decoding="async" fetchPriority="low" />
+        <span><strong>{page.originalName}</strong><small>{statusLabel[page.status]} · {page.itemCount} 道已录入</small><small>{formatDate(page.createdAt, true)}</small></span>{activeStatus(page.status) && <LoaderCircle size={16} className="spin" />}
+      </button>)}</div>
+      {hasMore && <div className="photo-load-more"><button type="button" className="button secondary" disabled={loadingMore} onClick={() => void refresh('more')}>{loadingMore ? '正在加载…' : '加载更多'}</button></div>}
+    </aside>
       {current && <section className="page-import-current"><header className="page-import-current-heading"><div><h2>{current.originalName}</h2><p role="status">{statusLabel[current.status]}</p></div><div className="photo-actions">{activeStatus(current.status) && <button className="table-button" disabled={busyIds.has(current.id)} onClick={() => void pageAction(current, 'cancel')}>取消分题</button>}{['failed', 'cancelled'].includes(current.status) && <button className="button secondary" disabled={busyIds.has(current.id) || !configured} onClick={() => void pageAction(current, 'retry')}><RefreshCw size={15} />重新分题</button>}<button type="button" className={`table-button${deleteId === current.id ? ' danger' : ''}`} disabled={busyIds.has(current.id)} onClick={() => deleteId === current.id ? void pageAction(current, 'delete') : setDeleteId(current.id)} onBlur={() => setDeleteId(null)}><Trash2 size={15} />{deleteId === current.id ? '确认删除页面' : '删除页面'}</button></div></header>
-        {current.error && <p className="form-error" role="alert">{current.error}</p>}
-        {current.status === 'succeeded' || current.regions.length ? <PageRegionEditor key={current.id} page={current} draft={drafts.current.get(current.id)} onDraft={(regions) => { if (regions) drafts.current.set(current.id, regions); else drafts.current.delete(current.id); }} canRecognize={Boolean(canRecognize)} onUpdate={mergePage} onRetryJob={retryJob} onRetryItem={retryItem} /> : <div className="page-import-waiting"><img src={current.imageUrl} alt={current.originalName} />{activeStatus(current.status) && <p><LoaderCircle className="spin" size={18} />正在按阿拉伯数字题号分题，完成后即可点选。</p>}</div>}
+        {currentDetail?.error && <p className="form-error" role="alert">{currentDetail.error}</p>}
+        {currentDetail && (currentDetail.status === 'succeeded' || currentDetail.regions.length)
+          ? <PageRegionEditor key={current.id} page={currentDetail} draft={drafts.current.get(current.id)} onDraft={(regions) => { if (regions) drafts.current.set(current.id, regions); else drafts.current.delete(current.id); }} canRecognize={Boolean(canRecognize)} onUpdate={mergePage} onRetryJob={retryJob} onRetryItem={retryItem} />
+          : <div className="page-import-waiting"><img src={pagePhotoUrl(current.id, 'preview')} alt={current.originalName} fetchPriority="high" decoding="async" />{activeStatus(current.status) && <p><LoaderCircle className="spin" size={18} />正在按阿拉伯数字题号分题，完成后即可点选。</p>}</div>}
       </section>}
     </div>}
   </div>;
@@ -242,7 +296,7 @@ function PageRegionEditor({ page, draft, onDraft, canRecognize, onUpdate, onRetr
   return <>
     <div className="page-region-tools"><div className="photo-actions"><button type="button" className={`button secondary${mode === 'select' ? ' is-active' : ''}`} aria-pressed={mode === 'select'} disabled={busy} onClick={() => setMode('select')}><MousePointer2 size={16} />点选题目</button><button type="button" className={`button secondary${mode === 'adjust' ? ' is-active' : ''}`} aria-pressed={mode === 'adjust'} disabled={busy} onClick={() => setMode('adjust')}><Move size={16} />调整题框</button><button type="button" className={`button secondary${mode === 'draw' ? ' is-active' : ''}`} aria-pressed={mode === 'draw'} disabled={busy} onClick={() => setMode('draw')}><Plus size={16} />补画题框</button><button type="button" className="table-button" onClick={() => setZoom(true)}><Maximize2 size={16} />放大</button></div><div className="photo-actions"><button type="button" className="table-button" disabled={busy || !selectable.length} onClick={() => update((items) => items.map((item) => linked.has(item.id) ? item : { ...item, selected: true }))}>全选</button><button type="button" className="table-button" disabled={busy || !selected.length} onClick={() => update((items) => items.map((item) => linked.has(item.id) ? item : { ...item, selected: false }))}>取消全选</button><span className="page-import-help">已选 {selected.length} 道{dirty ? ' · 题框待保存' : ''}</span></div></div>
     <p className="page-region-instruction">{mode === 'draw' ? '在页面上拖动画框，保留完整题干、小问和选项。' : mode === 'adjust' ? '拖动题框移动范围，拖动四角调整大小。已录入的题框保持锁定。' : '点击题框选择需要的错题；只有选中的题目会建立草稿。'}</p>
-    <RegionCanvas url={page.imageUrl} regions={regions} mode={mode} activeId={activeId} linked={linked} disabled={busy} onActive={setActiveId} onToggle={toggle} onChange={(id, box) => update((items) => items.map((item) => item.id === id ? { ...item, box, mask: undefined } : item))} onAdd={(box) => { const id = crypto.randomUUID(); update((items) => [...items, { id, label: `题目 ${items.length + 1}`, box, selected: true }]); setActiveId(id); setMode('select'); }} />
+    <RegionCanvas url={pagePhotoUrl(page.id, 'preview')} regions={regions} mode={mode} activeId={activeId} linked={linked} disabled={busy} onActive={setActiveId} onToggle={toggle} onChange={(id, box) => update((items) => items.map((item) => item.id === id ? { ...item, box, mask: undefined } : item))} onAdd={(box) => { const id = crypto.randomUUID(); update((items) => [...items, { id, label: `题目 ${items.length + 1}`, box, selected: true }]); setActiveId(id); setMode('select'); }} />
     {!regions.length && <p className="ai-notice">没有找到题框。可以使用“补画题框”手动添加。</p>}
     <div className="page-region-list">{regions.map((region, index) => {
       const item = page.items?.find((item) => item.regionId === region.id);
@@ -307,7 +361,7 @@ function RegionCanvas({ url, regions, mode, activeId, linked, disabled, onActive
     if (stage.current?.hasPointerCapture(event.pointerId)) stage.current.releasePointerCapture(event.pointerId);
     setDrag(null); setDraft(null);
   }
-  return <><div className="page-region-scroll"><div ref={stage} className={`page-region-stage mode-${mode}`} onPointerDown={(event) => start(event)} onPointerMove={move} onPointerUp={finish} onPointerCancel={() => { setDrag(null); setDraft(null); }}><img src={url} alt="页面题目选框，点击编号框选择题目" draggable={false} onError={() => setImageError(true)} onLoad={() => setImageError(false)} />
+  return <><div className="page-region-scroll"><div ref={stage} className={`page-region-stage mode-${mode}`} onPointerDown={(event) => start(event)} onPointerMove={move} onPointerUp={finish} onPointerCancel={() => { setDrag(null); setDraft(null); }}><img src={url} alt="页面题目选框，点击编号框选择题目" draggable={false} fetchPriority="high" decoding="async" onError={() => setImageError(true)} onLoad={() => setImageError(false)} />
     {regions.map((region, index) => validBox(region.box) && <div key={region.id} role="button" tabIndex={disabled ? -1 : 0} aria-pressed={region.selected || linked.has(region.id)} aria-label={`第 ${index + 1} 题 ${region.label}${linked.has(region.id) ? '，已录入' : region.selected ? '，已选择' : '，未选择'}${mode === 'adjust' ? '，方向键移动，Shift 加方向键缩放' : ''}`} className={`page-region-box${region.selected ? ' is-selected' : ''}${activeId === region.id ? ' is-active' : ''}${linked.has(region.id) ? ' is-linked' : ''}`} style={{ left: `${region.box[0] * 100}%`, top: `${region.box[1] * 100}%`, width: `${region.box[2] * 100}%`, height: `${region.box[3] * 100}%`, pointerEvents: mode === 'draw' ? 'none' : undefined }} onPointerDown={(event) => start(event, region.id, 'move')} onClick={() => { if (!disabled && mode === 'select') onToggle(region.id); }} onFocus={() => onActive(region.id)} onKeyDown={(event) => {
       if (disabled || linked.has(region.id)) return;
       if (event.key === ' ' || event.key === 'Enter') { event.preventDefault(); onToggle(region.id); return; }

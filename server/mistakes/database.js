@@ -195,7 +195,7 @@ db.exec(`
         PRIMARY KEY (page_import_id, region_id)
     );
 `);
-for (const [name, definition] of [['mode', "TEXT NOT NULL DEFAULT 'single'"], ['source_json', "TEXT NOT NULL DEFAULT '{}'"]]) {
+for (const [name, definition] of [['mode', "TEXT NOT NULL DEFAULT 'single'"], ['source_json', "TEXT NOT NULL DEFAULT '{}'"], ['model', 'TEXT']]) {
     if (!db.prepare('PRAGMA table_info(ai_jobs)').all().some((column) => column.name === name)) db.exec(`ALTER TABLE ai_jobs ADD COLUMN ${name} ${definition}`);
 }
 if (!db.prepare('PRAGMA table_info(mistake_images)').all().some((column) => column.name === 'page_import_id')) {

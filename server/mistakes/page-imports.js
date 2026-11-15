@@ -224,6 +224,18 @@ function importRegions(page, values) {
 function mountPageImportRoutes(router, { success }) {
     router.get('/page-imports', (req, res) => {
         res.set('Cache-Control', 'no-store');
+        if (req.query.limit !== undefined) {
+            const limit = Number(req.query.limit);
+            if (!Number.isSafeInteger(limit) || limit < 1 || limit === Number.MAX_SAFE_INTEGER) fail(400, '分页参数无效');
+            const rows = db.prepare(`SELECT id, batch_id AS batchId, page_order AS pageOrder, original_name AS originalName,
+                status, created_at AS createdAt, (SELECT COUNT(*) FROM page_import_items WHERE page_import_id = p.id) AS itemCount
+                FROM page_imports p WHERE user_id = ? AND deleted_at IS NULL
+                ORDER BY MAX(id) OVER (PARTITION BY batch_id) DESC, page_order, id LIMIT ?`).all(req.user.id, limit + 1);
+            const findPage = db.prepare('SELECT * FROM page_imports WHERE id = ? AND user_id = ? AND deleted_at IS NULL');
+            const selectedId = Number(req.query.selectedId);
+            const current = (selectedId && findPage.get(selectedId, req.user.id)) || (rows.length && findPage.get(rows[0].id, req.user.id));
+            return success(res, { items: rows.slice(0, limit), hasMore: rows.length > limit, current: current ? serializePage(current) : null });
+        }
         success(res, db.prepare('SELECT * FROM page_imports WHERE user_id = ? AND deleted_at IS NULL ORDER BY id DESC').all(req.user.id).map(serializePage));
     });
     router.post('/page-imports', (req, res, next) => {

@@ -1,9 +1,9 @@
-import { lazy, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { toast } from 'react-toastify';
 import { ArrowRight, BookOpen, CheckCircle2, ClipboardList, DatabaseBackup, GraduationCap, LayoutGrid, LoaderCircle, LogOut, Plus, RotateCcw, Settings, ShieldCheck, Sparkles, TrendingUp } from 'lucide-react';
 import { api, json } from './api';
 import { AppContext, sortDirectory } from './context';
-import { GlobalLoadingProgress, LoadingContent, SlidingNavigation, type SkeletonKind } from './motion';
+import { GlobalLoadingProgress, LoadingContent, markReturnedRecord, routeDirection, runRouteTransition, SlidingNavigation, type SkeletonKind } from './motion';
 import { LogoMark } from './Logo';
 import { FrozenAccountPage } from './FrozenAccountPage';
 import { FriendlyCaptcha, type CaptchaState } from './FriendlyCaptcha';
@@ -127,6 +127,9 @@ export default function App() {
   const [path, setPath] = useState(window.location.hash.slice(1) || '/mistakes');
   // A new draft keeps its editor instance when a task link adopts the saved record URL.
   const [newEditor, setNewEditor] = useState<{ session: number; recordId: number | null }>({ session: 0, recordId: null });
+  const newEditorRef = useRef(newEditor);
+  newEditorRef.current = newEditor;
+  const returnedRecord = useRef<number | null>(null);
   const pendingWelcome = useRef<string | null>(null);
   const libraryLocation = useRef<{ path: string; x: number; y: number } | null>(null);
   const libraryVisited = useRef(false);
@@ -157,12 +160,18 @@ export default function App() {
       if (!isLibraryPath(nextPath) && !/^\/mistakes\/\d+(\/edit)?$/.test(nextRoute)) {
         libraryLocation.current = null;
       }
-      setNewEditor((current) => {
-        if (nextRoute === '/new') return { session: current.session + 1, recordId: null };
-        if (current.recordId && nextRoute !== `/mistakes/${current.recordId}/edit`) return { ...current, recordId: null };
-        return current;
+      const previousRoute = previousPath.split('?')[0];
+      returnedRecord.current = isLibraryPath(nextPath) ? Number(previousRoute.match(/^\/mistakes\/(\d+)/)?.[1]) || null : null;
+      // A task link that adopts the new draft's URL keeps the same editor, so there is nothing to transition.
+      const adoptsEditor = previousRoute === '/new' && nextRoute === `/mistakes/${newEditorRef.current.recordId}/edit`;
+      runRouteTransition(adoptsEditor ? null : routeDirection(previousPath, nextPath), () => {
+        setNewEditor((current) => {
+          if (nextRoute === '/new') return { session: current.session + 1, recordId: null };
+          if (current.recordId && nextRoute !== `/mistakes/${current.recordId}/edit`) return { ...current, recordId: null };
+          return current;
+        });
+        setPath(nextPath);
       });
-      setPath(nextPath);
     };
     window.addEventListener('hashchange', onHash);
     return () => {
@@ -176,6 +185,9 @@ export default function App() {
     // Reset only after the old page is hidden, so its layout cannot move the new page.
     const position = isLibraryPath(path) ? libraryLocation.current : null;
     window.scrollTo({ left: position?.x || 0, top: position?.y || 0, behavior: 'instant' });
+    const returned = returnedRecord.current;
+    returnedRecord.current = null;
+    if (returned && isLibraryPath(path)) markReturnedRecord(returned);
   }, [path]);
 
   const notify = useCallback((message: string, kind: 'success' | 'error' = 'success') => { toast[kind](message); }, []);
@@ -200,6 +212,13 @@ export default function App() {
   }, []);
 
   useEffect(() => { if (user?.active) void refreshDirectory(); }, [user, refreshDirectory]);
+
+  useEffect(() => {
+    if (!user?.active) return;
+    // Warm the reading view so the first question opens without waiting for its chunk.
+    const timer = window.setTimeout(() => { void import('./pages/DetailPage'); }, 1500);
+    return () => window.clearTimeout(timer);
+  }, [user?.active]);
 
   useEffect(() => {
     if (!user?.active) { setBackupReadOnly(false); return; }
@@ -275,8 +294,8 @@ export default function App() {
   else page = onLibrary ? null : <MistakesPage />;
 
   page = <LibraryLocationContext.Provider value={libraryLocation.current?.path || null}>
-    {libraryVisited.current && <div key="library" hidden={!onLibrary}><MistakesPage active={onLibrary} /></div>}
-    {!onLibrary && page}
+    {libraryVisited.current && <div key="library" className="route-view" hidden={!onLibrary}><MistakesPage active={onLibrary} /></div>}
+    {!onLibrary && <div key="page" className="route-view"><Suspense fallback={<LoadingContent loading kind={skeletonKind}>{null}</LoadingContent>}>{page}</Suspense></div>}
   </LibraryLocationContext.Provider>;
 
   const workspace = user && !user.active ? <FrozenAccountPage user={user} logout={logout} /> : user ? <AppContext.Provider value={{ user, updateUser: setUser, subjects, knowledgePoints, refreshDirectory, notify, logout }}><AiTasksProvider key={user.id}><PhotoUploadsProvider><div className="app-shell">

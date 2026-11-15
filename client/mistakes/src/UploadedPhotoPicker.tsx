@@ -46,7 +46,7 @@ export function UploadedPhotoPicker({ disabled, onSelect }: { disabled?: boolean
         <span className="photo-library-meta">{selecting === image.key ? '正在打开预览…' : image.purpose === 'question' ? '题干照片' : image.purpose === 'answer' ? '答案照片' : '整页照片'}</span>
         <span className="photo-library-meta">{formatDate(image.createdAt, true)}</span>
       </button>)}</div>}
-      {nextCursor && !error && <button type="button" className="button secondary" disabled={loading || Boolean(selecting)} onClick={() => setCursor(nextCursor)}>{loading ? '正在加载…' : '加载更多'}</button>}
+      {nextCursor && !error && <div className="photo-load-more"><button type="button" className="button secondary" disabled={loading || Boolean(selecting)} onClick={() => setCursor(nextCursor)}>{loading ? '正在加载…' : '加载更多'}</button></div>}
     </AiDialog>
   </>;
 }

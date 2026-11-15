@@ -1,9 +1,14 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
+import { flushSync } from 'react-dom';
 import { EditorContentSkeleton, EditorPageSkeleton, ReviewCandidatesSkeleton, ReviewPageSkeleton, SettingsPageSkeleton, SettingsTableSkeleton, StatsPanelsSkeleton, TaskRowsSkeleton, TasksPageSkeleton, SkeletonPageHeader, AiProfileSkeleton, BackupSettingsSkeleton, TestDataSkeleton } from './PageSkeletons';
 import { getActiveApiRequestCount, getApiActivitySnapshot, subscribeToApiActivity } from './api';
+import { isLibraryPath } from './LibraryLocation';
 
 const MOTION_EASING = 'cubic-bezier(0.22, 0.61, 0.36, 1)';
+const ENTER_EASING = 'cubic-bezier(0.16, 1, 0.3, 1)';
 const CROSSFADE_DURATION = 260;
+
+const prefersReducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 function useReducedMotion(): boolean {
   const [reduced, setReduced] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches);
@@ -42,6 +47,94 @@ export function useQuarterTurn() {
   }, [reduced, settle]);
   useEffect(() => settle, [settle]);
   return { turn, settle };
+}
+
+export type RouteDirection = 'forward' | 'back' | 'swap';
+
+function routeStack(route: string): [stack: string, depth: number] | null {
+  if (isLibraryPath(route)) return ['mistakes', 0];
+  const record = route.match(/^\/mistakes\/\d+(\/edit)?$/);
+  if (record) return ['mistakes', record[1] ? 2 : 1];
+  if (route === '/new') return ['new', 0];
+  if (route === '/page-imports') return ['new', 1];
+  return null;
+}
+
+/** Moving deeper within a stack (library → question → editor) slides sideways; unrelated pages cross-fade. */
+export function routeDirection(fromPath: string, toPath: string): RouteDirection | null {
+  const from = fromPath.split('?')[0];
+  const to = toPath.split('?')[0];
+  if (from === to || (isLibraryPath(from) && isLibraryPath(to))) return null;
+  const previous = routeStack(from);
+  const next = routeStack(to);
+  if (previous && next && previous[0] === next[0] && previous[1] !== next[1]) return next[1] > previous[1] ? 'forward' : 'back';
+  return 'swap';
+}
+
+let routeTransitionId = 0;
+let routeEnterTimer = 0;
+
+/**
+ * Swaps the visible `.route-view` with a view transition: the old page leaves as a snapshot while the new one enters live.
+ * Its own name per phase keeps the two pages in separate groups, so neither morphs from the other's scroll position.
+ */
+export function runRouteTransition(direction: RouteDirection | null, update: () => void) {
+  const root = document.documentElement;
+  // Dialogs stay above pages; a page snapshot would otherwise cover one that is closing.
+  if (!direction || prefersReducedMotion() || document.visibilityState !== 'visible' || document.querySelector('[role="dialog"], [role="alertdialog"]')) {
+    update();
+    return;
+  }
+  const id = ++routeTransitionId;
+  root.dataset.routeDirection = direction;
+  if (typeof document.startViewTransition !== 'function') {
+    window.clearTimeout(routeEnterTimer);
+    root.dataset.routeEnter = direction;
+    update();
+    routeEnterTimer = window.setTimeout(() => {
+      delete root.dataset.routeEnter;
+      if (id === routeTransitionId) delete root.dataset.routeDirection;
+    }, 400);
+    return;
+  }
+  root.dataset.routePhase = 'old';
+  const transition = document.startViewTransition(() => {
+    // A newer navigation keeps the old phase, so its snapshot is still taken as the leaving page.
+    if (id === routeTransitionId) root.dataset.routePhase = 'new';
+    flushSync(update);
+  });
+  const cleanup = () => {
+    if (id !== routeTransitionId) return;
+    delete root.dataset.routePhase;
+    delete root.dataset.routeDirection;
+  };
+  transition.ready.catch(() => undefined);
+  transition.finished.then(cleanup, cleanup);
+}
+
+/** Briefly marks the row of the question that was just closed, so the reader finds their place again. */
+export function markReturnedRecord(id: number) {
+  if (prefersReducedMotion()) return;
+  const row = document.querySelector<HTMLElement>(`.route-view:not([hidden]) .mistake-row[data-mistake-id="${id}"]`);
+  if (!row) return;
+  row.classList.add('is-returned');
+  window.setTimeout(() => row.classList.remove('is-returned'), 1600);
+}
+
+let enterStamp = 0;
+let enterIndex = 0;
+
+/** Newly mounted items rise in, staggered within one commit; items React keeps stay still. */
+export function useEnterAnimation(ref: RefObject<HTMLElement | null>) {
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!element || typeof element.animate !== 'function' || prefersReducedMotion()) return;
+    const now = performance.now();
+    enterIndex = now - enterStamp < 50 ? enterIndex + 1 : 0;
+    enterStamp = now;
+    const animation = element.animate([{ opacity: 0, transform: 'translateY(10px)' }, { opacity: 1, transform: 'none' }], { duration: 360, delay: Math.min(enterIndex, 8) * 30, easing: ENTER_EASING, fill: 'backwards' });
+    return () => animation.cancel();
+  }, [ref]);
 }
 
 type ProgressPhase = 'idle' | 'loading' | 'completing' | 'fading';

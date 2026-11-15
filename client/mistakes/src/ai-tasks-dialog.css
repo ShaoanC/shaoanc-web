@@ -59,6 +59,12 @@
   transform: translate(-50%, calc(-50% + 12px));
 }
 
+.ai-tasks-dialog[data-ending-style],
+.ai-tasks-dialog-backdrop[data-ending-style] {
+  transition-duration: 160ms;
+  pointer-events: none;
+}
+
 @media (min-width: 641px) {
   .photo-dialog.ai-tasks-dialog {
     width: min(960px, calc(100vw - 48px));

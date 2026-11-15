@@ -19,7 +19,8 @@
 .page-import-empty p { font-size: 14px; max-width: 420px; line-height: 1.8; }
 .page-import-loading, .page-import-waiting p { display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--text-secondary); }
 .page-import-workspace { display: grid; grid-template-columns: 235px minmax(0, 1fr); gap: 20px; align-items: start; }
-.page-import-list { display: grid; gap: 8px; position: sticky; top: 20px; max-height: calc(100vh - 100px); overflow: auto; }
+.page-import-sidebar { display: flex; flex-direction: column; position: sticky; top: 20px; max-height: calc(100vh - 100px); min-width: 0; }
+.page-import-list { display: grid; gap: 8px; overflow: auto; }
 .page-import-tab { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 10px; color: var(--text-primary); background: var(--surface-2); border: 1px solid var(--border-subtle); cursor: pointer; min-width: 0; }
 .page-import-tab.is-active { border-color: var(--primary); background: var(--primary-soft); box-shadow: inset 3px 0 var(--primary); }
 .page-import-tab > img { width: 42px; height: 58px; object-fit: contain; flex-shrink: 0; background: #e8ece6; }
@@ -78,8 +79,9 @@
 .page-import-waiting img { display: block; max-width: 100%; max-height: 420px; margin: 0 auto; object-fit: contain; }
 .page-import-waiting p { font-size: 13px; line-height: 1.6; }
 @media (max-width: 900px) {
-  .page-import-workspace { grid-template-columns: 1fr; }
-  .page-import-list { display: flex; position: static; max-height: none; padding-bottom: 5px; }
+  .page-import-workspace { grid-template-columns: minmax(0, 1fr); }
+  .page-import-sidebar { position: static; max-height: none; }
+  .page-import-list { display: flex; padding-bottom: 5px; }
   .page-import-tab { flex: 0 0 205px; }
   .page-import-current { padding: 18px; }
 }

@@ -1,6 +1,13 @@
 .photo-dialog-backdrop { position: fixed; inset: 0; background: rgba(20, 40, 29, .48); z-index: 1200; }
 .photo-dialog { position: fixed; z-index: 1201; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(660px, calc(100vw - 32px)); max-height: calc(100dvh - 40px); overflow: auto; background: var(--surface-2); color: var(--text-primary); border: 1px solid var(--border-medium); border-radius: 8px; padding: 24px; box-shadow: 0 20px 80px #14281d33; }
 .photo-dialog-wide { width: min(960px, calc(100vw - 32px)); }
+.photo-dialog-backdrop { transition: opacity 220ms var(--motion-ease); }
+.photo-dialog-backdrop:is([data-starting-style], [data-ending-style]) { opacity: 0; }
+/* Individual translate/scale leave the centring transform alone. */
+.photo-dialog:not(.ai-tasks-dialog) { transition: opacity 200ms var(--motion-ease), translate 280ms var(--motion-ease-out), scale 280ms var(--motion-ease-out); }
+.photo-dialog:not(.ai-tasks-dialog)[data-starting-style] { opacity: 0; translate: 0 10px; scale: .98; }
+.photo-dialog:not(.ai-tasks-dialog)[data-ending-style] { opacity: 0; translate: 0 4px; scale: .99; transition-duration: 150ms; transition-timing-function: var(--motion-ease-exit); }
+:is(.photo-dialog, .photo-dialog-backdrop)[data-ending-style] { pointer-events: none; }
 .photo-dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .photo-dialog-heading h2 { font-size: 23px; }
 .photo-dialog-description, .ai-notice { color: var(--text-secondary); font-size: 14px; line-height: 1.7; margin-bottom: 16px; }
@@ -69,6 +76,7 @@
 .photo-library-photo img { width: 100%; height: 150px; object-fit: contain; background: var(--surface-1); }
 .photo-library-name { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
 .photo-library-meta { color: var(--text-secondary); font-size: 12px; }
+.photo-load-more { display: flex; justify-content: center; flex-shrink: 0; margin-top: 12px; }
 .ai-result { background: var(--surface-1); border: 1px solid var(--border-medium); padding: 16px; margin-bottom: 18px; }
 .ai-result h3 { font-size: 16px; margin-bottom: 8px; }
 .ai-result .markdown-content { max-height: 250px; overflow: auto; font-size: 15px; }
@@ -145,6 +153,10 @@
 @media (max-width: 640px) {
   .photo-dialog { width: 100vw; max-height: 94dvh; top: auto; bottom: 0; left: 0; transform: none; border-radius: 12px 12px 0 0; padding: 20px 16px max(24px, env(safe-area-inset-bottom)); }
   .photo-dialog-heading h2 { font-size: 21px; }
+  /* Phones get a bottom sheet that slides up rather than a fading card. */
+  .photo-dialog:not(.ai-tasks-dialog) { transition: translate 400ms var(--sheet-ease); }
+  .photo-dialog:not(.ai-tasks-dialog):is([data-starting-style], [data-ending-style]) { opacity: 1; scale: 1; translate: 0 100%; }
+  .photo-dialog:not(.ai-tasks-dialog)[data-ending-style] { transition-duration: 280ms; transition-timing-function: var(--sheet-ease); }
   .photo-thumbnails { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 8px 0; }
   .photo-thumbnail { padding: 3px 5px; }
   .photo-thumbnail img { height: 62px; }

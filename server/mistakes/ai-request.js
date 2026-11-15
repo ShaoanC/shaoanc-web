@@ -3,8 +3,9 @@ const { db } = require('./database');
 
 const analysisUpgradeMarker = '[[UPGRADE_ANALYSIS_MODEL]]';
 
-function countAiCall(context) {
+function recordAiCall(context, model) {
     if (context?.userId) db.prepare('UPDATE users SET ai_call_count = ai_call_count + 1 WHERE id = ?').run(context.userId);
+    if (context?.jobId) db.prepare('UPDATE ai_jobs SET model = ? WHERE id = ?').run(model, context.jobId);
 }
 
 function isAiTimeout(error) {
@@ -61,12 +62,14 @@ async function requestCompletion({ messages, responseFormat, signal, context, in
         let category = null;
         try {
             const timeout = AbortSignal.timeout(90000);
-            countAiCall(context);
+            const requestSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
+            requestSignal.throwIfAborted();
+            recordAiCall(context, model);
             const httpResponse = await fetch(endpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'x-goog-api-key': config.apiKey },
                 body: JSON.stringify({ ...messages, ...(format ? { generationConfig: format } : {}) }),
-                signal: signal ? AbortSignal.any([signal, timeout]) : timeout
+                signal: requestSignal
             });
             if (!httpResponse.ok) {
                 const body = await httpResponse.json().catch(() => null);
@@ -111,7 +114,7 @@ async function requestAnalysis({ input = {}, images = [], signal, context, onMet
     const requestSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
     try {
         requestSignal.throwIfAborted();
-        countAiCall(context);
+        recordAiCall(context, config.model);
         const httpResponse = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },

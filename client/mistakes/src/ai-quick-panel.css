@@ -21,6 +21,7 @@ body:has(.ai-quick-dialog, .ai-quick-drawer) .mistakes-toast-container { visibil
   transform-origin: top right; transition: opacity 180ms var(--motion-ease), transform 240ms var(--motion-ease);
 }
 .ai-quick-dialog:is([data-starting-style], [data-ending-style]) { opacity: 0; transform: translateY(-8px) scale(.97); }
+:is(.ai-quick-dialog, .quick-task-backdrop)[data-ending-style] { transition-duration: 150ms; pointer-events: none; }
 /* Review keeps a fixed frame so the action bar never moves while the content changes height. */
 .ai-quick-dialog.is-review { width: min(1040px, calc(100vw - 48px)); height: calc(100dvh - var(--workspace-header-bottom, 64px) - 28px); }
 .quick-panel-header { display: flex; flex-shrink: 0; align-items: center; gap: 6px; padding: 14px 12px 12px 20px; border-bottom: 1px solid var(--border-subtle); }

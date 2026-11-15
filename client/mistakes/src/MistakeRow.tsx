@@ -6,6 +6,7 @@ import { knowledgeLabel, useApp } from './context';
 import { Checkbox, DataTypeBadge, StatusBadge } from './components';
 import { DeleteButton } from './DeleteButton';
 import { MarkdownContent } from './MarkdownContent';
+import { useEnterAnimation } from './motion';
 import { SearchSnippetText, SearchSummary } from './SearchSummary';
 import { StarRatingDisplay, StarRatingPicker } from './StarRating';
 import type { Mistake } from './types';
@@ -62,6 +63,7 @@ export function MistakeRow({ mistake, grid, opened, armed, disabled, deleting, r
   const ignoreSwipe = useRef(false);
   const suppressClickUntil = useRef(0);
   const trashed = Boolean(mistake.deletedAt);
+  useEnterAnimation(rowRef);
   const subjectName = subjects.find((subject) => subject.id === mistake.subjectId)?.name;
 
   function changeRatingPhase(phase: RatingPhase) {

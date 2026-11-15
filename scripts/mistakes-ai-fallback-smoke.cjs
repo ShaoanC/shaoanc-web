@@ -72,6 +72,7 @@ async function main() {
         const result = await wait(create());
         assert.equal(result.status, 'succeeded');
         assert.equal(result.analysisRoute.model, 'stronger');
+        assert.equal(result.model, 'stronger');
         assert.equal(result.analysisRoute.reason, reason === 'upgrade' ? 'model_request' : 'timeout');
         assert.equal(result.result.analysis, '升级模型生成的解析。');
         assert.deepEqual(calls.slice(before).map((call) => call.model), ['primary', 'stronger']);
@@ -85,6 +86,7 @@ async function main() {
         const before = calls.length;
         const result = await wait(create());
         assert.equal(result.analysisRoute, null);
+        assert.equal(result.model, 'primary');
         assert.deepEqual(calls.slice(before).map((call) => call.model), ['primary']);
     }
     failure = 'timeout'; fallbackFailure = true;
@@ -169,6 +171,10 @@ async function main() {
         ai.cancelJob(routed.id, userId);
         releaseFallback.resolve?.(); releaseFallback = null;
         assert.equal((await wait(routed)).status, 'cancelled');
+        await page.goto(`${base}/mistakes/#/ai-tasks`);
+        const task = (id) => page.locator(`.task-manager [data-job-id="${id}"]`);
+        await task(routed.id).getByText('stronger', { exact: true }).waitFor();
+        await task(manual.id).getByText('primary', { exact: true }).waitFor();
         await context.close();
     }
     console.log('AI analysis routing passed: model request, timeout/408/504, unrelated errors, retries, disabled fallback, cancellation, settings and toast on mobile/desktop.');

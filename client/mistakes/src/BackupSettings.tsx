@@ -151,6 +151,6 @@ export function BackupSettings() {
       </section>
       <p className="backup-restore-note">恢复需要先停止服务，在服务器执行 <code>npm run backup:restore -- &lt;备份包&gt; --confirm</code>，完成后重新启动。恢复前会自动保存一份当前数据回退包。</p>
     </div>}
-    {deleteTarget && <Modal title="删除这份备份？" onClose={() => { if (!deleting) setDeleteTarget(null); }}><p className="modal-description">将删除 {backupTime(deleteTarget.createdAt)} 的{sourceLabels[deleteTarget.source]}，此操作无法撤销。</p>{actionError && <div className="form-error" role="alert">{actionError}</div>}<div className="modal-actions"><button className="button secondary" disabled={deleting} onClick={() => setDeleteTarget(null)}>取消</button><button className="button danger" disabled={deleting} onClick={() => void deleteBackup()}>{deleting ? '正在删除…' : '删除备份'}</button></div></Modal>}
+    <Modal open={Boolean(deleteTarget)} title="删除这份备份？" onClose={() => { if (!deleting) setDeleteTarget(null); }}>{deleteTarget && <><p className="modal-description">将删除 {backupTime(deleteTarget.createdAt)} 的{sourceLabels[deleteTarget.source]}，此操作无法撤销。</p>{actionError && <div className="form-error" role="alert">{actionError}</div>}<div className="modal-actions"><button className="button secondary" disabled={deleting} onClick={() => setDeleteTarget(null)}>取消</button><button className="button danger" disabled={deleting} onClick={() => void deleteBackup()}>{deleting ? '正在删除…' : '删除备份'}</button></div></>}</Modal>
   </LoadingContent>;
 }

@@ -51,6 +51,10 @@
   --radius-xl: 0px;
   --radius-full: 3px;
   --motion-ease: cubic-bezier(.22, .61, .36, 1);
+  /* Entrances decelerate into place; exits get out of the way quickly; sheets follow the finger's momentum. */
+  --motion-ease-out: cubic-bezier(.16, 1, .3, 1);
+  --motion-ease-exit: cubic-bezier(.4, 0, 1, 1);
+  --sheet-ease: cubic-bezier(.32, .72, 0, 1);
 
   color: var(--text-primary);
   background: var(--surface-0);
@@ -967,22 +971,33 @@ input.checkbox-input {
 .empty-state p { font-size: 17px; color: var(--text-muted); line-height: 1.7; max-width: 280px; margin: 0; }
 
 /* ─── Modal ─────────────────────────────────────────────────── */
+/* No backdrop blur: re-blurring the page on every fade frame is what makes phones stutter. */
 .modal-backdrop {
   position: fixed; inset: 0; z-index: 100;
-  background: rgba(0,0,0,.65); backdrop-filter: blur(4px);
+  background: rgba(32,57,46,.4);
+  transition: opacity 220ms var(--motion-ease);
+}
+.modal-backdrop:is([data-starting-style], [data-ending-style]) { opacity: 0; }
+.modal-viewport {
+  position: fixed; inset: 0; z-index: 101;
   display: flex; align-items: center; justify-content: center;
-  padding: 20px; animation: none;
+  padding: 20px; pointer-events: none;
 }
 .modal {
+  position: relative; pointer-events: auto; outline: none;
   background: var(--surface-2); border: 1px solid var(--border-medium);
   border-radius: var(--radius-xl); padding: 28px; width: 100%; max-width: 440px;
-  box-shadow: none;
-  animation: none;
+  box-shadow: 0 18px 56px rgba(32,57,46,.16);
   max-height: calc(100dvh - 40px);
   overflow-y: auto;
   scrollbar-gutter: stable;
   overscroll-behavior-y: contain;
+  transition: opacity 200ms var(--motion-ease), transform 280ms var(--motion-ease-out);
 }
+.modal[data-starting-style] { opacity: 0; transform: translateY(10px) scale(.97); }
+.modal[data-ending-style] { opacity: 0; transform: translateY(4px) scale(.985); }
+/* Closing is quicker than opening, and the page underneath is usable as soon as it starts. */
+:is(.modal, .modal-backdrop)[data-ending-style] { transition-duration: 150ms; transition-timing-function: var(--motion-ease-exit); pointer-events: none; }
 .modal-heading {
   display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;
 }
@@ -1581,11 +1596,9 @@ input:focus, textarea:focus, select:focus { outline: 2px solid rgba(23,100,72,.1
 .empty-state p { font-size: 16px; max-width: 31em; }
 .empty-illustration { color: var(--primary); }
 .empty-orbit { animation: none; border: 0; border-bottom: 3px solid var(--accent); border-radius: 0; inset: auto 0 0; }
-.modal-backdrop { background: rgba(32,57,46,.35); backdrop-filter: blur(2px); animation: none; }
-.modal { border-radius: 4px; max-width: 480px; padding: 30px; box-shadow: none; animation: modal-appear 220ms var(--motion-ease); }
+.modal { border-radius: 4px; max-width: 480px; padding: 30px; }
 .modal-heading h2 { font-size: 24px; }
 .modal-description { font-size: 17px; }
-@keyframes modal-appear { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 
 /* The login scene is an open notebook, with no decorative gradient. */
 .auth-story { background: var(--surface-1); padding: 48px 58px; }
@@ -1672,6 +1685,67 @@ input:focus, textarea:focus, select:focus { outline: 2px solid rgba(23,100,72,.1
 .skeleton-review .skeleton-row { grid-template-columns: 20px minmax(0,1fr) 90px; gap: 14px; min-height: 100px; padding: 20px 24px; }
 .skeleton-review .skeleton-row-index { width: 19px; height: 19px; }
 .skeleton-review .skeleton-row > .short:last-child { display: none; }
+
+/* ─── Route transitions ───────────────────────────────────────
+   Opening a question pushes it in from the right and closing slides it back; other pages cross-fade.
+   Names exist only while a transition runs, so pages never become stacking contexts otherwise. */
+html[data-route-phase] .route-view:not([hidden]) { view-transition-name: route-in; }
+html[data-route-phase='old'] .route-view:not([hidden]) { view-transition-name: route-out; }
+html[data-route-phase] .loading-progress { view-transition-name: app-progress; }
+html[data-route-phase] .mistakes-toast-container { view-transition-name: app-toasts; }
+@media (min-width: 961px) { html[data-route-phase] .topbar { view-transition-name: app-header; } }
+@media (max-width: 960px) { html[data-route-phase] .sidebar { view-transition-name: app-header; } }
+/* Taps go straight to the new page instead of waiting for the animation. */
+::view-transition { pointer-events: none; }
+::view-transition-group(route-out) { z-index: 1; }
+::view-transition-group(route-in) { z-index: 2; }
+/* Sticky chrome and notifications stay above both page snapshots and keep updating live. */
+::view-transition-group(app-header) { z-index: 3; animation: none; }
+::view-transition-group(app-progress) { z-index: 4; animation: none; }
+::view-transition-group(app-toasts) { z-index: 5; animation: none; }
+::view-transition-old(app-header), ::view-transition-old(app-progress), ::view-transition-old(app-toasts) { animation: none; opacity: 0; }
+::view-transition-new(app-header), ::view-transition-new(app-progress), ::view-transition-new(app-toasts) { animation: none; }
+::view-transition-old(route-out) { animation: route-fade-out 160ms var(--motion-ease-exit) both; }
+::view-transition-new(route-in) { animation: route-swap-in 320ms var(--motion-ease-out) both; }
+html[data-route-direction='forward']::view-transition-old(route-out) { animation: route-out-forward 200ms var(--motion-ease-exit) both; }
+html[data-route-direction='forward']::view-transition-new(route-in) { animation: route-in-forward 360ms var(--motion-ease-out) both; }
+html[data-route-direction='back']::view-transition-old(route-out) { animation: route-out-back 200ms var(--motion-ease-exit) both; }
+html[data-route-direction='back']::view-transition-new(route-in) { animation: route-in-back 360ms var(--motion-ease-out) both; }
+/* Browsers without view transitions still fade the new page in. */
+html[data-route-enter] .route-view:not([hidden]) { animation: route-fade-in 240ms var(--motion-ease-out); }
+@keyframes route-fade-out { to { opacity: 0; } }
+@keyframes route-fade-in { from { opacity: 0; } }
+@keyframes route-swap-in { from { opacity: 0; transform: translateY(12px); } }
+@keyframes route-out-forward { to { opacity: 0; transform: translateX(-28px); } }
+@keyframes route-in-forward { from { opacity: 0; transform: translateX(40px); } }
+@keyframes route-out-back { to { opacity: 0; transform: translateX(28px); } }
+@keyframes route-in-back { from { opacity: 0; transform: translateX(-40px); } }
+
+/* ─── Content reveals ─────────────────────────────────────────── */
+@keyframes content-rise { from { opacity: 0; transform: translateY(10px); } }
+@keyframes dock-rise { from { transform: translateY(100%); } }
+@keyframes celebrate-pop { from { opacity: 0; transform: scale(.6) rotate(-10deg); } }
+@keyframes row-returned {
+  0%, 40% { background-color: #E3EEE5; box-shadow: inset 3px 0 0 var(--primary); }
+  100% { background-color: var(--surface-2); box-shadow: inset 3px 0 0 transparent; }
+}
+/* The question you just closed lights up once, so its place in the list is obvious. */
+.mistake-row.is-returned .mistake-row-surface { animation: row-returned 1500ms var(--motion-ease) both; }
+/* A loaded question settles in section by section after its skeleton fades. */
+.detail-page.is-ready > .loading-content-body > :is(.detail-reading-header, .draft-notice, .detail-document, .detail-reading-history, .detail-reading-footer) { animation: content-rise 440ms var(--motion-ease-out) backwards; }
+.detail-page.is-ready > .loading-content-body > .draft-notice { animation-delay: 40ms; }
+.detail-page.is-ready > .loading-content-body > .detail-document { animation-delay: 70ms; }
+.detail-page.is-ready > .loading-content-body > .detail-reading-history { animation-delay: 110ms; }
+.detail-page.is-ready > .loading-content-body > .detail-reading-footer { animation-delay: 140ms; }
+.settings-tab-panel { min-width: 0; }
+.settings-tab-panel.is-entering { animation: content-rise 320ms var(--motion-ease-out) backwards; }
+.empty-state { animation: content-rise 420ms var(--motion-ease-out) backwards; }
+.library-selection-toolbar { animation: content-rise 260ms var(--motion-ease-out) backwards; }
+.review-complete { animation: content-rise 420ms var(--motion-ease-out) backwards; }
+.review-complete .complete-illustration { animation: celebrate-pop 560ms cubic-bezier(.34, 1.56, .64, 1) 140ms backwards; }
+@media (max-width: 640px) {
+  .library-archive-dock { animation: dock-rise 360ms var(--sheet-ease) backwards; }
+}
 
 @media (max-width: 1180px) {
   .main-content { padding-left: 30px; padding-right: 30px; }
@@ -1878,7 +1952,7 @@ input:focus, textarea:focus, select:focus { outline: 2px solid rgba(23,100,72,.1
   .empty-state h3 { font-size: 21px; }
   .empty-state p { font-size: 16px; }
   .empty-state .button { font-size: 15px; }
-  .modal-backdrop { padding: 16px; }
+  .modal-viewport { padding: 16px; }
   .modal { padding: 24px 20px; max-height: calc(100dvh - 32px); overflow-y: auto; }
   .modal-heading h2 { font-size: 22px; }
   .modal-description { font-size: 16px; }

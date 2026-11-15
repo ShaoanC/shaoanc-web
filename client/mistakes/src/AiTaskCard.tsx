@@ -79,6 +79,7 @@ export function TaskCard({ job, clock, compact = false, className = '', selectio
     {!compact && job.recognitionPrompt && <p className="task-row-notice">二级提示词：<span className="user-content">{job.recognitionPrompt}</span></p>}
     <div className="task-meta">
       <a href={link}>记录 #{job.mistakeId}</a>
+      {!compact && job.model && <span className="task-model">{job.model}</span>}
       {!compact && subject && <span>{subject}</span>}
       {!compact && <span>{formatDate(job.createdAt, true)}</span>}
       <span><Clock3 size={13} />{elapsed(job, clock, compact)}</span>

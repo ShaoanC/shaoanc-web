@@ -434,10 +434,10 @@ export function MistakesPage({ active = true }: { active?: boolean }) {
     </MobileFiltersDrawer>}
     {!trashed && <div className="study-tip"><span><Target size={19} /></span><p><strong>温故而知新，可以为师矣</strong></p><a href="#/review">开始一次复习<ArrowRight size={15} /></a></div>}
     {exportOpen && !trashed && <MistakeExport mistakes={mistakes} selectedIds={selectedIds} totalCount={total} filters={Object.fromEntries(new URLSearchParams(filtersQuery))} onClose={() => setExportOpen(false)} />}
-    {!mobile && ratingTarget && <Modal title="设置星级" onClose={() => openRating(ratingTarget, false)}><StarRatingPicker value={ratingPreview} onChange={setRatingPreview} onCommit={(value) => void saveRating(ratingTarget, value)} disabled={busy?.kind === 'rating'} error={ratingError} onClose={() => openRating(ratingTarget, false)} autoFocus /></Modal>}
-    {permanentTarget && <Modal title={permanentTarget === 'all' ? '清空回收站？' : '彻底删除这道错题？'} onClose={() => { if (!busy) setPermanentTarget(null); }}>
+    <Modal open={!mobile && Boolean(ratingTarget)} title="设置星级" onClose={() => { if (ratingTarget) openRating(ratingTarget, false); }}>{ratingTarget && <StarRatingPicker value={ratingPreview} onChange={setRatingPreview} onCommit={(value) => void saveRating(ratingTarget, value)} disabled={busy?.kind === 'rating'} error={ratingError} onClose={() => openRating(ratingTarget, false)} autoFocus />}</Modal>
+    <Modal open={Boolean(permanentTarget)} title={permanentTarget === 'all' ? '清空回收站？' : '彻底删除这道错题？'} onClose={() => { if (!busy) setPermanentTarget(null); }}>{permanentTarget && <>
       <p className="modal-description">{permanentTarget === 'all' ? `将彻底删除回收站中的全部 ${stats?.trashCount ?? 0} 道错题及复习记录，包括当前筛选未显示的题目。` : '这道错题及对应的复习记录将被彻底删除。'}此操作无法恢复。</p>
       <div className="modal-actions"><button className="button secondary" disabled={Boolean(busy)} onClick={() => setPermanentTarget(null)}>取消</button><button className="button danger" disabled={Boolean(busy)} onClick={() => void permanentlyDelete()}>{busy ? '正在删除…' : permanentTarget === 'all' ? '清空回收站' : '彻底删除'}</button></div>
-    </Modal>}
+    </>}</Modal>
   </>;
 }

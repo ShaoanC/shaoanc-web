@@ -1,5 +1,6 @@
+import { Dialog } from '@base-ui/react/dialog';
 import { ArrowRight, BookOpen, Check, LoaderCircle, Minus, SearchX, X } from 'lucide-react';
-import { useEffect, useRef, type ComponentPropsWithoutRef, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ComponentProps, type ComponentPropsWithoutRef, type ReactNode } from 'react';
 import type { KnowledgeStatus } from './types';
 import { STATUS_LABELS } from './types';
 
@@ -48,8 +49,37 @@ export function PageHeader({ title, description, action }: { eyebrow: string; ti
   return <div className="page-header"><div><h1>{title}</h1>{description && <p>{description}</p>}</div>{action && <div className="page-header-action">{action}</div>}</div>;
 }
 
-export function Modal({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
-  return <div className="modal-backdrop" onClick={onClose}><section className="modal" role="dialog" aria-modal="true" aria-label={title} onClick={(event) => event.stopPropagation()}><div className="modal-heading"><h2>{title}</h2><button className="icon-button" aria-label="关闭" onClick={onClose}><X size={20} /></button></div>{children}</section></div>;
+const MODAL_FIELDS = 'input:not([type="hidden"]), select, textarea, [role="slider"]';
+
+/**
+ * Keep it mounted and toggle `open`: the last title and content stay on screen while the dialog animates out.
+ * Escape, outside presses, focus containment and scroll locking come from the Base UI dialog.
+ */
+export function Modal({ open = true, title, children, onClose, initialFocus }: { open?: boolean; title: string; children: ReactNode; onClose: () => void; initialFocus?: ComponentProps<typeof Dialog.Popup>['initialFocus'] }) {
+  const [mounted, setMounted] = useState(false);
+  const popup = useRef<HTMLDivElement>(null);
+  const retained = useRef({ title, children });
+  if (open) retained.current = { title, children };
+  const content = retained.current;
+
+  // Opening from the closed state lets conditionally rendered callers animate in as well.
+  useEffect(() => setMounted(true), []);
+
+  // Forms start at their first field; touch keeps focus on the dialog so the keyboard stays closed.
+  const focusFirstField = (type: string) => type === 'touch' ? true
+    : Array.from(popup.current?.querySelectorAll<HTMLElement>(MODAL_FIELDS) || []).find((element) => !element.matches(':disabled')) ?? true;
+
+  return <Dialog.Root open={mounted && open} onOpenChange={(next) => { if (!next) onClose(); }}>
+    <Dialog.Portal>
+      <Dialog.Backdrop className="modal-backdrop" />
+      <Dialog.Viewport className="modal-viewport">
+        <Dialog.Popup ref={popup} className="modal" initialFocus={initialFocus ?? focusFirstField}>
+          <div className="modal-heading"><Dialog.Title>{content.title}</Dialog.Title><Dialog.Close className="icon-button" aria-label="关闭"><X size={20} /></Dialog.Close></div>
+          {content.children}
+        </Dialog.Popup>
+      </Dialog.Viewport>
+    </Dialog.Portal>
+  </Dialog.Root>;
 }
 
 export function ArrowLink({ children, href }: { children: ReactNode; href: string }) {

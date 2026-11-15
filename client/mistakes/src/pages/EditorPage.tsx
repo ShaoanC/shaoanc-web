@@ -31,7 +31,7 @@ export function EditorPage({ id, onCreated }: { id?: number; onCreated?: (id: nu
   const { jobs, config, createJob, applyJob, refresh, openTasks, registerEditor } = useAiTasks();
   const { queue: photoQueue, batches: photoBatches } = usePhotoUploads();
   const [restored] = useState(() => { try { return readEditorDraft(window.localStorage, user.id, id); } catch { return null; } });
-  const restoredNotice = restored ? `已恢复本机草稿（${new Date(restored.updatedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}，仅此账号）。` : '';
+  const restoredNotice = restored ? `已恢复本机草稿（${new Date(restored.updatedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}）。` : '';
   const clientId = useRef(restored?.clientId || crypto.randomUUID());
   const creationInput = useRef(restored?.creationInput);
   const draftReady = useRef(!id);

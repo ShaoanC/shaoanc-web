@@ -108,7 +108,7 @@ function serializeJob(row) {
     return { id: row.id, mistakeId: row.mistake_id, type: row.type, mode: row.mode || 'single', status: row.status, applyStatus: row.apply_status,
         ...(recognitionPrompt ? { recognitionPrompt } : {}),
         analysisRoute: JSON.parse(row.source_json || '{}').analysisRoute || null,
-        input: JSON.parse(row.input_json), imageIds, result, mistakeDeleted: Boolean(row.mistake_deleted_at),
+        model: row.model, input: JSON.parse(row.input_json), imageIds, result, mistakeDeleted: Boolean(row.mistake_deleted_at),
         error: row.error, attempts: row.attempts, maxAttempts: row.max_attempts, createdAt: row.created_at,
         startedAt: row.started_at, finishedAt: row.finished_at, nextAttemptAt: row.next_attempt_at };
 }
