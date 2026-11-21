@@ -117,20 +117,28 @@ db.transaction(() => {
             ALTER TABLE mistake_followups DROP COLUMN previous_credit_cost;
         `);
     }
+    if (!followupColumns.some(({ name }) => name === 'credits_charged')) {
+        db.exec(`
+            DROP TRIGGER IF EXISTS retain_today_followup_charge;
+            ALTER TABLE mistake_followups ADD COLUMN credits_charged REAL NOT NULL DEFAULT 0;
+            UPDATE mistake_followups AS a SET credits_charged = credit_cost
+                WHERE role = 'assistant' AND ${billableFollowup('a')};
+        `);
+    }
     db.exec(`
         -- Clearing a conversation keeps only the already settled charge through the end of the Beijing day.
         CREATE TRIGGER IF NOT EXISTS retain_today_followup_charge AFTER DELETE ON mistake_followups
-        WHEN OLD.mistake_id IS NOT NULL AND OLD.role = 'assistant' AND OLD.credit_cost > 0 AND ${billableFollowup('OLD')}
+        WHEN OLD.mistake_id IS NOT NULL AND OLD.role = 'assistant' AND OLD.credits_charged > 0
             AND OLD.created_at >= ${followupDayStart} AND OLD.created_at < ${followupDayEnd}
             AND EXISTS (SELECT 1 FROM users WHERE id = OLD.user_id)
         BEGIN
-            INSERT INTO mistake_followups (user_id, role, status, credit_cost, created_at, deleted_body_length)
-            VALUES (OLD.user_id, 'assistant', OLD.status, OLD.credit_cost, OLD.created_at, length(OLD.content));
+            INSERT INTO mistake_followups (user_id, role, status, credits_charged, created_at)
+            VALUES (OLD.user_id, 'assistant', OLD.status, OLD.credits_charged, OLD.created_at);
         END;
     `);
 })();
 
-for (const [name, type] of [['profile_name', 'TEXT'], ['duration_ms', 'INTEGER']]) {
+for (const [name, type] of [['profile_name', 'TEXT'], ['duration_ms', 'INTEGER'], ['thought', "TEXT NOT NULL DEFAULT ''"]]) {
     if (!followupColumns.some((column) => column.name === name)) db.exec(`ALTER TABLE mistake_followups ADD COLUMN ${name} ${type}`);
 }
 db.prepare("UPDATE mistake_followups SET status = 'failed', error_message = '服务重启中断，可重试' WHERE status = 'streaming'").run();

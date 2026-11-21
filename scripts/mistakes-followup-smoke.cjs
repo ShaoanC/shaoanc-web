@@ -25,7 +25,7 @@ const provider = http.createServer(async (req, res) => {
     for await (const chunk of req) chunks.push(chunk);
     const body = JSON.parse(Buffer.concat(chunks));
     const gemini = Boolean(body.contents);
-    const last = gemini ? body.contents.at(-1).parts[0].text : body.messages.at(-1).content;
+    const last = gemini ? body.contents.at(-1).parts[0].text : (body.input || body.messages).at(-1).content;
     calls.push({ path: req.url, body, last });
     function json(status, value) {
         res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -48,16 +48,30 @@ const provider = http.createServer(async (req, res) => {
     }
     res.writeHead(200, { 'Content-Type': 'text/event-stream' });
     const packet = (value) => 'data: ' + JSON.stringify(value) + '\r\n\r\n';
+    if (req.url.endsWith('/responses')) {
+        res.write(packet({ type: 'response.reasoning_summary_text.delta', delta: '先列方程' }));
+        res.write(packet({ type: 'response.output_text.delta', delta: '得到两个根' }));
+        const status = calls.filter((call) => call.last === last).length === 1 ? 'incomplete' : 'completed';
+        res.end(packet({ type: 'response.' + status, response: {
+            status, usage: { input_tokens: 1800, output_tokens: 700, total_tokens: 2500 }
+        } }));
+        return;
+    }
     const reply = last === '验证搜索隔离' ? replyOnlyText : last === '暂时故障' ? exportText
         : last === '停止测试' ? '答'.repeat(99) + ' ![](https://smoke.invalid/image.png) '
             : last === '足量停止' ? '答'.repeat(100) : '模拟回复';
     if (gemini) {
         res.write(packet({ candidates: [{ content: { parts: [{ text: '内部推理', thought: true }, { text: 'Gemini 流式答复 ' }] } }] }));
         res.end(packet({ candidates: [{ content: { parts: [{ text: '$x=4$' }] }, finishReason: 'STOP' }],
-            usageMetadata: { promptTokenCount: 8, candidatesTokenCount: 3, totalTokenCount: 11 } }));
+            usageMetadata: { promptTokenCount: 1000, candidatesTokenCount: 700, thoughtsTokenCount: 300, totalTokenCount: 2000 } }));
         return;
     }
-    const first = packet({ choices: [{ delta: { content: reply } }] });
+    if (last === '暂时故障' || last === '切换错题') {
+        res.write(packet({ choices: [{ delta: { reasoning_content: '检查题目条件' } }] }));
+        if (last === '切换错题') await delay(300);
+    }
+    const first = packet({ choices: [{ delta: { content: reply } }],
+        ...(last === '停止测试' && { usage: { prompt_tokens: 10, completion_tokens: 99, total_tokens: 109 } }) });
     res.write(first.slice(0, -2));
     res.write(first.slice(-2));
     if (last === '停止测试' || last === '足量停止') {
@@ -66,8 +80,9 @@ const provider = http.createServer(async (req, res) => {
     }
     if (last === '断连继续') await delay(750);
     if (last === '切换错题') await delay(1800);
-    if (!res.destroyed) res.end(packet({ choices: [{ delta: { content: ' $x=4$' }, finish_reason: 'stop' }],
-        usage: { prompt_tokens: 8, completion_tokens: 3, total_tokens: 11 } }) + 'data: [DONE]\n\n');
+    const total = last === '用完最后积分' ? 3000 : 2000;
+    if (!res.destroyed) res.end(packet({ choices: [{ delta: { content: ' $x=4$' }, finish_reason: 'stop' }] })
+        + packet({ choices: [], usage: { prompt_tokens: 1500, completion_tokens: total - 1500, total_tokens: total } }) + 'data: [DONE]\n\n');
 });
 
 function client() {
@@ -209,6 +224,11 @@ async function checkViewport(owner, first, second, width) {
         }));
         const replies = drawer.locator('.followup-reply-meta');
         const deepReply = replies.filter({ hasText: "Claude's text" });
+        assert.ok(await deepReply.getByText('2,000 token').isVisible());
+        const thought = deepReply.locator('..').locator('.followup-thought');
+        await thought.locator('summary').click();
+        assert.ok(await thought.getByText('检查题目条件').isVisible());
+        await thought.locator('summary').click();
         assert.equal(await deepReply.getByText('-3', { exact: true }).count(), 1);
         assert.equal(await deepReply.locator('.followup-reply-charge > .lucide-coins:first-child').count(), 1);
         assert.equal(await deepReply.locator('.followup-reply-charge').getAttribute('title'), '扣除 3 积分');
@@ -316,6 +336,7 @@ async function checkViewport(owner, first, second, width) {
             await waitForPeek();
             assert.equal(await input.inputValue(), '切换错题');
             await send.click();
+            await drawer.locator('details[open]').getByText('检查题目条件').waitFor();
             await drawer.getByText('正在生成…', { exact: true }).waitFor();
             await waitForExpanded();
             await checkComposeAction(stop);
@@ -615,6 +636,7 @@ async function main() {
     });
     assert.equal(stopped.at(-1).message.status, 'cancelled');
     assert.equal(stopped.at(-1).message.creditsCharged, 0);
+    assert.equal(stopped.at(-1).message.totalTokens, null);
     assert.ok(Number.isInteger(stopped.at(-1).message.durationMs));
     assert.equal(stopped.at(-1).dailyCreditsRemaining, 15);
     for (let i = 0; i < 20 && !cancelled; i++) await delay(50);
@@ -664,7 +686,8 @@ async function main() {
     await other.data('PATCH', '/mistakes/' + gemini.id, { answer: '$x=4$\n\n' + image });
     const native = await ask(other, gemini.id, '原生流式', 'native');
     assert.equal(native.at(-1).message.content, 'Gemini 流式答复 $x=4$');
-    assert.deepEqual(calls.at(-1).body.generationConfig.thinkingConfig, { thinkingLevel: 'LOW' });
+    assert.deepEqual(calls.at(-1).body.generationConfig.thinkingConfig, { thinkingLevel: 'LOW', includeThoughts: true });
+    assert.equal(native.find((frame) => frame.type === 'thought').text, native.at(-1).message.thought);
     assert.ok(calls.at(-1).body.contents[0].parts.some((part) => part.inlineData));
     const fallback = await ask(other, gemini.id, '文字降级', 'native');
     assert.equal(fallback.at(-1).message.content, '非流式完整回答 $x=4$');
@@ -672,7 +695,7 @@ async function main() {
     assert.match(calls.at(-1).path, /:generateContent$/);
     assert.equal(calls.at(-1).body.contents[0].parts.length, 1);
     assert.equal(calls.at(-1).body.contents.length, 4);
-    assert.match(db.prepare('SELECT token_usage FROM mistake_followups WHERE id = ?').get(native.at(-1).message.id).token_usage, /"totalTokens":11/);
+    assert.equal(native.at(-1).message.totalTokens, 2000);
     const longStop = await other.request('POST', followups(gemini.id) + '/stream', { question: '足量停止', profileId: 'deep' });
     const longStopped = await events(longStop, async (frame) => {
         if (frame.type === 'delta') await other.data('POST', followups(gemini.id) + '/' + frame.id + '/cancel', {});
@@ -722,6 +745,7 @@ async function main() {
     assert.equal(messages.at(-2).content, '历史回答9');
     const lastCharge = (await ask(limited, speed.id, '用完最后积分', 'fractional-low')).at(-1);
     assert.deepEqual([lastCharge.message.creditsCharged, lastCharge.dailyCreditsRemaining], [0.2, 0]);
+    assert.equal(lastCharge.message.totalTokens, 3000);
     assert.match((await limited.data('POST', followups(speed.id) + '/stream', { question: '积分用完', profileId: 'fractional-low' }, 429)).message, /积分不足/);
     for (let index = 0; index < 3; index++) {
         const free = (await ask(limited, speed.id, '频率测试', 'free')).at(-1);
@@ -737,7 +761,6 @@ async function main() {
     db.prepare("UPDATE mistake_followups SET status = 'streaming' WHERE id = ?").run(failure.id);
     await db.backup(snapshot);
     const previousSchema = new (require('better-sqlite3'))(snapshot);
-    const trigger = previousSchema.prepare("SELECT sql FROM sqlite_schema WHERE name = 'retain_today_followup_charge'").get().sql;
     previousSchema.exec('DROP TRIGGER retain_today_followup_charge');
     previousSchema.prepare('DELETE FROM mistake_followups WHERE user_id = ?').run(speedUser);
     previousSchema.exec(`
@@ -747,11 +770,12 @@ async function main() {
         ALTER TABLE mistake_followups DROP COLUMN fractional_cost;
         ALTER TABLE mistake_followups DROP COLUMN profile_name;
         ALTER TABLE mistake_followups DROP COLUMN duration_ms;
-        ${trigger}
+        ALTER TABLE mistake_followups DROP COLUMN credits_charged;
+        ALTER TABLE mistake_followups DROP COLUMN thought;
     `);
     previousSchema.close();
     execFileSync(process.execPath, ['-e', `
-        const { db, billableFollowup } = require('./server/mistakes/database');
+        const { db } = require('./server/mistakes/database');
         const assert = require('node:assert/strict');
         const row = db.prepare('SELECT * FROM mistake_followups WHERE id = ?').get(Number(process.argv[1]));
         assert.equal(row.status, 'failed');
@@ -760,12 +784,29 @@ async function main() {
         assert.equal(row.duration_ms, null);
         assert.equal(row.credit_cost, 3);
         assert.equal(db.prepare('PRAGMA table_info(mistake_followups)').all().find(({ name }) => name === 'credit_cost').type, 'REAL');
-        assert.equal(db.prepare('SELECT SUM(a.credit_cost) AS used FROM mistake_followups a WHERE user_id = ? AND role = ? AND ' +
-            billableFollowup('a')).get(row.user_id, 'assistant').used, 2);
+        assert.equal(db.prepare('SELECT SUM(credits_charged) AS used FROM mistake_followups WHERE user_id = ?').get(row.user_id).used, 2);
     `, String(failure.id)], {
         cwd: root, env: { ...process.env, MISTAKES_DB_PATH: snapshot }, stdio: 'inherit', windowsHide: true
     });
     db.prepare("UPDATE mistake_followups SET status = 'completed' WHERE id = ?").run(failure.id);
+    addUser.run('responses_user', hashPassword(password), 'user', now);
+    const responsesUser = client();
+    await responsesUser.login('responses_user');
+    const responsesQuestion = await create(responsesUser, {});
+    const responsesProfile = { ...models[0], id: 'responses-model', protocol: 'responses', creditCost: 2 };
+    await owner.data('PATCH', configRoute, { profiles: [...settings.profiles, responsesProfile] });
+    const incomplete = (await ask(responsesUser, responsesQuestion.id, '摘要流式回答', responsesProfile.id)).at(-1);
+    assert.deepEqual([incomplete.message.status, incomplete.message.creditsCharged], ['failed', 2.5]);
+    const responseEvents = await events(await responsesUser.request('POST', followups(responsesQuestion.id) + '/stream',
+        { retryMessageId: incomplete.message.id, profileId: responsesProfile.id }));
+    assert.equal(calls.at(-1).body.reasoning.summary, 'auto');
+    assert.deepEqual(responseEvents.map((frame) => frame.type), ['meta', 'thought', 'delta', 'done']);
+    const settled = responseEvents.at(-1);
+    assert.deepEqual([settled.message.thought, settled.message.content, settled.message.totalTokens,
+        settled.message.creditsCharged, settled.dailyCreditsUsed], ['先列方程', '得到两个根', 2500, 2.5, 5]);
+    await responsesUser.data('DELETE', followups(responsesQuestion.id));
+    assert.equal((await responsesUser.data('GET', followups(responsesQuestion.id))).dailyCreditsUsed, 5);
+    await owner.data('PATCH', configRoute, { profiles: settings.profiles });
     assert.equal(db.prepare('SELECT user_id FROM mistakes WHERE id = ?').get(first.id).user_id, ownerId);
 
     const defaults = { source: { ids: [first.id] }, options: { answerPlacement: 'appendix' } };

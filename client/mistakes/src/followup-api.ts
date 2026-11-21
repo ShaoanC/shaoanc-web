@@ -28,6 +28,8 @@ export interface FollowupMessage extends FollowupModel {
   id: number;
   question: string;
   content: string;
+  thought: string;
+  totalTokens: number | null;
   status: 'streaming' | 'completed' | 'failed' | 'cancelled';
   error: string | null;
   imagesSkipped: boolean;
@@ -50,6 +52,7 @@ export interface FollowupHistory extends FollowupCredits {
 
 type FollowupEvent =
   | { type: 'delta'; id: number; text: string }
+  | { type: 'thought'; id: number; text: string }
   | ({ type: 'meta' | 'done' | 'error'; message: FollowupMessage } & FollowupCredits & FollowupModel);
 
 export async function streamFollowup(
@@ -77,7 +80,7 @@ export async function streamFollowup(
       while ((boundary = /\r?\n\r?\n/.exec(buffer))) {
         const block = buffer.slice(0, boundary.index);
         buffer = buffer.slice(boundary.index + boundary[0].length);
-        const type = /^event: (meta|delta|done|error)$/m.exec(block)?.[1];
+        const type = /^event: (meta|delta|thought|done|error)$/m.exec(block)?.[1];
         const data = /^data: (.+)$/m.exec(block)?.[1];
         if (!type || !data) continue;
         receive({ ...JSON.parse(data), type });

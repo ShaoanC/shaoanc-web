@@ -43,7 +43,7 @@ function FollowupModelOption({ profile, unavailable, compact = false }: {
     <span className="followup-model-mark"><VendorLogo vendorIcon={profile.vendorIcon} /></span>
     <strong className="followup-model-label">{profile.tierLabel}</strong>
     <span className="followup-model-cost">
-      <span className="model-multiplier">{profile.creditCost}×</span>
+      <span className="model-multiplier" title={`每 2000 token 消耗 ${profile.creditCost} 积分`}>{profile.creditCost}×</span>
       {!compact && unavailable && <span className="followup-model-unavailable">积分不足</span>}
     </span>
   </span>;
@@ -85,6 +85,10 @@ function FollowupReplies({ messages, enteringId, readOnly, maySend, onRetry }: {
       <p className="followup-question">{message.question}</p>
       <div className="followup-answer" ref={message.id === latestId ? reply : undefined}
         data-streaming={message.status === 'streaming' || undefined}>
+        {message.thought && <details className="followup-thought" open={message.status === 'streaming'}>
+          <summary>思考过程</summary>
+          <div>{message.thought}</div>
+        </details>}
         {message.content && <FollowupMarkdown className="prose followup-answer-text" skipImages>{message.content}</FollowupMarkdown>}
         {message.status === 'streaming' && <p className="followup-state followup-generating" role="status">
           <span className="followup-dots" aria-hidden="true"><i /><i /><i /></span>正在生成…
@@ -99,6 +103,7 @@ function FollowupReplies({ messages, enteringId, readOnly, maySend, onRetry }: {
           {message.durationMs != null && <time className="followup-reply-duration" dateTime={`PT${message.durationMs / 1000}S`}>
             <Clock3 size={13} aria-hidden="true" /><span className="visually-hidden">用时 </span>{(message.durationMs / 1000).toFixed(1)} s
           </time>}
+          {message.totalTokens != null && <span>{message.totalTokens.toLocaleString('zh-CN')} token</span>}
           {message.creditsCharged > 0 && <span className="followup-reply-charge" title={`扣除 ${message.creditsCharged} 积分`}>
             <Coins size={13} aria-hidden="true" /><span>-{message.creditsCharged}</span><span className="visually-hidden"> 积分</span>
           </span>}
@@ -260,9 +265,11 @@ export function MistakeFollowups({ mistake }: { mistake: Mistake }) {
         if (event.type === 'error' && event.message.error) notifyFollowup(mistake.id, event.message.error, 'error');
         setHistory((previous) => {
           if (!previous) return previous;
-          if (event.type === 'delta') return {
-            ...previous, messages: previous.messages.map((item) => item.id === event.id ? { ...item, content: item.content + event.text } : item),
-          };
+          if (event.type === 'delta' || event.type === 'thought') {
+            const field = event.type === 'thought' ? 'thought' : 'content';
+            return { ...previous, messages: previous.messages.map((item) =>
+              item.id === event.id ? { ...item, [field]: item[field] + event.text } : item) };
+          }
           return {
             ...putMessage(previous, event.message),
             activeMessageId: event.type === 'meta' ? event.message.id : null,

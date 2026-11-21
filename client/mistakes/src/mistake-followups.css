@@ -282,6 +282,7 @@
   .followup-model-picker { min-height: 46px; }
 }
 .followup-reply-meta {
+  flex-wrap: wrap;
   margin-block-start: 6px;
   color: var(--text-secondary);
   font-size: 12px;
@@ -308,6 +309,9 @@
   overflow-wrap: anywhere;
 }
 .followup-answer { min-width: 0; padding-inline-start: 12px; }
+.followup-thought { color: var(--text-secondary); font-size: 13px; margin-block-end: 8px; }
+.followup-thought summary { cursor: pointer; padding-block: 5px; width: fit-content; }
+.followup-thought > div { white-space: pre-wrap; overflow-wrap: anywhere; padding: 4px 0 6px 12px; line-height: 1.65; }
 .followup-reply-marker {
   position: absolute;
   inset-block-start: 0;

@@ -1,7 +1,7 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const { rateLimit } = require('express-rate-limit');
-const { db, followupDayStart, followupDayEnd, billableFollowup } = require('./database');
+const { db, followupDayStart, followupDayEnd } = require('./database');
 const { fail, requireSession, requireUser } = require('./auth');
 const { assertWritable } = require('./backup-coordination');
 const { readFollowupConfig, availableFollowupProfiles, defaultFollowupProfile, safeAiError, FOLLOWUP_CREDIT_DECIMALS } = require('./ai-config');
@@ -21,13 +21,13 @@ const rate = rateLimit({
     handler: (_req, res) => res.status(429).json({ success: false, code: 'RATE_LIMITED', message: '每分钟最多发起 6 次追问，请稍后再试' })
 });
 
-const pairSelect = `SELECT a.*, q.content AS question, CASE WHEN ${billableFollowup('a')} THEN a.credit_cost ELSE 0 END AS credits_charged
+const pairSelect = `SELECT a.*, q.content AS question
     FROM mistake_followups a JOIN mistake_followups q ON q.id = a.question_id`;
 const pairFilter = "WHERE a.user_id = ? AND a.mistake_id = ? AND a.role = 'assistant'";
 
-const sumCredits = db.prepare(`SELECT COALESCE(ROUND(SUM(a.credit_cost), ${FOLLOWUP_CREDIT_DECIMALS}), 0) AS used FROM mistake_followups a
+const sumCredits = db.prepare(`SELECT COALESCE(ROUND(SUM(a.credits_charged), ${FOLLOWUP_CREDIT_DECIMALS}), 0) AS used FROM mistake_followups a
     WHERE a.user_id = ? AND a.role = 'assistant' AND a.created_at >= ${followupDayStart}
-    AND a.created_at < ${followupDayEnd} AND ${billableFollowup('a')}`);
+    AND a.created_at < ${followupDayEnd}`);
 
 function quota(userId, dailyCreditLimit) {
     const { used: dailyCreditsUsed } = sumCredits.get(userId);
@@ -62,6 +62,7 @@ function contextRevision(context) {
 function serialize(row, currentProfileName = null) {
     return {
         id: row.id, question: row.question, content: row.content, status: row.status,
+        thought: row.thought, totalTokens: row.token_usage ? JSON.parse(row.token_usage)?.totalTokens ?? null : null,
         error: row.error_message, createdAt: row.created_at, profileId: row.profile_id, model: row.model,
         profileName: row.profile_name ?? currentProfileName, durationMs: row.duration_ms,
         vendorIcon: row.vendor_icon, creditCost: row.credit_cost, creditsCharged: row.credits_charged,
@@ -90,6 +91,11 @@ const startTurn = db.transaction(({ row, question, retry, profile, revision, ima
     const createdAt = new Date().toISOString();
     db.prepare(`DELETE FROM mistake_followups WHERE user_id = ? AND mistake_id IS NULL AND created_at < ${followupDayStart}`).run(row.user_id);
     let id = retry?.id;
+    if (retry?.credits_charged > 0) {
+        // A retry reuses the reply ID. Keep its previous attempt's settled debit.
+        db.prepare(`INSERT INTO mistake_followups (user_id, role, status, credits_charged, created_at)
+            VALUES (?, 'assistant', 'failed', ?, ?)`).run(row.user_id, retry.credits_charged, retry.created_at);
+    }
     if (!id) {
         const questionId = db.prepare(
             "INSERT INTO mistake_followups (mistake_id, user_id, role, content, status, created_at) VALUES (?, ?, 'user', ?, 'completed', ?)"
@@ -98,7 +104,7 @@ const startTurn = db.transaction(({ row, question, retry, profile, revision, ima
             "INSERT INTO mistake_followups (mistake_id, user_id, role, question_id, status, created_at) VALUES (?, ?, 'assistant', ?, 'streaming', ?)"
         ).run(row.id, row.user_id, questionId, createdAt).lastInsertRowid;
     }
-    db.prepare(`UPDATE mistake_followups SET content = '', status = 'streaming', error_message = NULL, token_usage = NULL,
+    db.prepare(`UPDATE mistake_followups SET content = '', thought = '', credits_charged = 0, status = 'streaming', error_message = NULL, token_usage = NULL,
         model = ?, profile_id = ?, profile_name = ?, vendor_icon = ?, credit_cost = ?, duration_ms = NULL,
         context_revision = ?, images_skipped = ?, created_at = ? WHERE id = ?`)
         .run(profile.model, profile.id, profile.name, profile.vendorIcon, profile.creditCost, revision, Number(imagesSkipped), createdAt, id);
@@ -116,6 +122,7 @@ function removeReplyImages(content) {
 async function generate(res, row, message, dailyCreditLimit, request, stream) {
     const started = performance.now();
     let content = '';
+    let thought = '';
     let usage = null;
     let imagesSkipped = Boolean(message.images_skipped);
     let status = 'completed';
@@ -136,13 +143,19 @@ async function generate(res, row, message, dailyCreditLimit, request, stream) {
         try {
             await requestFollowup({
                 ...request, userId: row.user_id, signal: stream.controller.signal,
+                onThought(text) {
+                    thought += text;
+                    write('thought', { id: message.id, text });
+                },
                 onDelta(text) {
                     if (content.length + text.length > 24000) throw new Error('AI 回复达到长度限制，可重试');
                     content += text;
                     write('delta', { id: message.id, text });
                 },
                 onImagesSkipped() { imagesSkipped = true; meta(); },
-                onUsage(value) { usage = value; }
+                onUsage(value) {
+                    if (Number.isSafeInteger(value.totalTokens) && value.totalTokens >= 0) usage = value;
+                }
             });
             content = removeReplyImages(content);
             if (!content) throw new Error('AI 未返回回复，可重试');
@@ -154,9 +167,12 @@ async function generate(res, row, message, dailyCreditLimit, request, stream) {
             }
         }
         const durationMs = Math.round(performance.now() - started);
-        const { changes } = db.prepare(`UPDATE mistake_followups SET content = ?, status = ?, error_message = ?,
+        const fallbackBillable = status === 'completed' || (status === 'cancelled' && Array.from(content).length >= 100);
+        const units = usage ? usage.totalTokens / 2000 : Number(fallbackBillable);
+        const charge = Number(Math.min(stream.remaining, units * message.credit_cost).toFixed(FOLLOWUP_CREDIT_DECIMALS));
+        const { changes } = db.prepare(`UPDATE mistake_followups SET content = ?, thought = ?, credits_charged = ?, status = ?, error_message = ?,
             token_usage = ?, images_skipped = ?, duration_ms = ? WHERE id = ?`)
-            .run(content, status, errorMessage, usage && JSON.stringify(usage), Number(imagesSkipped), durationMs, message.id);
+            .run(content, thought, charge, status, errorMessage, usage && JSON.stringify(usage), Number(imagesSkipped), durationMs, message.id);
         if (!changes) return;
         write(status === 'failed' ? 'error' : 'done', {
             ...metadata, message: serialize(findPair(row, message.id)), ...quota(row.user_id, dailyCreditLimit)
@@ -212,7 +228,8 @@ function mountFollowups(router, { success, ownMistake }) {
         const available = availableFollowupProfiles(settings);
         const config = available.find(({ id }) => id === profileId) ?? defaultFollowupProfile(settings, available);
         if (!config) fail(503, '管理员尚未启用并配置错题追问 AI 服务');
-        if (quota(row.user_id, settings.dailyCreditLimit).dailyCreditsRemaining < config.creditCost) {
+        const { dailyCreditsRemaining } = quota(row.user_id, settings.dailyCreditLimit);
+        if (dailyCreditsRemaining < config.creditCost) {
             fail(429, '今日剩余积分不足，可切换更低倍率模型或明日再试');
         }
         const context = topicContext(row);
@@ -221,7 +238,7 @@ function mountFollowups(router, { success, ownMistake }) {
         const imagesSkipped = figures.length > 0 && images.length === 0;
         const turns = makeTurns(row, context, images, question, retry?.id ?? null);
         const message = startTurn({ row, question, retry, profile: displayProfile(config), revision: contextRevision(context), imagesSkipped });
-        const stream = { id: message.id, mistakeId: row.id, controller: new AbortController() };
+        const stream = { id: message.id, mistakeId: row.id, remaining: dailyCreditsRemaining, controller: new AbortController() };
         active.set(row.user_id, stream);
         try {
             stream.finished = generate(res, row, message, settings.dailyCreditLimit, { config, turns }, stream);

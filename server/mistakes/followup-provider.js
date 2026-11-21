@@ -6,13 +6,18 @@ const instructions = [
     '用中文和 Markdown 回答。行内公式用 $...$，独立公式用各占一行的 $$ 定界。不输出 HTML 或图片链接。'
 ].join('\n');
 
-function geminiThinking({ model, thinkingEffort }) {
-    if (!thinkingEffort) return {};
+function geminiThinking({ model, thinkingEffort }, includeThoughts) {
     const budget = { none: 0, minimal: 512, low: 1024, medium: 8192, high: 24576, xhigh: 24576 };
-    const thinkingConfig = /(?:^|\/)gemini-2\.5-/.test(model) && Object.hasOwn(budget, thinkingEffort)
-        ? { thinkingBudget: budget[thinkingEffort] }
-        : { thinkingLevel: (thinkingEffort === 'none' ? 'minimal' : thinkingEffort).toUpperCase() };
-    return { generationConfig: { thinkingConfig } };
+    const thinkingConfig = {};
+    if (thinkingEffort) {
+        if (/(?:^|\/)gemini-2\.5-/.test(model) && Object.hasOwn(budget, thinkingEffort)) {
+            thinkingConfig.thinkingBudget = budget[thinkingEffort];
+        } else {
+            thinkingConfig.thinkingLevel = (thinkingEffort === 'none' ? 'minimal' : thinkingEffort).toUpperCase();
+        }
+    }
+    if (includeThoughts) thinkingConfig.includeThoughts = true;
+    return Object.keys(thinkingConfig).length ? { generationConfig: { thinkingConfig } } : {};
 }
 
 const providers = {
@@ -32,9 +37,12 @@ const providers = {
         }),
         read(packet) {
             const choice = packet.choices?.[0];
+            const part = choice?.delta ?? choice?.message;
             return {
+                thought: analysisText(part?.reasoning_content),
                 text: analysisText(choice?.delta?.content ?? choice?.message?.content),
                 done: Boolean(choice?.finish_reason),
+                finalUsage: !choice || Boolean(choice.finish_reason),
                 truncated: choice?.finish_reason === 'length',
                 refusal: choice?.delta?.refusal || choice?.message?.refusal || choice?.finish_reason === 'content_filter',
                 usage: packet.usage && {
@@ -44,13 +52,45 @@ const providers = {
             };
         }
     },
+    responses: {
+        url: (config) => config.baseUrl + '/responses',
+        auth: (key) => ({ Authorization: 'Bearer ' + key }),
+        body: (config, turns, stream, _includeUsage, includeThoughts) => ({
+            model: config.model, instructions, stream, store: false,
+            ...((includeThoughts || config.thinkingEffort) && { reasoning: {
+                ...(includeThoughts && { summary: 'auto' }),
+                ...(config.thinkingEffort && { effort: config.thinkingEffort })
+            } }),
+            input: turns.map(({ role, text, images }) => ({
+                role,
+                content: images?.length ? [{ type: 'input_text', text }, ...images.map((data) => ({
+                    type: 'input_image', image_url: 'data:image/jpeg;base64,' + data
+                }))] : text
+            }))
+        }),
+        read(packet) {
+            const response = packet.response ?? packet;
+            const output = packet.type ? [] : response.output || [];
+            const content = output.flatMap((item) => item.content || []);
+            const usage = response.usage;
+            return {
+                text: packet.type === 'response.output_text.delta' ? packet.delta : analysisText(content),
+                thought: packet.type === 'response.reasoning_summary_text.delta' ? packet.delta :
+                    output.flatMap((item) => item.summary || []).map((part) => part.text).join('\n'),
+                done: response.status === 'completed',
+                truncated: response.status === 'incomplete',
+                refusal: response.status === 'failed' || packet.type === 'response.refusal.delta' || content.some((part) => part.type === 'refusal'),
+                usage: usage && { inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, totalTokens: usage.total_tokens }
+            };
+        }
+    },
     gemini: {
         url: (config, stream) => config.baseUrl + '/models/' + encodeURIComponent(config.model.replace(/^models\//, ''))
             + (stream ? ':streamGenerateContent?alt=sse' : ':generateContent'),
         auth: (key) => ({ 'x-goog-api-key': key }),
-        body: (config, turns) => ({
+        body: (config, turns, _stream, _includeUsage, includeThoughts) => ({
             systemInstruction: { parts: [{ text: instructions }] },
-            ...geminiThinking(config),
+            ...geminiThinking(config, includeThoughts),
             contents: turns.map(({ role, text, images }) => ({
                 role: role === 'assistant' ? 'model' : 'user',
                 parts: [{ text }, ...(images || []).map((data) => ({ inlineData: { mimeType: 'image/jpeg', data } }))]
@@ -61,6 +101,7 @@ const providers = {
             const reason = candidate?.finishReason;
             const usage = packet.usageMetadata;
             return {
+                thought: (candidate?.content?.parts || []).filter((part) => part.thought).map((part) => part.text || '').join(''),
                 text: (candidate?.content?.parts || []).filter((part) => !part.thought).map((part) => part.text || '').join(''),
                 done: Boolean(reason),
                 truncated: reason === 'MAX_TOKENS',
@@ -102,27 +143,34 @@ function unsupportedThinking(error) {
     return [400, 422].includes(error.status) && /reasoning.effort|thinking[ _-]?(config|level|budget)/i.test(error.providerMessage);
 }
 
-async function requestFollowup({ config, turns, userId, signal, onDelta, onImagesSkipped, onUsage }) {
+async function requestFollowup({ config, turns, userId, signal, onDelta, onThought, onImagesSkipped, onUsage }) {
     const protocol = config.protocol || 'openai';
     const provider = providers[protocol];
     const deadline = AbortSignal.any([signal, AbortSignal.timeout(90000)]);
     let delivered = false;
+    let receivedThought = false;
     let images = Boolean(turns[0].images?.length);
     let stream = true;
     let includeUsage = protocol === 'openai';
+    let includeThoughts = protocol !== 'openai' && config.thinkingEffort !== 'none';
+    let terminalError;
 
-    function accept(packet, response) {
+    function accept(packet, response, finalPacket) {
         if (packet.error) throw httpAiError(packet, response, config, protocol);
         const result = provider.read(packet);
+        if (result.usage && (finalPacket || result.finalUsage || result.done || result.truncated || result.refusal)) onUsage(result.usage);
+        if (result.thought) {
+            receivedThought = true;
+            onThought(result.thought);
+        }
         if (result.text) {
             delivered = true;
             onDelta(result.text);
         }
-        if (result.usage) onUsage(result.usage);
         if (result.truncated || result.refusal) {
-            throw new Error(result.truncated ? 'AI 回复达到长度限制，可重试' : 'AI 无法回答这条追问，可尝试换一种问法');
+            terminalError = new Error(result.truncated ? 'AI 回复达到长度限制，可重试' : 'AI 无法回答这条追问，可尝试换一种问法');
         }
-        return result.done;
+        return result.done || Boolean(terminalError);
     }
 
     for (;;) {
@@ -132,7 +180,7 @@ async function requestFollowup({ config, turns, userId, signal, onDelta, onImage
             const response = await fetch(provider.url(config, stream), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', ...provider.auth(config.apiKey) },
-                body: JSON.stringify(provider.body(config, turns, stream, includeUsage)),
+                body: JSON.stringify(provider.body(config, turns, stream, includeUsage, includeThoughts)),
                 signal: deadline
             });
             if (!response.ok) throw httpAiError(await response.json().catch(() => null), response, config, protocol);
@@ -141,25 +189,30 @@ async function requestFollowup({ config, turns, userId, signal, onDelta, onImage
                 let finished = false;
                 for await (const data of streamPackets(response.body)) {
                     if (data === '[DONE]') { finished = true; break; }
-                    finished = accept(JSON.parse(data), response) || finished;
+                    finished = accept(JSON.parse(data), response, finished) || finished;
                 }
                 if (!finished) throw new Error('AI 回复中断，可重试');
             } else {
                 // Some gateways return a regular completion even to a streaming request.
-                const packets = await response.json();
-                for (const packet of Array.isArray(packets) ? packets : [packets]) accept(packet, response);
+                const body = await response.json();
+                const packets = Array.isArray(body) ? body : [body];
+                packets.forEach((packet, index) => accept(packet, response, index === packets.length - 1));
             }
+            if (terminalError) throw terminalError;
             if (!delivered) throw new Error('AI 未返回回复，可重试');
             return;
         } catch (error) {
             if (deadline.aborted) throw deadline.reason;
-            if (delivered) throw error;
+            if (delivered || receivedThought || terminalError) throw error;
             if (images && unsupportedImages(error)) {
                 images = false;
                 turns = turns.map(({ role, text }) => ({ role, text }));
                 onImagesSkipped();
             } else if (stream && includeUsage && [400, 422].includes(error.status) && /stream_options|include_usage/i.test(error.providerMessage)) {
                 includeUsage = false;
+            } else if (includeThoughts && [400, 403, 422].includes(error.status)
+                && /include.?thoughts|summary|summaries|thinking|reasoning/i.test(error.providerMessage)) {
+                includeThoughts = false;
             } else if (config.thinkingEffort && unsupportedThinking(error)) {
                 config = { ...config, thinkingEffort: '' };
             } else if (stream && unsupportedStreaming(error, protocol)) {
