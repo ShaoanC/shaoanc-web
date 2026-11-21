@@ -138,9 +138,31 @@ async function main() {
         await page.waitForTimeout(400);
         assert.equal(await trigger.locator('.ai-orbit').evaluate((element) => getComputedStyle(element).visibility), 'hidden', 'orbit disappears once the task ends');
         assert.deepEqual(await icon.evaluate((element) => element.getAnimations({ subtree: true }).map((animation) => animation.animationName || 'transition')), [], 'no orbit animation keeps running after the task ends');
+
+        // A tall crop has a different height before and after the image's load handler runs.
+        const jpeg = await require('sharp')({ create: { width: 180, height: 720, channels: 3, background: '#fff' } }).jpeg().toBuffer();
+        const photo = { name: 'tall-figure.jpg', mimeType: 'image/jpeg', buffer: jpeg };
+        const uploaded = await context.request.post(`${base}/api/mistakes/mistakes/${record.id}/images`, { multipart: { original: photo, crop: photo, purpose: 'answer', clientId: `tall-figure-${width}` } });
+        assert.ok(uploaded.ok(), await uploaded.text());
+        const { data: image } = await uploaded.json();
+        const result = { answer: '校对后的答案\n\n[[figure:tall]]', needsReview: true, figures: [{ id: 'tall', imageId: image.id, box: [0, 0, 1, 1], description: '狭长配图' }] };
+        const figureJobId = app.db.prepare("INSERT INTO ai_jobs (mistake_id,user_id,type,status,input_json,image_ids,result_json,fingerprint,created_at) VALUES (?,?,'answer','succeeded',?,?,?,?,?)")
+            .run(record.id, user, JSON.stringify(input), JSON.stringify([image.id]), JSON.stringify(result), `figure-${width}`, new Date().toISOString()).lastInsertRowid;
+        await page.goto(origin);
+        await trigger.click();
+        await panel.locator(`[data-job-id="${figureJobId}"]`).getByRole('button', { name: '校对并填入' }).click();
+        const figure = panel.getByRole('region', { name: '校对识别结果预览' }).locator('img[data-figure-lines="long"]');
+        await figure.waitFor();
+        const original = await figure.elementHandle();
+        const height = await original.evaluate(element => element.offsetHeight);
+        const sync = page.waitForResponse(response => new URL(response.url()).pathname === '/api/mistakes/ai/jobs');
+        await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+        await (await sync).finished();
+        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        assert.equal(await original.evaluate(element => element.isConnected && element.offsetHeight), height, 'Task sync keeps the loaded preview image and its height');
         assert.deepEqual(errors, []);
         await context.close();
-        console.log(`Quick panel ${width}: navigation, first notification, apply, keyboard editing, conflict, cancel, reopening, full page, orbit settle passed`);
+        console.log(`Quick panel ${width}: navigation, first notification, apply, keyboard editing, conflict, cancel, reopening, full page, orbit settle and stable figure preview passed`);
     }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {

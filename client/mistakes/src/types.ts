@@ -30,7 +30,7 @@ export interface MistakeSearch {
   matchedTermCount: number;
   totalTermCount: number;
   snippets: {
-    field: 'question' | 'answer' | 'analysis' | 'note' | 'subject' | 'knowledgePoints';
+    field: 'id' | 'question' | 'answer' | 'analysis' | 'note' | 'subject' | 'knowledgePoints';
     segments: { text: string; matched: boolean; type?: 'math'; display?: boolean }[];
   }[];
 }

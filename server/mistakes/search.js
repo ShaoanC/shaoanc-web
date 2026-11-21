@@ -396,6 +396,18 @@ function searchMetadata(row, result, terms, directory) {
 }
 
 function searchMistakes(userId, rows, keyword) {
+    const numberQuery = normalize(keyword).trim().match(/^((?:记录\s*)?#\s*)?([0-9]+)$/);
+    const record = numberQuery && rows.find((row) => row.id === Number(numberQuery[2]));
+    const numberMatches = record ? [{
+        row: record,
+        search: {
+            matchedTermCount: 1,
+            totalTermCount: 1,
+            snippets: [{ field: 'id', segments: [{ text: `#${record.id}`, matched: true }] }]
+        }
+    }] : [];
+    if (numberQuery?.[1]) return numberMatches;
+
     const terms = queryTokens(keyword);
     if (!terms.length || !rows.length) return [];
     const directory = loadDirectory(userId);
@@ -406,15 +418,15 @@ function searchMistakes(userId, rows, keyword) {
         boost: FIELD_BOOSTS,
         prefix: (term) => supportsPrefix(term, terms),
         fuzzy: (term) => supportsFuzzy(term) ? 1 : false,
-        filter: (result) => allowedRows.has(result.id)
+        filter: (result) => allowedRows.has(result.id) && result.id !== record?.id
     });
     matches.sort((first, second) => new Set(second.queryTerms).size - new Set(first.queryTerms).size ||
         second.score - first.score ||
         allowedRows.get(second.id).updated_at.localeCompare(allowedRows.get(first.id).updated_at) || second.id - first.id);
-    return matches.map((result) => {
+    return numberMatches.concat(matches.map((result) => {
         const row = allowedRows.get(result.id);
         return { row, search: searchMetadata(row, result, terms, directory) };
-    });
+    }));
 }
 
 module.exports = { searchMistakes, updateCachedMistake, removeCachedMistake, invalidateUser, invalidateAll, plainText, previewMarkdown };

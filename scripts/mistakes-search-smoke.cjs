@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 
-const snippetFields = new Set(['question', 'answer', 'analysis', 'note', 'subject', 'knowledgePoints']);
+const snippetFields = new Set(['id', 'question', 'answer', 'analysis', 'note', 'subject', 'knowledgePoints']);
 
 function assertSearchMetadata(mistake) {
     assert.ok(mistake.search, 'Keyword results include search metadata');
@@ -66,7 +66,7 @@ async function runSearchSmoke({ alice, bob, admin }) {
         const draft = await createMistake(alice, {
             primaryKnowledgePointId: primaryPoint.id, lifecycle: 'draft', question: '函数与导数的草稿'
         });
-        const physics = await createMistake(alice, { subjectId: 'physics', question: '函数与导数用于描述运动' });
+        const physics = await createMistake(alice, { subjectId: 'physics', question: `函数与导数用于描述运动，条件为 ${full.id} 米` });
         const foreign = await createMistake(bob, {
             primaryKnowledgePointId: auxiliaryPoint.id, auxiliaryKnowledgePointIds: [primaryPoint.id],
             question: '二次函数与导数；私有账号'
@@ -99,6 +99,14 @@ async function runSearchSmoke({ alice, bob, admin }) {
         assert.deepEqual(await search(alice, 'hiddenurlslug'), [], 'Markdown link destinations are not indexed');
 
         // Search remains account-scoped and composes with the existing SQL filters.
+        const numberResults = await search(alice, String(full.id));
+        assert.equal(numberResults[0].id, full.id, 'The exact record number ranks above numeric text matches');
+        assertHighlighted(numberResults[0], 'id', new RegExp(`^#${full.id}$`));
+        assert.ok(numberResults.some((mistake) => mistake.id === physics.id), 'Bare numbers still search question text');
+        const explicitNumber = `记录 #${full.id}`;
+        assert.deepEqual((await search(alice, explicitNumber)).map((mistake) => mistake.id), [full.id]);
+        assert.deepEqual(await search(alice, `#${full.id}`, { subjectId: 'physics' }), []);
+        assert.deepEqual(await search(bob, explicitNumber), []);
         assert.deepEqual((await search(bob, '函数 导数')).map((mistake) => mistake.id), [foreign.id]);
         await alice('POST', `/mistakes/${full.id}/reviews`, { result: 'mastered' }, 201);
         const combined = await search(alice, '函数 导数', {

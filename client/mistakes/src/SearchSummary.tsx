@@ -6,6 +6,7 @@ import 'katex/dist/katex.min.css';
 import './text-layout.css';
 
 const FIELD_LABELS: Record<MistakeSearch['snippets'][number]['field'], string> = {
+  id: '序号',
   question: '题干',
   answer: '答案',
   analysis: '解析',

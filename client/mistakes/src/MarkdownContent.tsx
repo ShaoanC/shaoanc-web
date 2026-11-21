@@ -1,4 +1,5 @@
-import ReactMarkdown, { type Components } from 'react-markdown';
+import { createContext, useContext, type ComponentProps } from 'react';
+import ReactMarkdown, { type Components, type ExtraProps } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import remarkBreaks from 'remark-breaks';
@@ -80,9 +81,18 @@ function remarkCompact() {
   };
 }
 
+// Pass preview URLs without recreating the renderer and resetting loaded images.
+const MarkdownImageUrls = createContext<MarkdownContentProps['imageUrls']>(undefined);
+
+function ResolvedMarkdownImage({ node: _node, src, ...props }: ComponentProps<'img'> & ExtraProps) {
+  const imageUrls = useContext(MarkdownImageUrls);
+  const resolved = (src && imageUrls?.[src]) || src;
+  return <MarkdownImage key={resolved} {...props} src={resolved} />;
+}
+
 const fullComponents: Components = {
   a: ({ node: _node, children, ...props }) => <a {...props}><MarkdownImageLink.Provider value>{children}</MarkdownImageLink.Provider></a>,
-  img: ({ node: _node, ...props }) => <MarkdownImage key={props.src} {...props} />,
+  img: ResolvedMarkdownImage,
   table: ({ node: _node, ...props }) => <ScrollArea axis="horizontal" className="markdown-table-scroll" tabIndex={0} role="region" aria-label="表格，可横向滚动"><table {...props} /></ScrollArea>,
   input: ({ node: _node, type, ...props }) => type === 'checkbox' ? <Checkbox {...props} disabled aria-label={props.checked ? '已完成' : '未完成'} /> : <input {...props} type={type} />,
 };
@@ -97,13 +107,12 @@ export function MarkdownContent({ children, variant = 'full', className = '', em
   const showEmptyText = !children.trim() && Boolean(emptyText);
 
   return <Tag className={`markdown-content markdown-content--${variant} ${className}${showEmptyText ? ' text-muted' : ''}`.trim()}>
-    <ReactMarkdown
-      remarkPlugins={compact ? [remarkGfm, remarkMath, remarkCompact] : [remarkGfm, remarkMath, remarkBreaks, remarkListNumbers]}
-      rehypePlugins={[rehypeKatex, rehypeKeepPunctuation]}
-      components={compact ? compactComponents : imageUrls ? { ...fullComponents, img: ({ node: _node, src, ...props }) => {
-        const resolved = src && imageUrls[src] ? imageUrls[src] : src;
-        return <MarkdownImage key={resolved} {...props} src={resolved} />;
-      } } : fullComponents}
-    >{showEmptyText ? emptyText : children}</ReactMarkdown>
+    <MarkdownImageUrls.Provider value={imageUrls}>
+      <ReactMarkdown
+        remarkPlugins={compact ? [remarkGfm, remarkMath, remarkCompact] : [remarkGfm, remarkMath, remarkBreaks, remarkListNumbers]}
+        rehypePlugins={[rehypeKatex, rehypeKeepPunctuation]}
+        components={compact ? compactComponents : fullComponents}
+      >{showEmptyText ? emptyText : children}</ReactMarkdown>
+    </MarkdownImageUrls.Provider>
   </Tag>;
 }
