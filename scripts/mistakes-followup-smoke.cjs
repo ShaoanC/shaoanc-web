@@ -20,6 +20,7 @@ let server;
 let browser;
 let cancelled = false;
 let failedOnce = false;
+let loadingResponse;
 const provider = http.createServer(async (req, res) => {
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
@@ -48,11 +49,20 @@ const provider = http.createServer(async (req, res) => {
     }
     res.writeHead(200, { 'Content-Type': 'text/event-stream' });
     const packet = (value) => 'data: ' + JSON.stringify(value) + '\r\n\r\n';
+    if (last === '逐步推导') {
+        loadingResponse = res;
+        res.write(': heartbeat\n\n' + packet({ choices: [{ delta: { content: '' } }] })
+            + packet({ choices: [{ delta: { content: ' \n\t' } }] })
+            + packet({ choices: [{ delta: { reasoning_content: '核对条件' } }] }));
+        return;
+    }
     if (req.url.endsWith('/responses')) {
-        res.write(packet({ type: 'response.reasoning_summary_text.delta', delta: '先列方程' }));
-        res.write(packet({ type: 'response.output_text.delta', delta: '得到两个根' }));
         const status = calls.filter((call) => call.last === last).length === 1 ? 'incomplete' : 'completed';
+        if (status === 'incomplete') res.write(packet({ type: 'response.reasoning_summary_text.delta', delta: '先列' }));
+        res.write(packet({ type: 'response.output_text.delta', delta: '得到两个根' }));
         res.end(packet({ type: 'response.' + status, response: {
+            output: [{ type: 'reasoning', summary: [{ type: 'summary_text', text: '先列方程' }] },
+                { type: 'message', content: [{ type: 'output_text', text: '得到两个根' }] }],
             status, usage: { input_tokens: 1800, input_tokens_details: { cached_tokens: 500 }, output_tokens: 700, total_tokens: 2500 }
         } }));
         return;
@@ -67,9 +77,13 @@ const provider = http.createServer(async (req, res) => {
         return;
     }
     if (last === '暂时故障' || last === '切换错题') {
-        res.write(packet({ choices: [{ delta: { reasoning_content: '检查题目条件' } }] }));
+        const delta = last === '暂时故障' ? { reasoning: '检查题目条件' } : {
+            reasoning_details: [{ type: 'reasoning.encrypted', data: 'opaque' }, { type: 'reasoning.summary', summary: '检查题目条件' }]
+        };
+        res.write(packet({ choices: [{ delta }] }));
         if (last === '切换错题') await delay(300);
     }
+    if (last === '断连继续') res.write(packet({ choices: [{ delta: { reasoning_content: '验证两边相等' } }] }));
     const first = packet({ choices: [{ delta: { content: reply } }],
         ...(last === '停止测试' && { usage: { prompt_tokens: 10, completion_tokens: 99, total_tokens: 109 } }) });
     res.write(first.slice(0, -2));
@@ -172,6 +186,73 @@ async function downloadPdf(actor, options) {
     return pdfText(await response.arrayBuffer());
 }
 
+async function checkStreamingStates(actor, mistakeId, width) {
+    const mobile = width < 640;
+    const context = await browser.newContext({ viewport: { width, height: 850 }, isMobile: mobile, hasTouch: mobile });
+    try {
+        await context.addCookies([{
+            name: 'mistakes_session', value: actor.cookie.split('=')[1], domain: '127.0.0.1', path: '/api/mistakes'
+        }]);
+        const page = await context.newPage();
+        page.setDefaultTimeout(12000);
+        await page.goto(base + '/mistakes/#/mistakes/' + mistakeId);
+        await page.getByRole('button', { name: /追问 AI/ }).click();
+        const drawer = page.getByRole('dialog', { name: '追问 AI' });
+        const turn = drawer.locator('.followup-turn').last();
+        const word = turn.locator('.followup-thinking-word');
+        const wave = turn.locator('.followup-wave');
+        const writing = turn.locator('.followup-writing');
+        const stop = drawer.getByRole('button', { name: '停止生成' });
+        const send = drawer.getByRole('button', { name: '发送', exact: true });
+        const fits = () => drawer.evaluate((panel) => document.documentElement.scrollWidth <= innerWidth + 1
+            && [panel, panel.querySelector('.followup-scroll, .mobile-filters-content'), panel.querySelector('.followup-turn:last-child .followup-answer')]
+                .every((part) => part.scrollWidth <= part.clientWidth + 1));
+
+        for (const outcome of ['completed', 'cancelled', 'failed']) {
+            await drawer.getByRole('textbox', { name: '输入追问' }).fill('逐步推导');
+            await send.click();
+            await turn.getByText('核对条件').waitFor();
+            await wave.waitFor();
+            const initialWord = await word.innerText();
+            assert.match(initialWord, /^[A-Z][a-z ]+\.\.\.$/);
+            assert.equal(await turn.getByText(/正在生成/).count(), 0);
+            assert.equal(await writing.count(), 0);
+            assert.ok(await stop.isEnabled() && await fits());
+            if (outcome === 'completed') {
+                const bars = wave.locator(':scope > span');
+                assert.ok(await bars.count() >= 8);
+                assert.equal(await bars.first().evaluate((bar) => getComputedStyle(bar, '::before').animationName), 'followup-wave');
+                await page.waitForFunction((first) => document.querySelector('.followup-thinking-word')?.textContent !== first, initialWord);
+                assert.notEqual(await word.innerText(), initialWord);
+                await page.emulateMedia({ reducedMotion: 'reduce' });
+                assert.equal(await bars.first().evaluate((bar) => getComputedStyle(bar, '::before').animationName), 'none');
+                assert.equal(await wave.evaluate((group) => getComputedStyle(group).animationName), 'followup-breathe');
+                await page.emulateMedia({ reducedMotion: 'no-preference' });
+            }
+            if (outcome === 'failed') {
+                loadingResponse.end('data: [DONE]\n\n');
+                await turn.getByRole('button', { name: '重试' }).waitFor();
+            } else {
+                loadingResponse.write('data: ' + JSON.stringify({ choices: [{ delta: { content: '解' } }] }) + '\n\n');
+                await turn.locator('.followup-answer-text').getByText('解', { exact: true }).waitFor();
+                await writing.waitFor();
+                assert.equal(await turn.getByText(/书写中/).count(), 0);
+                assert.ok(await writing.evaluate((status) => parseFloat(getComputedStyle(status, '::before').width) > 0));
+                assert.equal(await word.count() + await wave.count(), 0);
+                assert.ok(await stop.isEnabled() && await fits());
+                if (outcome === 'cancelled') {
+                    await stop.click();
+                    await turn.getByText('已停止生成', { exact: true }).waitFor();
+                } else {
+                    loadingResponse.end('data: [DONE]\n\n');
+                }
+            }
+            await send.waitFor();
+            assert.equal(await turn.locator('.followup-thinking, .followup-writing').count(), 0);
+        }
+    } finally { await context.close(); }
+}
+
 async function checkViewport(owner, first, second, width) {
     const mobile = width < 640;
     const context = await browser.newContext({ viewport: { width, height: 850 }, isMobile: mobile, hasTouch: mobile });
@@ -226,6 +307,8 @@ async function checkViewport(owner, first, second, width) {
         }));
         const replies = drawer.locator('.followup-reply-meta');
         const deepReply = replies.filter({ hasText: "Claude's text" });
+        const latestThought = drawer.locator('.followup-turn').last().locator('.followup-thought[open] > div');
+        assert.ok(await latestThought.isVisible());
         assert.ok(await deepReply.getByText('2,000 token').isVisible());
         assert.ok(await deepReply.locator('.followup-reply-tokens > .lucide-cpu:first-child').isVisible());
         const thought = deepReply.locator('..').locator('.followup-thought');
@@ -340,10 +423,10 @@ async function checkViewport(owner, first, second, width) {
             assert.equal(await input.inputValue(), '切换错题');
             await send.click();
             await drawer.locator('details[open]').getByText('检查题目条件').waitFor();
-            await drawer.getByText('正在生成…', { exact: true }).waitFor();
+            await drawer.locator('.followup-writing').waitFor();
             await waitForExpanded();
             await checkComposeAction(stop);
-            assert.equal(await drawer.locator('.followup-dots i').count(), 3);
+            assert.equal(await drawer.locator('.followup-wave').count(), 0);
             await page.evaluate((id) => { location.hash = '/mistakes/' + id; }, second.id);
             await page.getByText(second.question, { exact: true }).waitFor();
             await page.evaluate(() => { Math.random = () => 0; });
@@ -807,10 +890,11 @@ async function main() {
     await owner.data('PATCH', configRoute, { profiles: [...settings.profiles, responsesProfile] });
     const incomplete = (await ask(responsesUser, responsesQuestion.id, '摘要流式回答', responsesProfile.id)).at(-1);
     assert.deepEqual([incomplete.message.status, incomplete.message.creditsCharged], ['failed', 2.1]);
+    assert.equal(incomplete.message.thought, '先列方程');
     const responseEvents = await events(await responsesUser.request('POST', followups(responsesQuestion.id) + '/stream',
         { retryMessageId: incomplete.message.id, profileId: responsesProfile.id }));
     assert.equal(calls.at(-1).body.reasoning.summary, 'auto');
-    assert.deepEqual(responseEvents.map((frame) => frame.type), ['meta', 'thought', 'delta', 'done']);
+    assert.deepEqual(responseEvents.map((frame) => frame.type), ['meta', 'delta', 'thought', 'done']);
     const settled = responseEvents.at(-1);
     assert.deepEqual([settled.message.thought, settled.message.content, settled.message.totalTokens,
         settled.message.creditsCharged, settled.dailyCreditsUsed], ['先列方程', '得到两个根', 2500, 2.1, 4.2]);
@@ -830,9 +914,15 @@ async function main() {
     assert.ok(!practice.includes(exportText));
     const { chromium } = require('playwright');
     browser = await chromium.launch({ headless: true, ...(executablePath ? { executablePath } : {}) });
+    addUser.run('followup_loading', hashPassword(password), 'user', now);
+    const loadingUser = client();
+    await loadingUser.login('followup_loading');
+    const loadingMistake = await create(loadingUser, {});
+    await checkStreamingStates(loadingUser, loadingMistake.id, 390);
+    await checkStreamingStates(loadingUser, loadingMistake.id, 1440);
     await checkViewport(owner, first, second, 390);
     await checkViewport(owner, first, second, 1440);
-    console.log('Mistake follow-up smoke passed: multi-profile routing, thinking, credit settlement, cancellation threshold, detached completion, rate limit, recovery, and mobile/desktop selectors, settings and PDF.');
+    console.log('Mistake follow-up smoke passed: two-stage streaming on mobile and desktop, multi-profile routing, credit settlement, cancellation threshold, detached completion, rate limit, recovery, selectors, settings and PDF.');
 }
 
 main().catch((error) => { console.error(error); process.exitCode = 1; }).finally(async () => {

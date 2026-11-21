@@ -1,7 +1,7 @@
 import { AlertDialog } from '@base-ui/react/alert-dialog';
 import { Dialog } from '@base-ui/react/dialog';
 import { ArrowUp, ArrowUpRight, Clock3, Coins, Cpu, MessageCircle, Square, SquarePen, X } from 'lucide-react';
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent } from 'react';
 import { toast } from 'react-toastify';
 import { api } from './api';
 import { MarkdownContent } from './MarkdownContent';
@@ -19,6 +19,32 @@ const expandedHeight = 1;
 const mobileSnapPoints = [peekHeight, expandedHeight];
 const background = { background: true, notifyUpdate: false };
 const FollowupMarkdown = memo(MarkdownContent);
+const thinkingWords = ['Thinking', 'Pondering', 'Reasoning', 'Untangling', 'Sketching', 'Checking steps', 'Deriving', 'Connecting'];
+const waveBars = Array.from({ length: 8 }, (_, i) => <span key={i} style={{ '--i': i } as CSSProperties} />);
+const hasBodyText = (content: string) => /[^\s\p{Default_Ignorable_Code_Point}\p{Cc}]/u.test(content);
+
+function pickWord(words: string[]) {
+  return words[Math.floor(Math.random() * words.length)];
+}
+
+function FollowupThinking() {
+  const [used, setUsed] = useState(() => [pickWord(thinkingWords)]);
+  const word = used[used.length - 1];
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const recent = used.length === thinkingWords.length ? [word] : used;
+      setUsed([...recent, pickWord(thinkingWords.filter((candidate) => !recent.includes(candidate)))]);
+    }, 3200);
+    return () => window.clearTimeout(timer);
+  }, [used, word]);
+
+  return <p className="followup-state followup-thinking" role="status">
+    <span className="followup-wave" aria-hidden="true">{waveBars}</span>
+    <span className="followup-thinking-word" key={word} lang="en" aria-hidden="true">{word}...</span>
+    <span className="visually-hidden">正在思考…</span>
+  </p>;
+}
+
 function notifyFollowup(mistakeId: number, message: string, kind: 'info' | 'success' | 'error' = 'info') {
   toast[kind](message, {
     toastId: `followup-${mistakeId}-${message}`,
@@ -59,7 +85,7 @@ function FollowupReplies({ messages, enteringId, readOnly, maySend, onRetry }: {
   const turns = useRef<HTMLDivElement>(null);
   const marker = useRef<HTMLSpanElement>(null);
   const reply = useRef<HTMLDivElement>(null);
-  const latestReply = messages.filter((message) => message.content || message.status === 'streaming').at(-1);
+  const latestReply = messages.filter((message) => message.status === 'streaming' || hasBodyText(message.content)).at(-1);
   const latestId = latestReply?.id;
 
   useLayoutEffect(() => {
@@ -85,14 +111,16 @@ function FollowupReplies({ messages, enteringId, readOnly, maySend, onRetry }: {
       <p className="followup-question">{message.question}</p>
       <div className="followup-answer" ref={message.id === latestId ? reply : undefined}
         data-streaming={message.status === 'streaming' || undefined}>
-        {message.thought && <details className="followup-thought" open={message.status === 'streaming'}>
+        {message.thought && <details className="followup-thought" open={message.id === latestId}>
           <summary>思考过程</summary>
           <div>{message.thought}</div>
         </details>}
-        {message.content && <FollowupMarkdown className="prose followup-answer-text" skipImages>{message.content}</FollowupMarkdown>}
-        {message.status === 'streaming' && <p className="followup-state followup-generating" role="status">
-          <span className="followup-dots" aria-hidden="true"><i /><i /><i /></span>正在生成…
-        </p>}
+        {hasBodyText(message.content) ? <>
+          <FollowupMarkdown className="prose followup-answer-text" skipImages>{message.content}</FollowupMarkdown>
+          {message.status === 'streaming' && <p className="followup-state followup-writing" role="status">
+            <span className="visually-hidden">正在写入回复</span>
+          </p>}
+        </> : message.status === 'streaming' && <FollowupThinking />}
         {message.status === 'cancelled' && <p className="followup-state">已停止生成</p>}
         {message.status === 'failed' && <div className="followup-state"><span>{message.error}</span>
           {!readOnly && <button className="button ghost" disabled={!maySend} onClick={() => onRetry(message.id)}>重试</button>}

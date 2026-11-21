@@ -20,11 +20,38 @@ function geminiThinking({ model, thinkingEffort }, includeThoughts) {
     return Object.keys(thinkingConfig).length ? { generationConfig: { thinkingConfig } } : {};
 }
 
+function chatThought(part) {
+    const text = analysisText(part?.reasoning_content) || analysisText(part?.reasoning);
+    if (text) return text;
+    const details = Array.isArray(part?.reasoning_details) ? part.reasoning_details : [];
+    const detailText = details.map((detail) => {
+        if (detail?.type === 'reasoning.text') return analysisText(detail.text);
+        if (detail?.type === 'reasoning.summary') return analysisText(detail.summary);
+        return '';
+    }).join('');
+    if (detailText || !Array.isArray(part?.content)) return detailText;
+    return part.content.filter((block) => block?.type === 'thinking').map((block) => analysisText(block.thinking)).join('');
+}
+
+function chatThinking(config, useProviderOptions) {
+    const host = new URL(config.baseUrl).hostname;
+    const effort = config.thinkingEffort;
+    if (useProviderOptions && host === 'openrouter.ai') return { reasoning: effort ? { effort } : { enabled: true } };
+    if (useProviderOptions && (host === 'api.deepseek.com' || host.endsWith('.xiaomimimo.com'))) {
+        if (!effort) return {};
+        return {
+            thinking: { type: effort === 'none' ? 'disabled' : 'enabled' },
+            ...(host === 'api.deepseek.com' && effort !== 'none' && { reasoning_effort: effort })
+        };
+    }
+    return effort ? { reasoning_effort: effort } : {};
+}
+
 const providers = {
     openai: {
         url: (config) => config.baseUrl + '/chat/completions',
         auth: (key) => ({ Authorization: 'Bearer ' + key }),
-        body: (config, turns, stream, includeUsage) => ({
+        body: (config, turns, stream, includeUsage, includeThoughts) => ({
             model: config.model,
             messages: [{ role: 'system', content: instructions }, ...turns.map(({ role, text, images }) => ({
                 role,
@@ -33,13 +60,13 @@ const providers = {
                 }))] : text
             }))],
             ...(stream ? { stream: true, ...(includeUsage ? { stream_options: { include_usage: true } } : {}) } : {}),
-            ...(config.thinkingEffort ? { reasoning_effort: config.thinkingEffort } : {})
+            ...chatThinking(config, includeThoughts)
         }),
         read(packet) {
             const choice = packet.choices?.[0];
             const part = choice?.delta ?? choice?.message;
             return {
-                thought: analysisText(part?.reasoning_content),
+                thought: chatThought(part),
                 text: analysisText(choice?.delta?.content ?? choice?.message?.content),
                 done: Boolean(choice?.finish_reason),
                 finalUsage: !choice || Boolean(choice.finish_reason),
@@ -71,10 +98,11 @@ const providers = {
         }),
         read(packet) {
             const response = packet.response ?? packet;
-            const output = packet.type ? [] : response.output || [];
+            const output = response.output || [];
             const content = output.flatMap((item) => item.content || []);
             const usage = response.usage;
             return {
+                snapshot: Boolean(packet.response && output.length),
                 text: packet.type === 'response.output_text.delta' ? packet.delta : analysisText(content),
                 thought: packet.type === 'response.reasoning_summary_text.delta' ? packet.delta :
                     output.flatMap((item) => item.summary || []).map((part) => part.text).join('\n'),
@@ -151,11 +179,11 @@ async function requestFollowup({ config, turns, userId, signal, onDelta, onThoug
     const provider = providers[protocol];
     const deadline = AbortSignal.any([signal, AbortSignal.timeout(90000)]);
     let delivered = false;
-    let receivedThought = false;
+    let receivedThought = '';
     let images = Boolean(turns[0].images?.length);
     let stream = true;
     let includeUsage = protocol === 'openai';
-    let includeThoughts = protocol !== 'openai' && config.thinkingEffort !== 'none';
+    let includeThoughts = protocol === 'openai' || config.thinkingEffort !== 'none';
     let terminalError;
 
     function accept(packet, response, finalPacket) {
@@ -163,10 +191,15 @@ async function requestFollowup({ config, turns, userId, signal, onDelta, onThoug
         const result = provider.read(packet);
         if (result.usage && (finalPacket || result.finalUsage || result.done || result.truncated || result.refusal)) onUsage(result.usage);
         if (result.thought) {
-            receivedThought = true;
-            onThought(result.thought);
+            const delta = result.snapshot && receivedThought
+                ? (result.thought.startsWith(receivedThought) ? result.thought.slice(receivedThought.length) : '')
+                : result.thought;
+            if (delta) {
+                receivedThought += delta;
+                onThought(delta);
+            }
         }
-        if (result.text) {
+        if (result.text && !(result.snapshot && delivered)) {
             delivered = true;
             onDelta(result.text);
         }
@@ -213,7 +246,7 @@ async function requestFollowup({ config, turns, userId, signal, onDelta, onThoug
                 onImagesSkipped();
             } else if (stream && includeUsage && [400, 422].includes(error.status) && /stream_options|include_usage/i.test(error.providerMessage)) {
                 includeUsage = false;
-            } else if (includeThoughts && [400, 403, 422].includes(error.status)
+            } else if (includeThoughts && (protocol !== 'openai' || !unsupportedThinking(error)) && [400, 403, 422].includes(error.status)
                 && /include.?thoughts|summary|summaries|thinking|reasoning/i.test(error.providerMessage)) {
                 includeThoughts = false;
             } else if (config.thinkingEffort && unsupportedThinking(error)) {
