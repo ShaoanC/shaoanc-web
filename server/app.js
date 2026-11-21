@@ -14,6 +14,7 @@ const { assertWritable } = require('./mistakes/backup-coordination');
 const { createBackupService } = require('./mistakes/backups');
 const { createBackupRouter } = require('./mistakes/backup-router');
 const ai = require('./mistakes/ai');
+const { pauseFollowups } = require('./mistakes/followups');
 let backups;
 const app = express();
 
@@ -31,7 +32,9 @@ app.get('/api/hello', (req, res) => {
 
 // Construct lazily: unrelated API reads do not create a backup directory.
 const backupService = () => {
-    if (!backups) backups = createBackupService({ db, pauseJobs: ai.pauseJobs, resumeJobs: ai.resumeJobs });
+    if (!backups) backups = createBackupService({
+        db, pauseJobs: () => Promise.all([ai.pauseJobs(), pauseFollowups()]), resumeJobs: ai.resumeJobs
+    });
     return backups;
 };
 const backupRouter = createBackupRouter(backupService);

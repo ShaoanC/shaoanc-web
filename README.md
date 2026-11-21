@@ -30,6 +30,20 @@ npm start
 
 管理员先在“设置 → AI 设置”配置 Gemini 原生接口、密钥和支持图片的模型。基础地址填写 `https://generativelanguage.googleapis.com/v1beta` 或兼容 Gemini 原生协议的代理；服务端自动拼接 `/models/{model}:generateContent`，通过 `x-goog-api-key` 发送密钥。已有 OpenAI 兼容 `/v1` 配置需由管理员改为 Gemini 原生地址、模型及对应密钥，原有配置键保持不变。图片可旋转、裁剪并按顺序识别；同一次请求完成转写和多配图定位。有疑点、配图或内容冲突时先校对，支持调整/补画选框、修改文字和配图位置，再生成独立截图填入。普通结果仍自动填入未修改的空白字段。短答案在保存或 OCR 填入后自动生成解析，解析会携带经归属校验的题干及答案本站配图；含待确认/待补充文字时暂缓自动解析。顶部“AI 任务”区分待校对与已填入，并保留原始结果。共享知识点由管理员维护，AI 新增分支只在应用时创建为个人知识点。完整说明见 [拍照录题与 AI 任务](docs/mistakes-photo-ai.md)。
 
+### 错题追问
+
+在“AI 设置 → 错题追问”添加模型，勾选要向用户开放的档位并指定默认模型。追问独立配置 OpenAI 兼容或 Gemini 原生接口。单账号默认每日 60 积分，北京时间零点重置。完成回复按该轮的倍率结算，主动停止时有效正文满 100 字才扣分，失败和服务中断免扣。清空对话会保留当日已结算的积分消耗。
+
+管理员也可以直接在服务端 `.env.ai` 配置。模型数组写在一行，以下密钥为占位符：
+
+```dotenv
+MISTAKES_AI_FOLLOWUP_DAILY_CREDIT_LIMIT='60'
+MISTAKES_AI_FOLLOWUP_DEFAULT_PROFILE_ID='fast'
+MISTAKES_AI_FOLLOWUP_PROFILES='[{"id":"fast","name":"轻量 GPT","tierLabel":"极速","enabledForFollowup":true,"protocol":"openai","baseUrl":"https://api.openai.com/v1","model":"gpt-5-mini","apiKey":"your-api-key","vision":true,"creditCost":1,"thinkingEffort":"low","vendorIcon":"","sortOrder":null}]'
+```
+
+省略 `tierLabel` 时显示配置名称，省略 `vendorIcon` 时自动识别厂商，省略 `sortOrder` 时按积分倍率排序。思考强度留空时使用上游模型默认值。追问积分使用新的建表定义，运行验收使用新建数据库。
+
 ## 目录与验证
 
 - `client/mistakes/`：React + TypeScript 源码，Hash 路由。

@@ -1,0 +1,19 @@
+.vendor-logo {
+  display: inline-block;
+  flex: none;
+  background: currentColor;
+  mask-position: center;
+  mask-repeat: no-repeat;
+  mask-size: contain;
+}
+.model-multiplier {
+  flex: none;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--surface-1);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35;
+  white-space: nowrap;
+}

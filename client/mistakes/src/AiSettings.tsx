@@ -6,10 +6,11 @@ import { LoadingContent } from './motion';
 import { api, json } from './api';
 import { useApp } from './context';
 import { useAiTasks } from './AiTasks';
+import { FollowupSettings } from './FollowupSettings';
 import type { AiConfig } from './ai-types';
 
 type Profile = 'general' | 'segmentation' | 'analysis' | 'analysisFallback';
-const profiles: { id: Profile; title: string; description: string; testLabel: string }[] = [
+const profiles: { id: Profile; title: string; description: string; testLabel?: string }[] = [
   { id: 'general', title: '通用识别', description: 'Gemini 原生接口，用于单题识别，以及按页录题中的题干、答案和知识点识别。', testLabel: '测试图片识别' },
   { id: 'segmentation', title: '页面分题', description: '独立 Gemini 原生接口。请选择支持 Segmentation 的模型，用于按页框出每道题。', testLabel: '测试页面分题' },
   { id: 'analysis', title: '生成解析', description: 'OpenAI Chat Completions 接口，用于自动解析和手动生成解析；题目含图时，模型须支持图片输入。', testLabel: '测试生成解析' },
@@ -31,7 +32,9 @@ function ProfileSettings({ profile }: { profile: typeof profiles[number] }) {
     event.preventDefault(); if (!config) return;
     setBusy('save'); setError('');
     try {
-      const next = await api<AiConfig>(`/admin/ai/config${query}`, json({ enabled: config.enabled, baseUrl: config.baseUrl, model: config.model, ...(key ? { apiKey: key } : {}) }, 'PATCH'));
+      const next = await api<AiConfig>(`/admin/ai/config${query}`, json({
+        enabled: config.enabled, baseUrl: config.baseUrl, model: config.model, ...(key ? { apiKey: key } : {}),
+      }, 'PATCH'));
       setConfig(next); setKey(''); await refresh(); notify(`${profile.title}配置已保存。`);
     } catch (err) { setError((err as Error).message); notify((err as Error).message, 'error'); } finally { setBusy(''); }
   }
@@ -44,17 +47,17 @@ function ProfileSettings({ profile }: { profile: typeof profiles[number] }) {
     } catch (err) { toast.update(toastId, { render: (err as Error).message, type: 'error', isLoading: false, autoClose: false, closeButton: true }); } finally { setBusy(''); }
   }
   const Icon = profile.id === 'general' ? ScanLine : profile.id === 'segmentation' ? Scissors : Sparkles;
-  const analysis = profile.id === 'analysis' || profile.id === 'analysisFallback';
+  const openai = profile.id === 'analysis' || profile.id === 'analysisFallback';
   return <section className="ai-profile-settings">
     <div className="panel-title"><span className="panel-title-icon green"><Icon size={18} /></span><div><h2>{profile.title}</h2><p>{profile.description}</p></div></div>
     <LoadingContent loading={!config && !error} kind="ai-profile">
     {error && <div className="form-error" role="alert">{error}</div>}
     {config && <form className="ai-profile-form" onSubmit={save}>
       <label className="ai-profile-enable"><Checkbox checked={config.enabled} onChange={(event) => setConfig({ ...config, enabled: event.target.checked })} />启用{profile.title}</label>
-      <label className="field"><span>{analysis ? 'OpenAI API 基础地址' : 'Gemini API 基础地址'}</span><input type="url" value={config.baseUrl || ''} placeholder={analysis ? 'https://api.openai.com/v1' : 'https://generativelanguage.googleapis.com/v1beta'} onChange={(event) => setConfig({ ...config, baseUrl: event.target.value })} required={config.enabled} /></label>
-      <label className="field"><span>模型名称</span><input value={config.model || ''} placeholder={analysis ? '填写支持 Chat Completions 的模型 ID' : '填写 Gemini 模型 ID'} onChange={(event) => setConfig({ ...config, model: event.target.value })} required={config.enabled} /></label>
+      <label className="field"><span>{openai ? 'OpenAI API 基础地址' : 'Gemini API 基础地址'}</span><input type="url" value={config.baseUrl || ''} placeholder={openai ? 'https://api.openai.com/v1' : 'https://generativelanguage.googleapis.com/v1beta'} onChange={(event) => setConfig({ ...config, baseUrl: event.target.value })} required={config.enabled} /></label>
+      <label className="field"><span>模型名称</span><input value={config.model || ''} placeholder={openai ? '填写支持 Chat Completions 的模型 ID' : '填写 Gemini 模型 ID'} onChange={(event) => setConfig({ ...config, model: event.target.value })} required={config.enabled} /></label>
       <label className="field"><span>API 密钥</span><input type="password" autoComplete="new-password" value={key} onChange={(event) => setKey(event.target.value)} placeholder={config.hasApiKey ? '已保存，留空保持原密钥' : '输入 API 密钥'} required={config.enabled && !config.hasApiKey} /></label>
-      <div className="ai-profile-actions"><button className="button primary" disabled={Boolean(busy)}>{busy === 'save' ? '保存中…' : `保存${profile.title}配置`}</button><button type="button" className="button secondary" disabled={Boolean(busy) || !config.enabled || !config.configured} onClick={() => void test()}>{busy === 'test' ? '测试中…' : profile.testLabel}</button></div>
+      <div className="ai-profile-actions"><button className="button primary" disabled={Boolean(busy)}>{busy === 'save' ? '保存中…' : `保存${profile.title}配置`}</button>{profile.testLabel && <button type="button" className="button secondary" disabled={Boolean(busy) || !config.enabled || !config.configured} onClick={() => void test()}>{busy === 'test' ? '测试中…' : profile.testLabel}</button>}</div>
     </form>}
     </LoadingContent>
   </section>;
@@ -63,5 +66,6 @@ function ProfileSettings({ profile }: { profile: typeof profiles[number] }) {
 export function AiSettings() {
   return <section className="panel admin-panel ai-settings"><div className="admin-panel-heading"><div><h2>AI 识别与解析</h2><p>各项服务独立配置、独立启用，密钥只保存在服务器。留空保留已有密钥，测试使用已保存的配置。</p></div></div>
     {profiles.map((profile) => <ProfileSettings key={profile.id} profile={profile} />)}
+    <FollowupSettings />
   </section>;
 }

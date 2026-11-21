@@ -1,0 +1,652 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const http = require('node:http');
+const path = require('node:path');
+const { execFileSync } = require('node:child_process');
+const { once } = require('node:events');
+const { setTimeout: delay } = require('node:timers/promises');
+const { resolveVendorIcon } = require('../shared/vendor-icon.mjs');
+
+const root = path.resolve(__dirname, '..');
+const directory = fs.mkdtempSync(path.join(root, 'data', 'followup-smoke-'));
+const exportText = '导出追问独有词';
+const replyOnlyText = '钨铼合金反应堆';
+const password = 'FollowupSmoke2026!';
+const calls = [];
+let base;
+let app;
+let server;
+let browser;
+let cancelled = false;
+let failedOnce = false;
+const provider = http.createServer(async (req, res) => {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    const body = JSON.parse(Buffer.concat(chunks));
+    const gemini = Boolean(body.contents);
+    const last = gemini ? body.contents.at(-1).parts[0].text : body.messages.at(-1).content;
+    calls.push({ path: req.url, body, last });
+    function json(status, value) {
+        res.writeHead(status, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(value));
+    }
+    if (last === '暂时故障' && !failedOnce) {
+        failedOnce = true;
+        return json(502, { error: { message: 'temporary failure' } });
+    }
+    if (last === '兼容接口非流式') {
+        if (body.stream) return json(400, { error: { message: 'Streaming is not supported' } });
+        return json(200, { choices: [{ message: { content: '兼容接口完整回复 $x=4$' }, finish_reason: 'stop' }] });
+    }
+    if (gemini && last === '文字降级') {
+        if (body.contents[0].parts.some((part) => part.inlineData)) {
+            return json(400, { error: { message: 'Image inputs are not supported by this model' } });
+        }
+        if (req.url.includes(':streamGenerateContent')) return json(501, { error: { message: 'Streaming unsupported' } });
+        return json(200, { candidates: [{ content: { parts: [{ text: '非流式完整回答 $x=4$' }] }, finishReason: 'STOP' }] });
+    }
+    res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+    const packet = (value) => 'data: ' + JSON.stringify(value) + '\r\n\r\n';
+    const reply = last === '验证搜索隔离' ? replyOnlyText : last === '暂时故障' ? exportText
+        : last === '停止测试' ? '答'.repeat(99) + ' ![](https://smoke.invalid/image.png) '
+            : last === '足量停止' ? '答'.repeat(100) : '模拟回复';
+    if (gemini) {
+        res.write(packet({ candidates: [{ content: { parts: [{ text: '内部推理', thought: true }, { text: 'Gemini 流式答复 ' }] } }] }));
+        res.end(packet({ candidates: [{ content: { parts: [{ text: '$x=4$' }] }, finishReason: 'STOP' }],
+            usageMetadata: { promptTokenCount: 8, candidatesTokenCount: 3, totalTokenCount: 11 } }));
+        return;
+    }
+    const first = packet({ choices: [{ delta: { content: reply } }] });
+    res.write(first.slice(0, -2));
+    res.write(first.slice(-2));
+    if (last === '停止测试' || last === '足量停止') {
+        res.on('close', () => { cancelled = true; });
+        return;
+    }
+    if (last === '断连继续') await delay(750);
+    if (last === '切换错题') await delay(1800);
+    if (!res.destroyed) res.end(packet({ choices: [{ delta: { content: ' $x=4$' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 8, completion_tokens: 3, total_tokens: 11 } }) + 'data: [DONE]\n\n');
+});
+
+function client() {
+    let cookie = '';
+    async function request(method, route, body, signal) {
+        const response = await fetch(base + '/api/mistakes' + route, {
+            method, signal, headers: { Cookie: cookie, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
+            ...(body === undefined ? {} : { body: JSON.stringify(body) })
+        });
+        for (const value of response.headers.getSetCookie()) cookie = value.split(';', 1)[0];
+        return response;
+    }
+    async function data(method, route, body, expected = 200) {
+        const response = await request(method, route, body);
+        const result = await response.json();
+        assert.equal(response.status, expected, method + ' ' + route + ' ' + JSON.stringify(result));
+        return expected < 400 ? result.data : result;
+    }
+    return {
+        request, data, get cookie() { return cookie; },
+        async login(username) { return data('POST', '/auth/login', { username, password }); }
+    };
+}
+
+async function events(response, receive = () => {}) {
+    assert.equal(response.status, 200, response.ok ? '' : await response.text());
+    assert.match(response.headers.get('content-type'), /^text\/event-stream/);
+    assert.equal(response.headers.get('x-accel-buffering'), 'no');
+    const frames = [];
+    let buffer = '';
+    for await (const chunk of response.body.pipeThrough(new TextDecoderStream())) {
+        buffer += chunk;
+        const blocks = buffer.split('\n\n');
+        buffer = blocks.pop();
+        for (const block of blocks) {
+            const [type, data] = block.split('\n');
+            if (!type.startsWith('event:')) continue;
+            const frame = { type: type.slice(7), ...JSON.parse(data.slice(6)) };
+            frames.push(frame);
+            await receive(frame);
+        }
+    }
+    return frames;
+}
+
+const followups = (id) => '/' + id + '/followups';
+const configRoute = '/admin/ai/config?profile=followup';
+const ask = async (actor, id, question, profileId) => events(await actor.request('POST', followups(id) + '/stream', { question, profileId }));
+
+function assertIcon(vendor, model, baseUrl, expected) {
+    assert.equal(resolveVendorIcon(vendor, model, baseUrl), expected, model || baseUrl || vendor);
+}
+
+function checkVendorIcons() {
+    for (const [model, expected] of Object.entries({
+        'gpt-5-mini': 'openai', 'openai/o3-mini': 'openai', 'claude-sonnet': 'anthropic', 'gemma-4': 'google',
+        'deepseek-v4': 'deepseek', 'qwen3': 'qwen', 'kimi-k2': 'kimi', 'glm-5': 'zhipu', 'grok-4': 'xai',
+        'llama-4': 'meta', 'meta/muse': 'meta', 'minimax-m2': 'minimax', 'mimo-v2': 'xiaomi', 'mixtral': 'mistral',
+    })) assertIcon('', model, 'https://proxy.invalid', expected);
+    assertIcon('', 'unknown', 'https://api.moonshot.cn/v1', 'kimi');
+    assertIcon('', 'gemini-3', 'https://api.openai.com/v1', 'google');
+    assertIcon('openai', 'claude-sonnet', '', 'openai');
+    assertIcon('default', 'gpt-5', '', 'default');
+    assertIcon('', 'unknown', 'https://openai.com.proxy.invalid/v1', 'default');
+}
+
+async function pdfText(data) {
+    assert.ok(data.byteLength, 'Expected non-empty PDF bytes');
+    const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    const task = getDocument({ data: new Uint8Array(data), useSystemFonts: false });
+    try {
+        const document = await task.promise;
+        let text = '';
+        for (let i = 1; i <= document.numPages; i++) {
+            const content = await (await document.getPage(i)).getTextContent();
+            text += content.items.map((item) => item.str || '').join('');
+        }
+        return text.replace(/\s/g, '');
+    } finally { await task.destroy(); }
+}
+
+async function downloadPdf(actor, options) {
+    const response = await actor.request('POST', '/exports/pdf', options);
+    assert.equal(response.status, 200, response.ok ? '' : await response.text());
+    return pdfText(await response.arrayBuffer());
+}
+
+async function checkViewport(owner, first, second, width) {
+    const mobile = width < 640;
+    const context = await browser.newContext({ viewport: { width, height: 850 }, isMobile: mobile, hasTouch: mobile });
+    try {
+        await context.addCookies([{
+            name: 'mistakes_session', value: owner.cookie.split('=')[1], domain: '127.0.0.1', path: '/api/mistakes'
+        }]);
+        const page = await context.newPage();
+        page.setDefaultTimeout(12000);
+        const appUrl = base + '/mistakes/#';
+        const entry = page.getByRole('button', { name: /追问 AI/ });
+        await page.goto(appUrl + '/mistakes/' + first.id);
+        await entry.click();
+        const drawer = page.getByRole('dialog', { name: '追问 AI' });
+        const newChat = drawer.getByRole('button', { name: '新对话', exact: true });
+        const confirm = page.getByRole('alertdialog', { name: '新对话', exact: true });
+        const chips = drawer.getByRole('group', { name: '快捷提问' }).getByRole('button');
+        const input = drawer.getByRole('textbox', { name: '输入追问' });
+        const send = drawer.getByRole('button', { name: '发送', exact: true });
+        const stop = drawer.getByRole('button', { name: '停止生成', exact: true });
+        const modelPicker = drawer.getByRole('button', { name: /追问模型/ });
+        const notices = page.locator('.followup-toast');
+        await newChat.waitFor();
+        await drawer.locator('.katex').first().waitFor();
+        await page.waitForFunction(() => document.querySelector('.followup-side, .followup-mobile')?.getAnimations().length === 0);
+        assert.equal(await drawer.locator('.followup-answer').filter({ hasText: exportText }).count(), 1);
+        assert.equal(await drawer.getByRole('button', { name: '追加到解析', exact: true }).count(), 0);
+        const marker = drawer.locator('.followup-reply-marker');
+        assert.equal(await marker.count(), 1);
+        assert.ok(await marker.evaluate((line) => {
+            const latest = line.parentElement.querySelector('.followup-turn:last-child .followup-answer').getBoundingClientRect();
+            const bounds = line.getBoundingClientRect();
+            const transitions = getComputedStyle(line).transitionProperty;
+            return Math.abs(bounds.top - latest.top) <= 1 && Math.abs(bounds.height - latest.height) <= 1
+                && transitions.includes('transform') && transitions.includes('height');
+        }));
+        const bounds = await drawer.boundingBox();
+        assert.ok(mobile ? bounds.y > 250 && bounds.y < 460 : bounds.x > width / 2 && bounds.x + bounds.width <= width + 1);
+        assert.ok(await input.isVisible());
+        await checkComposeAction(send);
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
+        assert.ok(await drawer.evaluate((element) => [...element.querySelectorAll('.followup-heading, .mobile-filters-heading, .followup-compose')]
+            .every((part) => part.scrollWidth <= part.clientWidth + 1)));
+        const credits = await owner.data('GET', followups(first.id));
+        assert.equal(await drawer.locator('.followup-quota').textContent(), credits.dailyCreditsRemaining + '/' + credits.dailyCreditLimit + ' 积分');
+        assert.equal(await drawer.locator('.followup-reply-meta').filter({ hasText: 'claude-sonnet' }).getByText('-3 积分').count(), 1);
+        assert.equal(await drawer.locator('.followup-reply-meta').filter({ hasText: 'gpt-5-mini' }).getByText('-1 积分').count(), credits.dailyCreditsUsed === 5 ? 2 : 3);
+        await assertVisibleLogo(modelPicker, 'openai', 18);
+        await modelPicker.click();
+        const menu = drawer.getByRole('listbox', { name: '追问模型' });
+        await menu.waitFor();
+        const premium = menu.getByRole('option', { name: /旗舰.*12×.*积分不足/ });
+        assert.ok(await premium.isDisabled());
+        assert.ok(await menu.getByLabel('支持图片输入').count());
+        const menuBounds = await menu.boundingBox();
+        assert.ok(menuBounds.x >= 0 && menuBounds.x + menuBounds.width <= width + 1);
+        assert.ok(await menu.evaluate((element) => element.scrollWidth <= element.clientWidth + 1));
+        const deep = menu.getByRole('option', { name: /深度.*claude-sonnet.*3×/ });
+        await assertVisibleLogo(deep, 'anthropic', 18);
+        await deep.click();
+        await assertVisibleLogo(modelPicker, 'anthropic', 18);
+        assert.match(await modelPicker.textContent(), /深度3×/);
+        await page.reload();
+        await entry.click();
+        await assertVisibleLogo(modelPicker, 'anthropic', 18);
+        if (mobile) {
+            await modelPicker.click();
+            await menu.getByRole('option', { name: /极速.*gpt-5-mini.*1×/ }).click();
+        }
+        await newChat.click();
+        await confirm.waitFor();
+        const compact = await confirm.boundingBox();
+        assert.ok(compact.width <= 300 && compact.height < 185 && compact.x >= 16);
+        assert.ok(await confirm.evaluate((element) => {
+            const bounds = element.getBoundingClientRect();
+            return element.contains(document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2));
+        }));
+        assert.ok(await page.evaluate(() => document.elementFromPoint(8, 8)?.matches('.followup-confirm-backdrop')));
+        await confirm.getByRole('button', { name: '取消', exact: true }).click();
+        await confirm.waitFor({ state: 'hidden' });
+        assert.ok(await drawer.getByText(exportText, { exact: false }).count());
+        if (mobile) {
+            const cdp = await context.newCDPSession(page);
+            async function dragHandle(distance) {
+                const box = await drawer.locator('.mobile-filters-drag-area').boundingBox();
+                const x = Math.round(box.x + box.width / 2);
+                const y = Math.round(box.y + box.height / 2);
+                await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+                for (const progress of [.12, .3, .5, .75, 1]) {
+                    await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: y + Math.round(distance * progress) }] });
+                }
+                await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+            }
+            const waitForExpanded = () => page.waitForFunction(() => {
+                const popup = document.querySelector('.followup-mobile');
+                return popup?.getBoundingClientRect().top < 130 && popup.getAnimations().length === 0;
+            });
+            const waitForPeek = () => page.waitForFunction(() => {
+                const popup = document.querySelector('.followup-mobile');
+                const top = popup?.getBoundingClientRect().top;
+                return top > 360 && top < 430 && popup.getAnimations().length === 0;
+            });
+            await input.fill('切换错题');
+            await waitForExpanded();
+            await dragHandle(300);
+            await waitForPeek();
+            await send.click();
+            await drawer.getByText('正在生成…', { exact: true }).waitFor();
+            await waitForExpanded();
+            await checkComposeAction(stop);
+            assert.equal(await drawer.locator('.followup-dots i').count(), 3);
+            await page.evaluate((id) => { location.hash = '/mistakes/' + id; }, second.id);
+            await page.getByText(second.question, { exact: true }).waitFor();
+            await page.evaluate(() => { Math.random = () => 0; });
+            await entry.click();
+            await chips.first().waitFor();
+            const firstDraw = (await chips.allTextContents()).map((text) => text.trim());
+            assert.equal(new Set(firstDraw).size, 4);
+            assert.ok(firstDraw.includes('拆解长难句结构'));
+            await drawer.getByRole('button', { name: '关闭追问' }).click();
+            await drawer.waitFor({ state: 'hidden' });
+            await page.evaluate(() => { Math.random = () => .999; });
+            await entry.click();
+            await chips.first().waitFor();
+            const secondDraw = (await chips.allTextContents()).map((text) => text.trim());
+            assert.equal(new Set(secondDraw).size, 4);
+            assert.notDeepEqual(firstDraw, secondDraw);
+            assert.equal(await drawer.getByText('切换错题', { exact: true }).count(), 0);
+        } else {
+            const updateNotice = '题面已更新，后续追问将使用最新内容。';
+            await owner.data('PATCH', '/mistakes/' + first.id, { question: first.question + '\n\n请检验答案。' });
+            await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+            await notices.getByText(updateNotice, { exact: true }).waitFor();
+            assert.equal(await drawer.getByText(updateNotice, { exact: true }).count(), 0);
+        }
+        await drawer.getByRole('button', { name: '关闭追问' }).click();
+        await drawer.waitFor({ state: 'hidden' });
+
+        await page.goto(appUrl + '/review?mistakeId=' + first.id);
+        await page.getByRole('button', { name: '开始复习' }).click();
+        assert.equal(await entry.count(), 0);
+        assert.equal(await page.locator('.followup-turn').count(), 0);
+        await page.getByRole('button', { name: '思考完成，查看答案与分析' }).click();
+        await entry.scrollIntoViewIfNeeded();
+        const y = await page.evaluate(() => scrollY);
+        await entry.click();
+        await drawer.getByText(exportText, { exact: false }).waitFor();
+        assert.equal(await drawer.getByRole('button', { name: '追加到解析', exact: true }).count(), 0);
+        await drawer.getByRole('button', { name: '关闭追问' }).click();
+        await drawer.waitFor({ state: 'hidden' });
+        assert.equal(await page.getByRole('button', { name: '答案、分析与笔记' }).getAttribute('aria-expanded'), 'true');
+        assert.ok(Math.abs(await page.evaluate(() => scrollY) - y) < 3, 'Review preserves its scroll position');
+
+        if (!mobile) {
+            // Verify the opt-in reaches the same paginated PDF viewed in the browser.
+            await page.goto(appUrl + '/mistakes/' + first.id);
+            await page.getByRole('button', { name: '导出这道题' }).click();
+            const checkbox = page.getByRole('checkbox', { name: '包含追问笔记' });
+            assert.equal(await checkbox.isChecked(), false);
+            await checkbox.check();
+            const printed = page.waitForResponse((response) => response.url().endsWith('/exports/pdf') && response.ok());
+            await page.getByRole('button', { name: '预览 PDF' }).click();
+            const response = await printed;
+            assert.equal(response.request().postDataJSON().options.includeFollowups, true);
+            const preview = page.getByRole('dialog', { name: '导出预览' });
+            await preview.locator('canvas').first().waitFor();
+            const pdfUrl = await preview.getByRole('link', { name: '打开 / 打印' }).getAttribute('href');
+            const bytes = await page.evaluate(async (url) => Array.from(new Uint8Array(await (await fetch(url)).arrayBuffer())), pdfUrl);
+            assert.match(await pdfText(Uint8Array.from(bytes)), new RegExp(exportText));
+
+        }
+
+        await page.goto(appUrl + '/settings');
+        await page.getByRole('tab', { name: 'AI 设置' }).click();
+        const settings = page.locator('.followup-settings');
+        const row = settings.getByRole('button', { name: '编辑 深度' });
+        await assertVisibleLogo(row, 'anthropic', 20);
+        assert.match(await row.textContent(), /3×/);
+        await row.click();
+        const logoSelector = settings.getByRole('button', { name: /厂商 Logo/ });
+        await assertVisibleLogo(logoSelector, 'anthropic', 18);
+        await logoSelector.click();
+        const vendorMenu = page.getByRole('listbox', { name: '厂商 Logo' });
+        await assertVisibleLogo(vendorMenu.getByRole('option', { name: '自动识别' }), 'anthropic', 18);
+        await assertVisibleLogo(vendorMenu.getByRole('option', { name: 'OpenAI' }), 'openai', 18);
+        const allLogos = await vendorMenu.locator('.vendor-logo').evaluateAll((logos) => logos.map((logo) => getComputedStyle(logo).maskImage));
+        assert.equal(new Set(allLogos).size, 13);
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
+        await vendorMenu.getByRole('option', { name: 'OpenAI' }).click();
+        await assertVisibleLogo(row, 'openai', 20);
+        if (!mobile) {
+            await settings.getByRole('spinbutton', { name: '单账号每日追问积分上限' }).fill('34');
+            await settings.getByRole('spinbutton', { name: '积分倍率' }).fill('4');
+            await settings.getByRole('spinbutton', { name: '排序权重' }).fill('9');
+            await settings.getByLabel('思考强度').fill('xhigh');
+            await settings.getByRole('checkbox', { name: '开放 深度' }).uncheck();
+            await settings.getByRole('button', { name: /默认选中模型/ }).click();
+            await page.getByRole('option', { name: '均衡' }).click();
+            await settings.getByRole('button', { name: '保存错题追问配置' }).click();
+            await page.getByText('错题追问配置已保存。', { exact: true }).waitFor();
+            const saved = await owner.data('GET', configRoute);
+            assert.equal(saved.dailyCreditLimit, 34);
+            assert.equal(saved.defaultProfileId, 'native');
+            const edited = saved.profiles.find(({ id }) => id === 'deep');
+            assert.deepEqual([edited.creditCost, edited.sortOrder, edited.thinkingEffort, edited.vendorIcon, edited.enabledForFollowup], [4, 9, 'xhigh', 'openai', false]);
+            await page.goto(appUrl + '/mistakes/' + first.id);
+            await entry.click();
+            await assertVisibleLogo(modelPicker, 'google', 18);
+            await drawer.locator('.followup-reply-meta').filter({ hasText: 'claude-sonnet' }).getByText('-3 积分').waitFor();
+            await newChat.click();
+            await confirm.getByRole('button', { name: '开始新对话', exact: true }).click();
+            await notices.getByText('已开始新对话。', { exact: true }).waitFor();
+            await chips.first().waitFor();
+            assert.equal(await drawer.locator('.followup-turn').count(), 0);
+            await page.route('**/followups/stream', (route) => route.fulfill({
+                status: 200, contentType: 'text/event-stream',
+                body: 'event: done\ndata: ' + JSON.stringify({
+                    dailyCreditLimit: 34, dailyCreditsUsed: 12, dailyCreditsRemaining: 22,
+                    message: { id: 9999, question: '用键盘提问', content: '测试回复', status: 'completed' }
+                }) + '\n\n'
+            }));
+            await input.fill('用键盘提问');
+            await input.press('Shift+Enter');
+            assert.equal(await input.inputValue(), '用键盘提问\n');
+            const keyboardSend = page.waitForRequest((request) => request.method() === 'POST' && request.url().endsWith('/followups/stream'));
+            await input.press('Enter');
+            assert.deepEqual((await keyboardSend).postDataJSON(), { question: '用键盘提问', profileId: 'native' });
+        }
+    } finally { await context.close(); }
+}
+
+async function assertVisibleLogo(parent, vendor, size) {
+    const logo = parent.locator('.vendor-logo[data-vendor-icon="' + vendor + '"]');
+    await logo.waitFor();
+    const layout = await logo.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const line = element.parentElement.getBoundingClientRect();
+        return { width: rect.width, height: rect.height, start: rect.left - line.left, end: line.right - rect.right,
+            local: getComputedStyle(element).maskImage.includes('data:image/svg+xml') };
+    });
+    assert.ok(Math.abs(layout.width - size) < .5 && Math.abs(layout.height - size) < .5
+        && layout.start >= -1 && layout.end >= -1 && layout.local, vendor + ' ' + JSON.stringify(layout));
+}
+
+async function checkComposeAction(action) {
+    await action.waitFor();
+    assert.equal(await action.textContent(), '');
+    assert.equal(await action.locator('svg').count(), 1);
+    assert.ok(await action.evaluate((button) => {
+        const field = button.closest('.followup-compose-field')?.getBoundingClientRect();
+        const bounds = button.getBoundingClientRect();
+        return field && bounds.top > field.top && bounds.left > field.left
+            && field.right - bounds.right > 0 && field.right - bounds.right < 12
+            && field.bottom - bounds.bottom > 0 && field.bottom - bounds.bottom < 12;
+    }));
+}
+
+async function main() {
+    checkVendorIcons();
+    Object.assign(process.env, {
+        NODE_ENV: 'test',
+        MISTAKES_DB_PATH: path.join(directory, 'db.sqlite'),
+        MISTAKES_UPLOADS_PATH: path.join(directory, 'uploads'),
+        MISTAKES_AI_CONFIG_PATH: path.join(directory, '.env.ai'),
+        MISTAKES_ENV_PATH: path.join(directory, '.env'),
+        PLAYWRIGHT_BROWSERS_PATH: process.env.PLAYWRIGHT_BROWSERS_PATH || path.join(root, 'data', '.playwright')
+    });
+    const executablePath = process.env.CHROMIUM_PATH || process.env.MISTAKES_PDF_EXECUTABLE_PATH;
+    if (executablePath) process.env.MISTAKES_PDF_EXECUTABLE_PATH = executablePath;
+    provider.listen(0, '127.0.0.1');
+    await once(provider, 'listening');
+    const upstream = 'http://127.0.0.1:' + provider.address().port;
+    app = require('../server/app');
+    const { db } = app;
+    const { hashPassword } = require('../server/mistakes/auth');
+    const now = new Date().toISOString();
+    const addUser = db.prepare('INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)');
+    const ownerId = addUser.run('followup_admin', hashPassword(password), 'admin', now).lastInsertRowid;
+    const otherId = addUser.run('followup_other', hashPassword(password), 'user', now).lastInsertRowid;
+    addUser.run('followup_rate', hashPassword(password), 'user', now);
+    server = app.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    base = 'http://127.0.0.1:' + server.address().port;
+    const [owner, other, limited] = [client(), client(), client()];
+    await owner.login('followup_admin');
+    await other.login('followup_other');
+    await limited.login('followup_rate');
+    const endpoint = { baseUrl: upstream + '/v1', apiKey: 'local-smoke-key' };
+    assert.deepEqual(await owner.data('GET', configRoute), { dailyCreditLimit: 60, defaultProfileId: null, profiles: [] });
+    const models = [
+        { ...endpoint, id: 'fast', name: '极速', model: 'gpt-5-mini', enabledForFollowup: true },
+        { ...endpoint, id: 'deep', name: "Claude's text", tierLabel: '深度', model: 'claude-sonnet', vision: false,
+            enabledForFollowup: true, creditCost: 3, thinkingEffort: 'high' },
+        { ...endpoint, id: 'native', name: 'Google', tierLabel: '均衡', model: 'gemini-3-flash-preview',
+            protocol: 'gemini', baseUrl: upstream + '/v1beta', enabledForFollowup: true, creditCost: 6, sortOrder: 0, thinkingEffort: 'low' },
+        { ...endpoint, id: 'premium', name: '旗舰', model: 'mimo-v2', enabledForFollowup: true, creditCost: 12 },
+        { id: 'disabled', name: '停用档', model: 'mistral', enabledForFollowup: false, creditCost: 2 },
+    ];
+    const settings = await owner.data('PATCH', configRoute, { dailyCreditLimit: 16, defaultProfileId: 'fast', profiles: models });
+    assert.equal(settings.defaultProfileId, 'fast');
+    assert.equal(settings.profiles.find(({ id }) => id === 'deep').name, "Claude's text");
+    assert.ok(settings.profiles.find(({ id }) => id === 'native').hasApiKey);
+    assert.ok(!JSON.stringify(settings).includes(endpoint.apiKey));
+    await other.data('PATCH', configRoute, { dailyCreditLimit: 5 }, 403);
+    const create = (actor, fields) => actor.data('POST', '/mistakes', { lifecycle: 'archived', subjectId: 'math',
+        question: '求方程的根', answer: '$x=4$', analysis: '先整理方程。', ...fields }, 201);
+    const longQuestion = Array.from({ length: 16 }, (_, i) => '检查第 ' + (i + 1) + ' 项已知条件。').join('\n\n');
+    const first = await create(owner, { question: longQuestion, analysis: '先整理方程。\n\n### 追问补充\n\n之前已保存的解析内容。' });
+    const second = await create(owner, { subjectId: 'english', question: '分析句子结构' });
+    const gemini = await create(other, { question: '结合本题配图' });
+    const speed = await create(limited, {});
+
+    await client().data('GET', followups(first.id), undefined, 401);
+    await other.data('GET', followups(first.id), undefined, 404);
+    await other.data('POST', followups(first.id) + '/stream', { question: '越权提问' }, 404);
+    const initial = await owner.data('GET', followups(first.id));
+    assert.deepEqual(initial.availableProfiles, [
+        { id: 'native', name: 'Google', tierLabel: '均衡', model: 'gemini-3-flash-preview',
+            vendorIcon: 'google', creditCost: 6, supportsVision: true, isDefault: false },
+        { id: 'fast', name: '极速', tierLabel: '极速', model: 'gpt-5-mini', vendorIcon: 'openai', creditCost: 1, supportsVision: true, isDefault: true },
+        { id: 'deep', name: "Claude's text", tierLabel: '深度', model: 'claude-sonnet', vendorIcon: 'anthropic', creditCost: 3, supportsVision: false, isDefault: false },
+        { id: 'premium', name: '旗舰', tierLabel: '旗舰', model: 'mimo-v2', vendorIcon: 'xiaomi', creditCost: 12, supportsVision: true, isDefault: false },
+    ]);
+    assert.ok(!JSON.stringify(initial).includes(endpoint.apiKey) && !JSON.stringify(initial).includes(upstream));
+    const result = await events(await owner.request('POST', followups(first.id) + '/stream', {
+        question: '验证搜索隔离', context: '不可信题面', profileId: 'disabled'
+    }));
+    assert.deepEqual(result.map((event) => event.type), ['meta', 'delta', 'delta', 'done']);
+    const completed = result.at(-1).message;
+    assert.equal(completed.status, 'completed');
+    assert.equal(calls.at(-1).body.model, 'gpt-5-mini');
+    for (const [frame, remaining] of [[result[0], 16], [result.at(-1), 15]]) {
+        assert.deepEqual([frame.profileId, frame.vendorIcon, frame.creditCost, frame.dailyCreditsRemaining], ['fast', 'openai', 1, remaining]);
+    }
+    assert.equal(completed.creditsCharged, 1);
+    assert.ok(calls.at(-1).body.messages[1].content.includes(longQuestion.split('\n')[0]));
+    assert.ok(!JSON.stringify(calls.at(-1)).includes('不可信题面'));
+    assert.match(completed.content, new RegExp(replyOnlyText));
+    await owner.data('POST', followups(first.id) + '/' + completed.id + '/append-analysis', { updatedAt: first.updatedAt }, 404);
+    assert.equal((await owner.data('GET', '/mistakes/' + first.id)).analysis, first.analysis);
+    assert.equal((await owner.data('GET', '/mistakes?keyword=' + encodeURIComponent(replyOnlyText))).length, 0);
+    await other.data('POST', followups(first.id) + '/' + completed.id + '/cancel', {}, 404);
+
+    const slow = await owner.request('POST', followups(first.id) + '/stream', { question: '停止测试' });
+    const stopped = await events(slow, async (frame) => {
+        if (frame.type !== 'delta') return;
+        const active = await owner.data('GET', followups(first.id));
+        assert.equal(active.activeMessageId, frame.id);
+        await owner.data('POST', followups(second.id) + '/stream', { question: '重复生成' }, 409);
+        const result = await owner.data('POST', followups(first.id) + '/' + frame.id + '/cancel', {});
+        assert.equal(result.status, 'cancelled');
+        assert.equal(result.content, '答'.repeat(99));
+    });
+    assert.equal(stopped.at(-1).message.status, 'cancelled');
+    assert.equal(stopped.at(-1).message.creditsCharged, 0);
+    assert.equal(stopped.at(-1).dailyCreditsRemaining, 15);
+    for (let i = 0; i < 20 && !cancelled; i++) await delay(50);
+    assert.equal(cancelled, true);
+    const failed = (await ask(owner, first.id, '暂时故障', 'deep')).at(-1);
+    const failure = failed.message;
+    assert.equal(failure.status, 'failed');
+    assert.equal(failure.creditsCharged, 0);
+    assert.equal(failed.dailyCreditsRemaining, 15);
+    assert.equal(calls.at(-1).body.reasoning_effort, 'high');
+    const retried = await events(await owner.request('POST', followups(first.id) + '/stream', { retryMessageId: failure.id, profileId: 'deep' }));
+    assert.equal(retried.at(-1).message.id, failure.id);
+    assert.deepEqual([retried.at(-1).message.model, retried.at(-1).message.creditsCharged, retried.at(-1).dailyCreditsRemaining], ['claude-sonnet', 3, 12]);
+    assert.match(calls.at(-1).body.messages[3].content, new RegExp(replyOnlyText));
+    assert.match(retried.at(-1).message.content, new RegExp(exportText));
+
+    const disconnect = new AbortController();
+    const stream = await owner.request('POST', followups(first.id) + '/stream', { question: '断连继续' }, disconnect.signal);
+    const reader = stream.body.getReader();
+    await reader.read();
+    disconnect.abort();
+    reader.releaseLock();
+    for (let i = 0; i < 30; i++) {
+        if (!(await owner.data('GET', followups(first.id))).activeMessageId) break;
+        await delay(100);
+    }
+    const history = await owner.data('GET', followups(first.id));
+    assert.equal(history.messages.at(-1).status, 'completed');
+    assert.equal(history.messages.length, 4);
+    assert.equal(history.dailyCreditsUsed, 5);
+    assert.equal(history.dailyCreditsRemaining, 11);
+    assert.equal(db.prepare('SELECT COUNT(*) AS count FROM ai_jobs').get().count, 0);
+
+    const file = 'owned-followup.jpg';
+    fs.mkdirSync(process.env.MISTAKES_UPLOADS_PATH, { recursive: true });
+    fs.copyFileSync(path.join(root, 'server', 'mistakes', 'fixtures', 'vision-test.jpg'), path.join(process.env.MISTAKES_UPLOADS_PATH, file));
+    const imageId = db.prepare('INSERT INTO mistake_images (mistake_id,user_id,purpose,client_id,original_name,original_path,crop_path,created_at) VALUES (?,?,?,?,?,?,?,?)')
+        .run(gemini.id, otherId, 'answer', 'fixture', file, file, file, now).lastInsertRowid;
+    const image = '![](/api/mistakes/images/' + imageId + '/crop)';
+    const another = await create(other, { answer: image });
+    await other.data('POST', followups(another.id) + '/stream', { question: '越权引用图片' }, 400);
+    await other.data('PATCH', '/mistakes/' + gemini.id, { answer: '$x=4$\n\n' + image });
+    const native = await ask(other, gemini.id, '原生流式', 'native');
+    assert.equal(native.at(-1).message.content, 'Gemini 流式答复 $x=4$');
+    assert.deepEqual(calls.at(-1).body.generationConfig.thinkingConfig, { thinkingLevel: 'LOW' });
+    assert.ok(calls.at(-1).body.contents[0].parts.some((part) => part.inlineData));
+    const fallback = await ask(other, gemini.id, '文字降级', 'native');
+    assert.equal(fallback.at(-1).message.content, '非流式完整回答 $x=4$');
+    assert.equal(fallback.at(-1).message.imagesSkipped, true);
+    assert.match(calls.at(-1).path, /:generateContent$/);
+    assert.equal(calls.at(-1).body.contents[0].parts.length, 1);
+    assert.equal(calls.at(-1).body.contents.length, 4);
+    assert.match(db.prepare('SELECT token_usage FROM mistake_followups WHERE id = ?').get(native.at(-1).message.id).token_usage, /"totalTokens":11/);
+    const longStop = await other.request('POST', followups(gemini.id) + '/stream', { question: '足量停止', profileId: 'deep' });
+    const longStopped = await events(longStop, async (frame) => {
+        if (frame.type === 'delta') await other.data('POST', followups(gemini.id) + '/' + frame.id + '/cancel', {});
+    });
+    assert.equal(longStopped[0].message.imagesSkipped, true);
+    assert.equal(typeof calls.at(-1).body.messages[1].content, 'string');
+    assert.equal(longStopped.at(-1).message.status, 'cancelled');
+    assert.equal(longStopped.at(-1).message.creditsCharged, 3);
+    assert.equal(longStopped.at(-1).dailyCreditsRemaining, 1);
+    const pairCount = db.prepare('SELECT COUNT(*) AS count FROM mistake_followups WHERE mistake_id = ?');
+    const before = pairCount.get(gemini.id).count;
+    const rejected = await other.data('POST', followups(gemini.id) + '/stream', { question: '额度不足', profileId: 'deep' }, 429);
+    assert.match(rejected.message, /剩余积分不足/);
+    assert.equal(pairCount.get(gemini.id).count, before);
+
+    await owner.data('PATCH', '/admin/users/' + otherId, { active: false });
+    assert.equal((await other.data('GET', followups(gemini.id))).readOnly, true);
+    for (const [method, suffix] of [['POST', '/stream'], ['DELETE', ''], ['POST', '/' + native.at(-1).message.id + '/cancel']]) {
+        const error = await other.data(method, followups(gemini.id) + suffix, {}, 403);
+        assert.equal(error.code, 'ACCOUNT_FROZEN');
+    }
+    await owner.data('PATCH', '/admin/users/' + otherId, { active: true });
+    await other.data('DELETE', followups(gemini.id));
+    const cleared = await other.data('GET', followups(gemini.id));
+    assert.equal(cleared.messages.length, 0);
+    assert.equal(cleared.dailyCreditsRemaining, 1);
+    const speedUser = db.prepare('SELECT user_id FROM mistakes WHERE id = ?').get(speed.id).user_id;
+    const seed = db.prepare('INSERT INTO mistake_followups (mistake_id, user_id, role, question_id, content, status, created_at) VALUES (?,?,?,?,?,?,?)');
+    const yesterday = new Date(Date.now() - 86400000).toISOString();
+    for (let index = 1; index <= 9; index++) {
+        const question = seed.run(speed.id, speedUser, 'user', null, '历史问题' + index, 'completed', yesterday).lastInsertRowid;
+        seed.run(speed.id, speedUser, 'assistant', question, '历史回答' + index, 'completed', yesterday);
+    }
+    assert.equal((await limited.data('GET', followups(speed.id))).dailyCreditsUsed, 0);
+    assert.match((await ask(limited, speed.id, '兼容接口非流式')).at(-1).message.content, /兼容接口完整回复/);
+    const messages = calls.at(-1).body.messages;
+    assert.equal(messages.length, 19);
+    assert.equal(messages[2].content, '历史问题2');
+    assert.equal(messages.at(-2).content, '历史回答9');
+    for (let index = 0; index < 5; index++) {
+        assert.equal((await ask(limited, speed.id, '频率测试')).at(-1).message.status, 'completed');
+    }
+    assert.equal((await limited.data('POST', followups(speed.id) + '/stream', { question: '频率测试' }, 429)).code, 'RATE_LIMITED');
+    await limited.data('DELETE', '/mistakes/' + speed.id);
+    await limited.data('DELETE', '/mistakes/' + speed.id + '/permanent');
+    assert.equal(db.prepare('SELECT COUNT(*) AS count FROM mistake_followups WHERE mistake_id = ?').get(speed.id).count, 0);
+
+    const snapshot = path.join(directory, 'snapshot.sqlite');
+    db.prepare("UPDATE mistake_followups SET status = 'streaming' WHERE id = ?").run(failure.id);
+    await db.backup(snapshot);
+    execFileSync(process.execPath, ['-e', `
+        const { db, billableFollowup } = require('./server/mistakes/database');
+        const assert = require('node:assert/strict');
+        const row = db.prepare('SELECT * FROM mistake_followups WHERE id = ?').get(Number(process.argv[1]));
+        assert.equal(row.status, 'failed');
+        assert.match(row.error_message, /服务重启中断/);
+        assert.equal(db.prepare('SELECT SUM(a.credit_cost) AS used FROM mistake_followups a WHERE user_id = ? AND role = ? AND ' +
+            billableFollowup('a')).get(row.user_id, 'assistant').used, 2);
+    `, String(failure.id)], {
+        cwd: root, env: { ...process.env, MISTAKES_DB_PATH: snapshot }, stdio: 'inherit', windowsHide: true
+    });
+    db.prepare("UPDATE mistake_followups SET status = 'completed' WHERE id = ?").run(failure.id);
+    assert.equal(db.prepare('SELECT user_id FROM mistakes WHERE id = ?').get(first.id).user_id, ownerId);
+
+    const defaults = { source: { ids: [first.id] }, options: { answerPlacement: 'appendix' } };
+    const normal = await downloadPdf(owner, defaults);
+    assert.ok(!normal.includes(exportText));
+    const practice = await downloadPdf(owner, { ...defaults, options: { version: 'practice', includeFollowups: true } });
+    assert.ok(!practice.includes(exportText));
+    const { chromium } = require('playwright');
+    browser = await chromium.launch({ headless: true, ...(executablePath ? { executablePath } : {}) });
+    await checkViewport(owner, first, second, 390);
+    await checkViewport(owner, first, second, 1440);
+    console.log('Mistake follow-up smoke passed: multi-profile routing, thinking, credit settlement, cancellation threshold, detached completion, rate limit, recovery, and mobile/desktop selectors, settings and PDF.');
+}
+
+main().catch((error) => { console.error(error); process.exitCode = 1; }).finally(async () => {
+    await browser?.close();
+    if (app) {
+        await require('../server/mistakes/followups').pauseFollowups();
+        await require('../server/mistakes/pdf-export').closePdfBrowser();
+    }
+    provider.closeAllConnections();
+    provider.close();
+    server?.closeAllConnections();
+    if (server) await new Promise((resolve) => server.close(resolve));
+    app?.db.close();
+    fs.rmSync(directory, { recursive: true, force: true });
+});

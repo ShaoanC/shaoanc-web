@@ -6,11 +6,12 @@ const { db } = require('./database');
 const { imagePath } = require('./images');
 const { markdownImages } = require('./question-images');
 const { fail } = require('./auth');
+const { followupNotes } = require('./followups');
 
 const publicDirectory = path.resolve(__dirname, '../../public/mistakes');
 const renderOrigin = 'http://mistakes-export.local';
 const defaults = {
-    title: '错题', version: 'complete', includeNotes: true, fontSize: 12,
+    title: '错题', version: 'complete', includeNotes: true, includeFollowups: false, fontSize: 12,
     layout: 'continuous', practiceSpace: 60, answerPlacement: 'inline'
 };
 const filterKeys = ['lifecycle', 'subjectId', 'knowledgePointId', 'status', 'rating', 'keyword', 'dataType'];
@@ -118,7 +119,7 @@ function readOptions(input = {}) {
     const options = Object.fromEntries(Object.keys(defaults).map((key) => [key, input[key] ?? defaults[key]]));
     if (typeof options.title !== 'string' || options.title.trim().length > 80) fail(400, '标题请控制在 80 个字以内');
     options.title = options.title.trim() || defaults.title;
-    if (!['complete', 'practice'].includes(options.version) || typeof options.includeNotes !== 'boolean' ||
+    if (!['complete', 'practice'].includes(options.version) || typeof options.includeNotes !== 'boolean' || typeof options.includeFollowups !== 'boolean' ||
         ![10.5, 12, 14].includes(options.fontSize) || !['continuous', 'per-question'].includes(options.layout) ||
         !Number.isInteger(options.practiceSpace) || options.practiceSpace < 10 || options.practiceSpace > 70 || options.practiceSpace % 5 !== 0 ||
         !['inline', 'appendix'].includes(options.answerPlacement)) {
@@ -241,6 +242,9 @@ function mountPdfExportRoutes(router, helpers) {
             const options = readOptions(req.body?.options);
             const mistakes = readMistakes(req.body?.source, req.user.id, helpers);
             if (!mistakes.length) fail(400, '没有可导出的题目，请调整筛选条件后重试。');
+            if (options.version === 'complete' && options.includeFollowups) {
+                for (const mistake of mistakes) mistake.followupNotes = followupNotes(req.user.id, mistake.id);
+            }
             const data = {
                 mistakes, options,
                 subjects: db.prepare('SELECT id, name FROM subjects ORDER BY sort_order, id').all(),

@@ -6,6 +6,7 @@ const { generateTestMistakes } = require('./test-data');
 const { searchMistakes, updateCachedMistake, invalidateUser, invalidateAll, previewMarkdown } = require('./search');
 const { cleanupExpiredTrash } = require('./trash');
 const { enqueueAutomatic, cancelMistakeJobs, analysisNoticeFor } = require('./ai');
+const { mountFollowups, interruptFollowup } = require('./followups');
 const { deleteMistakeFiles, questionForMistake } = require('./images');
 const { getPublicCaptchaConfig, verifyCaptcha } = require('./captcha');
 const { loginIpLimit, loginFailureLimit, registrationLimit } = require('./auth-limits');
@@ -199,6 +200,7 @@ router.post('/auth/logout', (req, res) => {
 
 router.get('/auth/data-export', requireSession, require('./personal-export').downloadPersonalData);
 
+mountFollowups(router, { success, ownMistake });
 router.use(requireUser);
 require('./ai-router')(router, { success, ownMistake, serializeMistake, cleanupExpiredTrash });
 
@@ -601,6 +603,7 @@ router.patch('/mistakes/:id', (req, res) => {
 router.delete('/mistakes/:id', (req, res) => {
     const row = ownMistake(req, true);
     cancelMistakeJobs([row.id]);
+    void interruptFollowup(req.user.id, '错题已移入回收站，恢复后可重试', row.id);
     db.prepare('UPDATE mistakes SET deleted_at = ? WHERE id = ? AND user_id = ? AND deleted_at IS NULL')
         .run(new Date().toISOString(), row.id, req.user.id);
     invalidateUser(req.user.id);
@@ -711,6 +714,7 @@ router.patch('/admin/users/:id', (req, res) => {
             db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id);
         }
     })();
+    if (!active) void interruptFollowup(id, '账号已冻结，恢复后可重试');
     if (id === req.user.id && password !== undefined) {
         createSession(id, res);
     }

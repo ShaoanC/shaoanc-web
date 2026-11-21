@@ -20,6 +20,7 @@ function collectPersonalData(user) {
         mistakes: db.prepare('SELECT * FROM mistakes WHERE user_id = ? ORDER BY id').all(user.id)
             .map((row) => ({ ...row, question: questionForMistake(row) })),
         reviews: db.prepare('SELECT r.* FROM reviews r JOIN mistakes m ON m.id = r.mistake_id WHERE m.user_id = ?').all(user.id),
+        followups: db.prepare('SELECT f.* FROM mistake_followups f JOIN mistakes m ON m.id = f.mistake_id WHERE f.user_id = ? AND m.user_id = ? ORDER BY f.id').all(user.id, user.id),
         images: db.prepare('SELECT i.* FROM mistake_images i JOIN mistakes m ON m.id = i.mistake_id WHERE i.user_id = ? AND m.user_id = ?').all(user.id, user.id),
         pageImports: db.prepare('SELECT * FROM page_imports WHERE user_id = ?').all(user.id),
         pageItems: db.prepare('SELECT i.* FROM page_import_items i JOIN page_imports p ON p.id = i.page_import_id WHERE p.user_id = ?').all(user.id),
@@ -78,7 +79,7 @@ async function downloadPersonalData(req, res) {
         await fs.promises.writeFile(path.join(content, 'data.json'), JSON.stringify(data, null, 2));
         await fs.promises.writeFile(path.join(content, 'README.txt'),
             '拾题 · 我的数据\n\n解压后，mistakes 文件夹中是可阅读的错题、答案、解析和笔记（Markdown 格式）。\n' +
-            'images 文件夹包含现存的本人配图和上传来源图。data.json 包含账号资料、草稿、回收站、知识点、复习记录及 AI / 分题记录。\n' +
+            'images 文件夹包含现存的本人配图和上传来源图。data.json 包含账号资料、草稿、回收站、知识点、复习记录、错题追问及 AI / 分题记录。\n' +
             '图片记录中的文件名对应 images 文件夹。此包用于个人留存，不是全站恢复包。未保存的浏览器草稿不在其中。\n' +
             (data.missingFiles.length ? `\n以下图片文件已不存在，未能收录：\n${data.missingFiles.join('\n')}\n` : ''));
         const archive = path.join(directory, 'personal-data.zip');

@@ -11,6 +11,7 @@ import { DeleteButton } from '../DeleteButton';
 import { LoadingContent } from '../motion';
 import { StarRatingPicker, StarRatingDisplay } from '../StarRating';
 import { MistakeExport } from '../MistakeExport';
+import { MistakeFollowups } from '../MistakeFollowups';
 import { useRecordView } from '../RecordView';
 import { useLibraryLocation } from '../LibraryLocation';
 import { useMobileLayout } from '../MobileDrawer';
@@ -134,7 +135,9 @@ export function DetailPage({ id }: { id: number }) {
           <MarkdownContent className="prose" emptyText="还没有填写答案，可以通过编辑补充。">{mistake.answer}</MarkdownContent>
         </section>
         <section className="detail-document-section">
-          <div className="section-heading"><h2>解题分析</h2></div>
+          <div className="section-heading"><h2>解题分析</h2>
+            {!mistake.deletedAt && <MistakeFollowups key={mistake.id} mistake={mistake} />}
+          </div>
           <MarkdownContent className="prose" emptyText="还没有填写分析。记下解题思路，方便下次回顾。">{mistake.analysis}</MarkdownContent>
         </section>
         <section className="detail-reading-note">

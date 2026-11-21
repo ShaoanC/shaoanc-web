@@ -522,4 +522,4 @@ function resumeJobs() {
     recoverJobs();
 }
 
-module.exports = { createJob, serializeJob, ownJob, applyJob, retryJob, cancelJob, cancelMistakeJobs, recoverJobs, stopJobs, pauseJobs, resumeJobs, enqueueAutomatic, inputFor, isShortAnswer, analysisNoticeFor, runtimeForJobs, canRetry };
+module.exports = { createJob, serializeJob, ownJob, applyJob, retryJob, cancelJob, cancelMistakeJobs, recoverJobs, stopJobs, pauseJobs, resumeJobs, enqueueAutomatic, inputFor, isShortAnswer, analysisNoticeFor, analysisImages, runtimeForJobs, canRetry };

@@ -2,6 +2,13 @@ const fs = require('node:fs');
 const path = require('node:path');
 const Database = require('better-sqlite3');
 
+const followupDayStart = "strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '+8 hours', 'start of day', '-8 hours')";
+const followupDayEnd = "strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '+8 hours', 'start of day', '+16 hours')";
+function billableFollowup(alias) {
+    return `(${alias}.status = 'completed' OR (${alias}.status = 'cancelled'
+        AND COALESCE(${alias}.deleted_body_length, length(${alias}.content)) >= 100))`;
+}
+
 const databasePath = process.env.MISTAKES_DB_PATH || path.join(__dirname, '..', '..', 'data', 'mistakes.sqlite');
 if (databasePath !== ':memory:') {
     fs.mkdirSync(path.dirname(databasePath), { recursive: true });
@@ -66,6 +73,36 @@ db.exec(`
         deleted_at TEXT
     );
     CREATE INDEX IF NOT EXISTS mistakes_user ON mistakes(user_id, lifecycle, updated_at);
+    CREATE TABLE IF NOT EXISTS mistake_followups (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        mistake_id INTEGER REFERENCES mistakes(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+        question_id INTEGER REFERENCES mistake_followups(id) ON DELETE CASCADE,
+        content TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL CHECK (status IN ('streaming', 'completed', 'failed', 'cancelled')),
+        error_message TEXT,
+        model TEXT,
+        profile_id TEXT,
+        vendor_icon TEXT,
+        credit_cost INTEGER NOT NULL DEFAULT 1 CHECK (credit_cost > 0),
+        token_usage TEXT,
+        context_revision TEXT,
+        images_skipped INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        deleted_body_length INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS followups_history ON mistake_followups(user_id, mistake_id, created_at);
+    CREATE INDEX IF NOT EXISTS followups_credits ON mistake_followups(user_id, created_at) WHERE role = 'assistant';
+    -- Clearing a conversation keeps only the already settled charge through the end of the Beijing day.
+    CREATE TRIGGER IF NOT EXISTS retain_today_followup_charge AFTER DELETE ON mistake_followups
+    WHEN OLD.mistake_id IS NOT NULL AND OLD.role = 'assistant' AND ${billableFollowup('OLD')}
+        AND OLD.created_at >= ${followupDayStart} AND OLD.created_at < ${followupDayEnd}
+        AND EXISTS (SELECT 1 FROM users WHERE id = OLD.user_id)
+    BEGIN
+        INSERT INTO mistake_followups (user_id, role, status, credit_cost, created_at, deleted_body_length)
+        VALUES (OLD.user_id, 'assistant', OLD.status, OLD.credit_cost, OLD.created_at, length(OLD.content));
+    END;
     CREATE TABLE IF NOT EXISTS reviews (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         mistake_id INTEGER NOT NULL REFERENCES mistakes(id) ON DELETE CASCADE,
@@ -74,6 +111,8 @@ db.exec(`
     );
     CREATE INDEX IF NOT EXISTS reviews_mistake ON reviews(mistake_id, id);
 `);
+
+db.prepare("UPDATE mistake_followups SET status = 'failed', error_message = '服务重启中断，可重试' WHERE status = 'streaming'").run();
 
 // Upgrade existing accounts without changing their data.
 for (const [name, definition] of [['ai_call_count', 'INTEGER NOT NULL DEFAULT 0'], ['last_seen_at', 'TEXT']]) {
@@ -290,4 +329,4 @@ db.transaction(() => {
     }
 })();
 
-module.exports = { db };
+module.exports = { db, followupDayStart, followupDayEnd, billableFollowup };

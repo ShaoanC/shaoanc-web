@@ -84,7 +84,7 @@ export function MistakeExport({ mistakes, totalCount, filters, selectedIds = [],
     setOptions((previous) => ({
       ...previous,
       [key]: value,
-      ...(key === 'version' && value === 'practice' ? { includeNotes: false } : {}),
+      ...(key === 'version' && value === 'practice' ? { includeNotes: false, includeFollowups: false } : {}),
     }));
   }
 
@@ -148,6 +148,10 @@ export function MistakeExport({ mistakes, totalCount, filters, selectedIds = [],
           <span className="export-notes-copy"><span id={`${notesId}-label`}>包含我的笔记</span><small id={`${notesId}-hint`} aria-live="polite">{notesUnavailable ? '练习版不包含笔记，切换到完整版后可用。' : '将我的笔记随题目一起导出。'}</small></span>
           {notesUnavailable && <span className="export-notes-lock" aria-hidden="true"><LockKeyhole size={14} />不可用</span>}
         </label>
+        {!notesUnavailable && <label className="export-notes-option">
+          <Checkbox checked={options.includeFollowups} disabled={busy} onChange={(event) => update('includeFollowups', event.target.checked)} />
+          <span className="export-notes-copy">包含追问笔记</span>
+        </label>}
       </fieldset>
       <p className="export-paper-note">A4 纵向 · 思源宋体正文 · 15 毫米页边距</p>
       {error && <p className="form-error export-feedback" role="alert">{error} 可保留当前设置后重试。</p>}

@@ -4,6 +4,7 @@ export interface ExportOptions {
   title: string;
   version: 'complete' | 'practice';
   includeNotes: boolean;
+  includeFollowups: boolean;
   fontSize: 10.5 | 12 | 14;
   layout: 'continuous' | 'per-question';
   practiceSpace: number;
@@ -11,14 +12,14 @@ export interface ExportOptions {
 }
 
 export const defaultExportOptions: ExportOptions = {
-  title: '错题', version: 'complete', includeNotes: true, fontSize: 12,
+  title: '错题', version: 'complete', includeNotes: true, includeFollowups: false, fontSize: 12,
   layout: 'continuous', practiceSpace: 60, answerPlacement: 'inline',
 };
 
 export type ExportSource = { ids: number[] } | { filters: Record<string, string> };
 export interface ExportRequest { source: ExportSource; options: ExportOptions }
 export interface ExportDocumentData {
-  mistakes: Mistake[];
+  mistakes: (Mistake & { followupNotes?: { question: string; content: string }[] })[];
   subjects: Subject[];
   knowledgePoints: KnowledgePoint[];
   options: ExportOptions;

@@ -4,6 +4,7 @@ import { api, json } from '../api';
 import { LatestRequest } from '../latest-request';
 import { knowledgeLabel, useApp } from '../context';
 import { MarkdownContent } from '../MarkdownContent';
+import { MistakeFollowups } from '../MistakeFollowups';
 import { Checkbox, DataTypeBadge, EmptyState, ErrorState, PageHeader, StatusBadge } from '../components';
 import { LoadingContent } from '../motion';
 import { MistakeFilterFields } from '../MistakeFilterFields';
@@ -140,6 +141,7 @@ export function ReviewPage() {
                   <div><h3>正确答案</h3><MarkdownContent className="prose" emptyText="这道题还未填写答案，可稍后到详情页补充。">{item.answer}</MarkdownContent></div>
                   <div><h3>解题分析</h3><MarkdownContent className="prose" emptyText="暂未填写解题分析。">{item.analysis}</MarkdownContent></div>
                   {item.note && <div className="revealed-note"><h3>我的笔记</h3><MarkdownContent className="prose">{item.note}</MarkdownContent></div>}
+                  {revealed && <MistakeFollowups key={item.id} mistake={item} />}
                 </div>
               </div>
             </div>

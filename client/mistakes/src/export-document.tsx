@@ -5,7 +5,6 @@ import { FIGURE_HEIGHT_SCALE, figureLineCount } from './figure-layout';
 import { knowledgeLabel } from './context';
 import { ratingLabel } from './StarRating';
 import type { ExportDocumentData, ExportOptions } from './export-types';
-import type { Mistake } from './types';
 import '@fontsource/noto-serif-sc/400.css';
 import '@fontsource/noto-serif-sc/700.css';
 import '@fontsource/noto-sans-sc/600.css';
@@ -31,11 +30,17 @@ function reportError(error: unknown) {
 window.addEventListener('error', (event) => reportError(event.error || new Error(event.message)));
 window.addEventListener('unhandledrejection', (event) => reportError(event.reason));
 
-function Answers({ mistake, options }: { mistake: Mistake; options: ExportOptions }) {
+function Answers({ mistake, options }: { mistake: ExportDocumentData['mistakes'][number]; options: ExportOptions }) {
   return <>
     {mistake.answer.trim() && <section className="export-answer"><h3>正确答案</h3><MarkdownContent>{mistake.answer}</MarkdownContent></section>}
     {mistake.analysis.trim() && <section className="export-answer"><h3>解题分析</h3><MarkdownContent>{mistake.analysis}</MarkdownContent></section>}
     {options.includeNotes && mistake.note.trim() && <section className="export-answer export-note"><h3>我的笔记</h3><MarkdownContent>{mistake.note}</MarkdownContent></section>}
+    {options.includeFollowups && Boolean(mistake.followupNotes?.length) && <section className="export-answer">
+      <h3>追问笔记</h3>
+      {mistake.followupNotes?.map(({ question, content }, index) => <div className="export-followup" key={index}>
+        <p>{question}</p><MarkdownContent skipImages>{content}</MarkdownContent>
+      </div>)}
+    </section>}
   </>;
 }
 
@@ -209,7 +214,7 @@ function ExportDocument({ data }: { data: ExportDocumentData }) {
       <header className="export-appendix-heading"><h2>参考答案与解析</h2><p>题号与前面的题目一一对应</p></header>
       {mistakes.map((mistake, index) => <section className="export-appendix-entry" key={mistake.id} data-export-number={index + 1}>
         <h2 className="export-appendix-number">第 {index + 1} 题</h2>
-        {!mistake.answer.trim() && !mistake.analysis.trim() && !(options.includeNotes && mistake.note.trim()) ? <p className="export-empty-answer">答案和解析暂未填写</p> : <Answers mistake={mistake} options={options} />}
+        {!mistake.answer.trim() && !mistake.analysis.trim() && !(options.includeNotes && mistake.note.trim()) && !mistake.followupNotes?.length ? <p className="export-empty-answer">答案和解析暂未填写</p> : <Answers mistake={mistake} options={options} />}
       </section>)}
     </section>}
   </article>;

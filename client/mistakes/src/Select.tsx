@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown, Search } from 'lucide-react';
 import PinyinMatch from 'pinyin-match';
@@ -11,11 +11,14 @@ type SelectProps = {
   searchable?: boolean;
   disabled?: boolean;
   portalContainer?: HTMLElement | null;
+  popupMinWidth?: number;
+  renderOption?: (option: SelectOption) => ReactNode;
+  renderValue?: (option: SelectOption) => ReactNode;
 } & ({ multiple?: false; value: string; onChange: (value: string) => void }
   | { multiple: true; value: string[]; onChange: (value: string[]) => void });
 
 export function Select(props: SelectProps) {
-  const { options, ariaLabel, searchable = false, disabled = false, portalContainer } = props;
+  const { options, ariaLabel, searchable = false, disabled = false, portalContainer, popupMinWidth = 0, renderOption, renderValue } = props;
   const id = useId();
   const trigger = useRef<HTMLButtonElement>(null);
   const popup = useRef<HTMLDivElement>(null);
@@ -85,7 +88,7 @@ export function Select(props: SelectProps) {
       const above = rect.top - viewportTop - 12;
       const desired = Math.min(320, filtered.length * 42 + (searchable ? 54 : 0) + 12);
       const upwards = below < Math.min(desired, 180) && above > below;
-      const width = Math.min(rect.width, viewportWidth - 16);
+      const width = Math.min(Math.max(rect.width, popupMinWidth), viewportWidth - 16);
       const containerRect = portalContainer?.getBoundingClientRect();
       const top = upwards ? rect.top - 6 : rect.bottom + 6;
       const left = Math.max(viewportLeft + 8, Math.min(rect.left, viewportLeft + viewportWidth - width - 8));
@@ -108,7 +111,7 @@ export function Select(props: SelectProps) {
       window.visualViewport?.removeEventListener('resize', place);
       window.visualViewport?.removeEventListener('scroll', place);
     };
-  }, [open, filtered.length, searchable, portalContainer]);
+  }, [open, filtered.length, searchable, portalContainer, popupMinWidth]);
 
   useLayoutEffect(() => {
     if (open) (searchable ? search.current : list.current)?.focus();
@@ -202,7 +205,7 @@ export function Select(props: SelectProps) {
           show(event.key === 'Home' ? 'first' : event.key === 'End' || event.key === 'ArrowUp' ? 'last' : undefined);
         }
       }}>
-      <span className="custom-select-value">{selectedLabel}</span>{props.multiple && selected.length > 1 && <span className="custom-select-count" aria-hidden="true">+{selected.length - 1}</span>}<ChevronDown className="custom-select-chevron" size={16} aria-hidden="true" />
+      <span className="custom-select-value">{selected[0] && renderValue ? renderValue(selected[0]) : selectedLabel}</span>{props.multiple && selected.length > 1 && <span className="custom-select-count" aria-hidden="true">+{selected.length - 1}</span>}<ChevronDown className="custom-select-chevron" size={16} aria-hidden="true" />
     </button>
     {present && createPortal(<div ref={popup} className={`custom-select-popup${open ? ' is-open' : ''}${position.above ? ' opens-above' : ''}`} aria-hidden={!open} inert={!open} data-base-ui-swipe-ignore="" style={{ position: portalContainer ? 'absolute' : 'fixed', top: position.top, left: position.left, width: position.width, maxHeight: position.maxHeight, transform: position.above ? 'translateY(-100%)' : undefined }} onKeyDown={navigate}
       onBlur={(event) => { if (event.relatedTarget && event.relatedTarget !== trigger.current && !event.currentTarget.contains(event.relatedTarget as Node)) close(); }}>
@@ -212,7 +215,7 @@ export function Select(props: SelectProps) {
         {filtered.map((option, index) => <button key={option.value} id={`${id}-option-${index}`} type="button" role="option" tabIndex={-1} disabled={option.disabled} aria-selected={isSelected(option.value)}
           className={`custom-select-option${index === active ? ' is-active' : ''}${isSelected(option.value) ? ' is-selected' : ''}`}
           onMouseDown={(event) => event.preventDefault()} onMouseMove={() => { if (!option.disabled) setActive(index); }} onClick={() => choose(option)}>
-          <span className="custom-select-option-label">{option.label}</span>{props.multiple
+          <span className="custom-select-option-label">{renderOption ? renderOption(option) : option.label}</span>{props.multiple
             ? <span className="custom-select-checkbox" aria-hidden="true">{isSelected(option.value) && <Check size={13} />}</span>
             : isSelected(option.value) && <Check size={16} aria-hidden="true" />}
         </button>)}

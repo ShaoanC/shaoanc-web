@@ -68,3 +68,5 @@ h1, h2, h3, p { margin: 0; }
 .checkbox-input { appearance: auto; width: 1em; height: 1em; margin: 0; opacity: 1; accent-color: #222; }
 .checkbox-mark { display: none; }
 
+.export-followup { margin-block: .65em; overflow-wrap: anywhere; }
+.export-followup > p { font-weight: 700; white-space: pre-wrap; break-after: avoid; }

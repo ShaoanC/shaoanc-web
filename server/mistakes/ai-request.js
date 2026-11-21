@@ -169,4 +169,4 @@ function analysisText(content) {
     return content.filter((part) => part && (part.type === 'text' || part.type === 'output_text') && typeof part.text === 'string').map((part) => part.text).join('');
 }
 
-module.exports = { requestCompletion, requestAnalysis, aiErrorCategory, isAiTimeout };
+module.exports = { requestCompletion, requestAnalysis, aiErrorCategory, isAiTimeout, recordAiCall, httpAiError, analysisText };

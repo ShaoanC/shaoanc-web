@@ -29,10 +29,14 @@ interface MobileDrawerProps {
   /** Replaces the default title block; it must render a `Drawer.Title`. */
   heading?: ReactNode;
   headerActions?: ReactNode;
+  snapPoints?: number[];
+  snapPoint?: Drawer.Root.SnapPoint | null;
+  onSnapPointChange?: Drawer.Root.Props['onSnapPointChange'];
+  nonModal?: boolean;
   children: (portalContainer: HTMLElement | null) => ReactNode;
 }
 
-export function MobileDrawer({ open, onOpenChange, onOpenChangeComplete, title, description, closeLabel = '关闭', triggerRef, className = '', footer, heading, headerActions, children }: MobileDrawerProps) {
+export function MobileDrawer({ open, onOpenChange, onOpenChangeComplete, title, description, closeLabel = '关闭', triggerRef, className = '', footer, heading, headerActions, snapPoints, snapPoint, onSnapPointChange, nonModal = false, children }: MobileDrawerProps) {
   const [mounted, setMounted] = useState(false);
   const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
@@ -40,10 +44,12 @@ export function MobileDrawer({ open, onOpenChange, onOpenChangeComplete, title, 
   // Conditional callers must also enter through the closed state to animate.
   useEffect(() => setMounted(true), []);
 
-  return <Drawer.Root open={mounted && open} onOpenChange={onOpenChange} onOpenChangeComplete={onOpenChangeComplete} modal swipeDirection="down">
+  return <Drawer.Root open={mounted && open} onOpenChange={onOpenChange} onOpenChangeComplete={onOpenChangeComplete}
+    modal={!nonModal} disablePointerDismissal={nonModal} snapPoints={snapPoints} snapPoint={snapPoint}
+    onSnapPointChange={onSnapPointChange} snapToSequentialPoints swipeDirection="down">
     <Drawer.VirtualKeyboardProvider>
       <Drawer.Portal>
-        <Drawer.Backdrop className="mobile-filters-backdrop" />
+        {!nonModal && <Drawer.Backdrop className="mobile-filters-backdrop" />}
         <Drawer.Viewport className="mobile-filters-viewport">
           <Drawer.Popup ref={setPortalContainer} className={`mobile-filters-popup mobile-drawer-popup ${className}`.trim()} initialFocus={closeButton} finalFocus={triggerRef}>
             <div className="mobile-filters-drag-area" aria-hidden="true"><span className="mobile-filters-handle" /></div>

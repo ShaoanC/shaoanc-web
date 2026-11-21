@@ -1,4 +1,4 @@
-const API_BASE = '/api/mistakes';
+export const API_BASE = '/api/mistakes';
 
 let activeRequests = 0;
 let activityCycle = 0;
@@ -29,7 +29,13 @@ export class ApiError extends Error {
   constructor(message: string, public status: number, public code?: string) { super(message); }
 }
 
-export async function api<T>(path: string, options: RequestInit = {}, activity: { background?: boolean } = {}): Promise<T> {
+export function apiError(response: Response, result: { message?: string; code?: string } | null) {
+  if (result?.code === 'ACCOUNT_FROZEN') window.dispatchEvent(new Event('mistakes:account-frozen'));
+  if (result?.code === 'BACKUP_READ_ONLY') window.dispatchEvent(new CustomEvent('mistakes:backup-status', { detail: { readOnly: true } }));
+  return new ApiError(result?.message || '请求失败，请稍后重试。', response.status, result?.code);
+}
+
+export async function api<T>(path: string, options: RequestInit = {}, activity: { background?: boolean; notifyUpdate?: boolean } = {}): Promise<T> {
   if (!activity.background) updateApiActivity(1);
   try {
     const response = await fetch(`${API_BASE}${path}`, {
@@ -44,11 +50,9 @@ export async function api<T>(path: string, options: RequestInit = {}, activity: 
       throw error;
     });
     if (!response.ok || !result?.success) {
-      if (result?.code === 'ACCOUNT_FROZEN') window.dispatchEvent(new Event('mistakes:account-frozen'));
-      if (result?.code === 'BACKUP_READ_ONLY') window.dispatchEvent(new CustomEvent('mistakes:backup-status', { detail: { readOnly: true } }));
-      throw new ApiError(result?.message || '请求失败，请稍后重试。', response.status, result?.code);
+      throw apiError(response, result);
     }
-    if (options.method && options.method !== 'GET') window.dispatchEvent(new Event('mistakes:updated'));
+    if (activity.notifyUpdate !== false && options.method && options.method !== 'GET') window.dispatchEvent(new Event('mistakes:updated'));
     return result.data as T;
   } finally {
     if (!activity.background) updateApiActivity(-1);

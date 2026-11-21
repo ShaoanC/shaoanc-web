@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const dotenv = require('dotenv');
 const { fail } = require('./auth');
+const { resolveVendorIcon, vendorNames } = require('../../shared/vendor-icon.mjs');
 
 const configPath = path.resolve(process.env.MISTAKES_AI_CONFIG_PATH || path.join(__dirname, '..', '..', '.env.ai'));
 const profiles = {
@@ -10,15 +11,20 @@ const profiles = {
     analysis: { prefix: 'MISTAKES_AI_ANALYSIS', name: '生成解析' },
     analysisFallback: { prefix: 'MISTAKES_AI_ANALYSIS_FALLBACK', name: '解析模型升级' }
 };
+const followupPrefix = 'MISTAKES_AI_FOLLOWUP';
 
 function configProfile(profile = 'general') {
     if (!Object.hasOwn(profiles, profile)) fail(400, '无效的 AI 配置类型');
     return profiles[profile];
 }
 
+function readSavedConfig() {
+    return fs.existsSync(configPath) ? dotenv.parse(fs.readFileSync(configPath)) : {};
+}
+
 function readConfig(profile = 'general') {
     const { prefix } = configProfile(profile);
-    const saved = fs.existsSync(configPath) ? dotenv.parse(fs.readFileSync(configPath)) : {};
+    const saved = readSavedConfig();
     return {
         enabled: saved[`${prefix}_ENABLED`] === 'true',
         baseUrl: saved[`${prefix}_BASE_URL`] || '',
@@ -28,6 +34,15 @@ function readConfig(profile = 'general') {
 }
 
 function publicConfig(admin = false, profile = 'general') {
+    if (profile === 'followup') {
+        const settings = readFollowupConfig();
+        const enabled = availableFollowupProfiles(settings).length > 0;
+        if (!admin) return { enabled, configured: enabled };
+        return {
+            ...settings,
+            profiles: settings.profiles.map(({ apiKey, ...entry }) => ({ ...entry, hasApiKey: Boolean(apiKey) }))
+        };
+    }
     const config = readConfig(profile);
     const configured = Boolean(config.baseUrl && config.model && config.apiKey);
     return {
@@ -37,14 +52,8 @@ function publicConfig(admin = false, profile = 'general') {
     };
 }
 
-function saveConfig(body, profile = 'general') {
-    const { prefix } = configProfile(profile);
-    const existing = readConfig(profile);
-    const config = { ...existing };
-    if (body.enabled !== undefined) {
-        if (typeof body.enabled !== 'boolean') fail(400, '启用状态须为布尔值');
-        config.enabled = body.enabled;
-    }
+function configureEndpoint(body, existing, enabled) {
+    const config = { baseUrl: existing.baseUrl, model: existing.model, apiKey: existing.apiKey };
     for (const key of ['baseUrl', 'model', 'apiKey']) {
         if (body[key] === undefined || (key === 'apiKey' && body[key] === '')) continue;
         if (typeof body[key] !== 'string' || /[\r\n\u0000]/.test(body[key]) || body[key].length > 2048) fail(400, 'AI 配置格式不正确');
@@ -56,7 +65,17 @@ function saveConfig(body, profile = 'general') {
         if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) fail(400, 'AI 接口须为 HTTP(S) 基础地址');
         config.baseUrl = config.baseUrl.replace(/\/+$/, '');
     }
-    if (config.enabled && (!config.baseUrl || !config.model || !config.apiKey)) fail(400, '启用前请填写接口地址、模型和密钥');
+    if (enabled && (!config.baseUrl || !config.model || !config.apiKey)) fail(400, '启用前请填写接口地址、模型和密钥');
+    return config;
+}
+
+function saveConfig(body, profile = 'general') {
+    if (profile === 'followup') return saveFollowupConfig(body);
+    const { prefix } = configProfile(profile);
+    const existing = readConfig(profile);
+    const { enabled = existing.enabled } = body;
+    if (typeof enabled !== 'boolean') fail(400, '启用状态须为布尔值');
+    const config = { ...configureEndpoint(body, existing, enabled), enabled };
     if (profile === 'analysis' || profile === 'analysisFallback') {
         const other = readConfig(profile === 'analysis' ? 'analysisFallback' : 'analysis');
         if (config.enabled && other.enabled && config.baseUrl === other.baseUrl && config.model === other.model) {
@@ -67,15 +86,80 @@ function saveConfig(body, profile = 'general') {
     for (const value of [config.baseUrl, config.model, config.apiKey]) {
         if (/["'`]/.test(value)) fail(400, 'AI 配置不能包含引号');
     }
+    writeConfig({
+        [`${prefix}_ENABLED`]: String(config.enabled), [`${prefix}_BASE_URL`]: config.baseUrl,
+        [`${prefix}_MODEL`]: config.model, [`${prefix}_API_KEY`]: config.apiKey
+    });
+    return publicConfig(true, profile);
+}
+
+function writeConfig(values) {
     fs.mkdirSync(path.dirname(configPath), { recursive: true });
     const temporaryPath = `${configPath}.tmp`;
-    const values = { [`${prefix}_ENABLED`]: String(config.enabled), [`${prefix}_BASE_URL`]: config.baseUrl,
-        [`${prefix}_MODEL`]: config.model, [`${prefix}_API_KEY`]: config.apiKey };
     const saved = fs.existsSync(configPath) ? fs.readFileSync(configPath, 'utf8') : '';
     const retained = saved.split(/\r?\n/).filter((line) => !Object.hasOwn(values, line.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/)?.[1] || ''));
     fs.writeFileSync(temporaryPath, retained.join('\n').replace(/\n*$/, '\n') + Object.entries(values).map(([key, value]) => `${key}='${value}'`).join('\n') + '\n', { mode: 0o600 });
     fs.renameSync(temporaryPath, configPath);
-    return publicConfig(true, profile);
+}
+
+function followupProfile(entry, savedKey = '') {
+    if (!entry || typeof entry.id !== 'string' || !/^[\w-]{1,64}$/.test(entry.id)) fail(400, '无效的追问模型配置编号');
+    const {
+        id, name = '', tierLabel = '', enabledForFollowup = false, creditCost = 1,
+        thinkingEffort = '', vendorIcon = '', sortOrder = null, protocol = 'openai', vision = true
+    } = entry;
+    if (typeof name !== 'string' || !name.trim() || typeof tierLabel !== 'string') fail(400, '请填写追问配置名称');
+    if (typeof enabledForFollowup !== 'boolean' || typeof vision !== 'boolean' || !['openai', 'gemini'].includes(protocol)) {
+        fail(400, '请选择有效的启用、接口协议和图片输入设置');
+    }
+    if (!Number.isSafeInteger(creditCost) || creditCost < 1) fail(400, '积分倍率须为正整数');
+    if (sortOrder !== null && !Number.isFinite(sortOrder)) fail(400, '排序须为数字');
+    if (typeof thinkingEffort !== 'string' || thinkingEffort.length > 32) fail(400, '无效的思考强度');
+    if (typeof vendorIcon !== 'string' || (vendorIcon && !Object.hasOwn(vendorNames, vendorIcon))) fail(400, '请选择有效的厂商 Logo');
+    const endpoint = configureEndpoint(entry, { baseUrl: '', model: '', apiKey: savedKey }, enabledForFollowup);
+    return {
+        id, name: name.trim(), tierLabel: tierLabel.trim(), enabledForFollowup, creditCost, thinkingEffort: thinkingEffort.trim(),
+        vendorIcon, sortOrder, protocol, vision, ...endpoint
+    };
+}
+
+function readFollowupConfig() {
+    const saved = readSavedConfig();
+    const dailyCreditLimit = Number(saved[`${followupPrefix}_DAILY_CREDIT_LIMIT`] || 60);
+    let entries;
+    try { entries = JSON.parse(saved[`${followupPrefix}_PROFILES`] || '[]'); } catch { fail(400, '追问模型配置须为 JSON 数组'); }
+    if (!Array.isArray(entries)) fail(400, '追问模型配置须为 JSON 数组');
+    return {
+        profiles: entries.map((entry) => followupProfile(entry)),
+        defaultProfileId: saved[`${followupPrefix}_DEFAULT_PROFILE_ID`] || null,
+        dailyCreditLimit: Number.isSafeInteger(dailyCreditLimit) && dailyCreditLimit > 0 ? dailyCreditLimit : 60
+    };
+}
+
+function availableFollowupProfiles(settings) {
+    return settings.profiles.filter((entry) => entry.enabledForFollowup)
+        .sort((a, b) => (a.sortOrder ?? a.creditCost) - (b.sortOrder ?? b.creditCost) || a.creditCost - b.creditCost);
+}
+
+function defaultFollowupProfile(settings, available) {
+    return available.find(({ id }) => id === settings.defaultProfileId) ?? available[0];
+}
+
+function saveFollowupConfig(body) {
+    const existing = readFollowupConfig();
+    const { dailyCreditLimit = existing.dailyCreditLimit, defaultProfileId = existing.defaultProfileId } = body;
+    if (!Number.isSafeInteger(dailyCreditLimit) || dailyCreditLimit < 1) fail(400, '每日追问积分上限须为正整数');
+    if (body.profiles !== undefined && !Array.isArray(body.profiles)) fail(400, '追问模型配置须为数组');
+    const savedKeys = new Map(existing.profiles.map(({ id, apiKey }) => [id, apiKey]));
+    const entries = body.profiles?.map((entry) => followupProfile(entry, savedKeys.get(entry?.id))) ?? existing.profiles;
+    if (new Set(entries.map(({ id }) => id)).size !== entries.length) fail(400, '追问模型配置编号不能重复');
+    const selected = defaultFollowupProfile({ defaultProfileId }, availableFollowupProfiles({ profiles: entries }));
+    writeConfig({
+        [`${followupPrefix}_DAILY_CREDIT_LIMIT`]: String(dailyCreditLimit),
+        [`${followupPrefix}_DEFAULT_PROFILE_ID`]: selected?.id || '',
+        [`${followupPrefix}_PROFILES`]: JSON.stringify(entries).replace(/'/g, '\\u0027')
+    });
+    return publicConfig(true, 'followup');
 }
 
 function requireAiConfig(profile = 'general') {
@@ -123,4 +207,5 @@ function safeAiError(error, { details = false } = {}) {
     return error.status === 503 && /^管理员尚未启用并配置/.test(error.message) ? error.message : 'AI 服务暂时不可用，请稍后重试';
 }
 
-module.exports = { readConfig, publicConfig, saveConfig, requireAiConfig, safeAiError };
+module.exports = { readConfig, publicConfig, saveConfig, requireAiConfig, safeAiError,
+    readFollowupConfig, availableFollowupProfiles, defaultFollowupProfile };
