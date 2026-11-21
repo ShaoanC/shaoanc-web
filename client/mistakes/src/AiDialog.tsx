@@ -1,6 +1,7 @@
 import { Dialog } from '@base-ui/react/dialog';
 import { X } from 'lucide-react';
 import { createContext, useContext, useState, type ReactNode } from 'react';
+import { MobileDrawer, useMobileLayout } from './MobileDrawer';
 import { ScrollArea } from './ScrollArea';
 import './photo-ai.css';
 
@@ -9,6 +10,12 @@ export const useAiDialogContainer = () => useContext(AiDialogContainer);
 
 export function AiDialog({ open, onClose, title, description, children, wide = false, suspended = false, className = '', backdropClassName = '', scrollBody = false }: { open: boolean; onClose: () => void; title: string; description?: string; children: ReactNode; wide?: boolean; suspended?: boolean; className?: string; backdropClassName?: string; scrollBody?: boolean }) {
   const [container, setContainer] = useState<HTMLElement | null>(null);
+  const mobile = useMobileLayout();
+
+  if (mobile) return <MobileDrawer open={open} onOpenChange={(next) => { if (!next && !suspended) onClose(); }}
+    title={title} description={description} className={`photo-mobile-drawer ${className}`.trim()} nonModal={suspended}>
+    {(popup) => <AiDialogContainer.Provider value={popup}>{children}</AiDialogContainer.Provider>}
+  </MobileDrawer>;
 
   return <Dialog.Root open={open} modal={!suspended} disablePointerDismissal={suspended} onOpenChange={(value, event) => { if (suspended) event.cancel(); else if (!value) onClose(); }}>
     <Dialog.Portal><Dialog.Backdrop className={`photo-dialog-backdrop ${backdropClassName}`.trim()} /><Dialog.Popup ref={setContainer} className={`photo-dialog${wide ? ' photo-dialog-wide' : ''} ${className}`.trim()}>

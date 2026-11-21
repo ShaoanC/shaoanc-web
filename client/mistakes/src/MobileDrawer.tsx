@@ -53,13 +53,13 @@ export function MobileDrawer({ open, onOpenChange, onOpenChangeComplete, title, 
         <Drawer.Viewport className="mobile-filters-viewport">
           <Drawer.Popup ref={setPortalContainer} className={`mobile-filters-popup mobile-drawer-popup ${className}`.trim()} initialFocus={closeButton} finalFocus={triggerRef}>
             <div className="mobile-filters-drag-area" aria-hidden="true"><span className="mobile-filters-handle" /></div>
-            <header className="mobile-filters-heading" data-base-ui-swipe-ignore>
+            <header className="mobile-filters-heading">
               {heading ?? <div>
                 <Drawer.Title className="mobile-filters-title">{title}</Drawer.Title>
                 {description && <Drawer.Description className="mobile-filters-description">{description}</Drawer.Description>}
               </div>}
-              {headerActions}
-              <Drawer.Close ref={closeButton} className="icon-button mobile-filters-close" aria-label={closeLabel}><X size={20} /></Drawer.Close>
+              {headerActions && <div className="mobile-drawer-header-actions" data-base-ui-swipe-ignore>{headerActions}</div>}
+              <Drawer.Close ref={closeButton} className="icon-button mobile-filters-close" aria-label={closeLabel} data-base-ui-swipe-ignore><X size={20} /></Drawer.Close>
             </header>
             <Drawer.Content className="mobile-filters-content scroll-area scroll-area--vertical" data-base-ui-swipe-ignore>{children(portalContainer)}</Drawer.Content>
             {footer && <footer className="mobile-filters-footer" data-base-ui-swipe-ignore>{footer}</footer>}

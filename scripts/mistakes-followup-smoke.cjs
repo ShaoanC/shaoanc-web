@@ -257,29 +257,63 @@ async function checkViewport(owner, first, second, width) {
         assert.ok(await drawer.getByText(exportText, { exact: false }).count());
         if (mobile) {
             const cdp = await context.newCDPSession(page);
-            async function dragHandle(distance) {
-                const box = await drawer.locator('.mobile-filters-drag-area').boundingBox();
+            async function drag(target, distance) {
+                const box = await target.boundingBox();
                 const x = Math.round(box.x + box.width / 2);
                 const y = Math.round(box.y + box.height / 2);
+                const travel = Math.min(distance, page.viewportSize().height - y - 4);
                 await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
                 for (const progress of [.12, .3, .5, .75, 1]) {
-                    await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: y + Math.round(distance * progress) }] });
+                    await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: y + Math.round(travel * progress) }] });
                 }
                 await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
             }
             const waitForExpanded = () => page.waitForFunction(() => {
                 const popup = document.querySelector('.followup-mobile');
-                return popup?.getBoundingClientRect().top < 130 && popup.getAnimations().length === 0;
+                return popup && Math.abs(popup.getBoundingClientRect().top) < 2 && popup.getAnimations().length === 0;
             });
             const waitForPeek = () => page.waitForFunction(() => {
                 const popup = document.querySelector('.followup-mobile');
                 const top = popup?.getBoundingClientRect().top;
                 return top > 360 && top < 430 && popup.getAnimations().length === 0;
             });
-            await input.fill('切换错题');
+            const pageY = await page.evaluate(() => scrollY);
+            const handle = drawer.locator('.mobile-filters-drag-area');
+            await drag(drawer.getByRole('heading', { name: '追问 AI' }), -200);
             await waitForExpanded();
-            await dragHandle(300);
+            await drag(input, -120);
+            assert.equal(await page.evaluate(() => scrollY), pageY);
+            await input.fill('切换错题');
+            // Model a keyboard that shrinks only the visual viewport, as on iOS.
+            await page.evaluate(() => {
+                Object.defineProperty(visualViewport, 'height', { configurable: true, value: innerHeight - 320 });
+                visualViewport.dispatchEvent(new Event('resize'));
+            });
+            await page.waitForFunction(() => Math.abs(document.querySelector('.followup-mobile .mobile-filters-footer')
+                .getBoundingClientRect().bottom - visualViewport.height) < 2);
+            assert.ok(await drawer.evaluate((popup) => {
+                const backing = getComputedStyle(popup.parentElement, '::after');
+                return backing.backgroundColor === getComputedStyle(popup).backgroundColor
+                    && parseFloat(backing.height) >= innerHeight - visualViewport.height;
+            }), 'The area behind the keyboard toolbar is covered by the drawer surface');
+            await drag(handle, 200);
+            await drawer.waitFor({ state: 'hidden' });
+            await page.evaluate(() => {
+                delete visualViewport.height;
+                visualViewport.dispatchEvent(new Event('resize'));
+            });
+            assert.equal(await page.evaluate(() => scrollY), pageY);
+            for (const [action, title] of [['查看上传图片', '之前上传的图片'], ['导出这道题', '导出错题']]) {
+                await page.getByRole('button', { name: action, exact: true }).click();
+                const sheet = page.getByRole('dialog', { name: title, exact: true });
+                await sheet.evaluate((popup) => Promise.all(popup.getAnimations().map((animation) => animation.finished)));
+                await drag(sheet.getByRole('heading', { name: title, exact: true }), 400);
+                await sheet.waitFor({ state: 'hidden' });
+            }
+            await cdp.detach();
+            await entry.click();
             await waitForPeek();
+            assert.equal(await input.inputValue(), '切换错题');
             await send.click();
             await drawer.getByText('正在生成…', { exact: true }).waitFor();
             await waitForExpanded();
@@ -317,6 +351,7 @@ async function checkViewport(owner, first, second, width) {
         assert.equal(await entry.count(), 0);
         assert.equal(await page.locator('.followup-turn').count(), 0);
         await page.getByRole('button', { name: '思考完成，查看答案与分析' }).click();
+        await page.waitForFunction(() => document.querySelector('.answer-reveal.open')?.getAnimations().length === 0);
         await entry.scrollIntoViewIfNeeded();
         const y = await page.evaluate(() => scrollY);
         await entry.click();

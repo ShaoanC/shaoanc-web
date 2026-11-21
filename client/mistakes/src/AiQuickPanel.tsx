@@ -94,7 +94,7 @@ export function AiQuickPanel({ open, onOpenChange, request, triggerRef }: {
   const status = tasks.error ? tasks.updatedAt ? '连接异常，已保留上次结果' : '暂时无法连接'
     : !tasks.loaded ? '正在同步…' : activeCount ? `${activeCount} 项处理中 · 自动更新` : tasks.updatedAt ? `已同步 ${new Date(tasks.updatedAt).toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' })}` : '自动更新';
   const heading = reviewId
-    ? <div className="quick-heading"><button type="button" className="icon-button quick-back" aria-label="返回任务" onClick={showList}><ArrowLeft size={20} /></button><div className="quick-heading-copy"><Dialog.Title className="quick-eyebrow">AI 任务</Dialog.Title><p className="quick-title">{reviewTitle(review)}</p></div></div>
+    ? <div className="quick-heading"><button type="button" className="icon-button quick-back" aria-label="返回任务" data-base-ui-swipe-ignore onClick={showList}><ArrowLeft size={20} /></button><div className="quick-heading-copy"><Dialog.Title className="quick-eyebrow">AI 任务</Dialog.Title><p className="quick-title">{reviewTitle(review)}</p></div></div>
     : <div className="quick-heading"><div className="quick-heading-copy"><Dialog.Title className="quick-title">AI 任务</Dialog.Title><p className={`quick-sync${tasks.error ? ' is-error' : activeCount ? ' is-live' : ''}`}><span className="quick-live-dot" aria-hidden="true" />{status}</p></div></div>;
   const headerActions = typing
     ? <button type="button" className="button secondary quick-done" onClick={dismissSoftKeyboard}>完成</button>

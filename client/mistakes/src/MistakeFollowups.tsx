@@ -15,7 +15,7 @@ import type { Mistake } from './types';
 import './mistake-followups.css';
 
 const peekHeight = 0.54;
-const expandedHeight = 0.92;
+const expandedHeight = 1;
 const mobileSnapPoints = [peekHeight, expandedHeight];
 const background = { background: true, notifyUpdate: false };
 const FollowupMarkdown = memo(MarkdownContent);
@@ -121,7 +121,7 @@ export function MistakeFollowups({ mistake }: { mistake: Mistake }) {
   const cancelNewChat = useRef<HTMLButtonElement>(null);
   const firstPrompt = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
-  const [snapPoint, setSnapPoint] = useState<string | number | null>(peekHeight);
+  const [expanded, setExpanded] = useState(false);
   const [history, setHistory] = useState<FollowupHistory | null>(null);
   const [prompts, setPrompts] = useState<string[]>([]);
   const [input, setInput] = useState('');
@@ -224,7 +224,7 @@ export function MistakeFollowups({ mistake }: { mistake: Mistake }) {
   function show(value: boolean) {
     if (value) {
       followTail.current = true;
-      setSnapPoint(currentStream.current || history?.activeMessageId ? expandedHeight : peekHeight);
+      setExpanded(currentStream.current || Boolean(history?.activeMessageId));
       setEnteringId(null);
       setPrompts(pickFollowupPrompts(mistake.subjectId));
     } else {
@@ -234,7 +234,7 @@ export function MistakeFollowups({ mistake }: { mistake: Mistake }) {
   }
 
   function expandDrawer() {
-    if (mobile) setSnapPoint(expandedHeight);
+    if (mobile) setExpanded(true);
   }
 
   async function send(question: string, retryMessageId?: number) {
@@ -398,13 +398,19 @@ export function MistakeFollowups({ mistake }: { mistake: Mistake }) {
   </form>;
 
   return <>
-    <button className="button secondary followup-trigger" ref={trigger} type="button" aria-haspopup="dialog" aria-expanded={open}
-      onClick={() => show(!open)}><MessageCircle size={17} />追问 AI
-      {Boolean(history?.count) && <span className="count-pill">{history?.count}</span>}
+    <button className="followup-trigger" ref={trigger} type="button" aria-haspopup="dialog" aria-expanded={open}
+      onClick={() => show(!open)}><MessageCircle size={16} aria-hidden="true" />追问 AI
+      {Boolean(history?.count) && <span className="followup-count"><span className="visually-hidden">已有追问 </span>{history?.count}</span>}
     </button>
-    {mobile ? <MobileDrawer open={open} onOpenChange={show} title="追问 AI" closeLabel="关闭追问" className="followup-mobile"
-      triggerRef={trigger} snapPoints={mobileSnapPoints} snapPoint={snapPoint} onSnapPointChange={setSnapPoint}
-      nonModal headerActions={headerActions} footer={composer}>
+    {mobile ? <MobileDrawer open={open} onOpenChange={show} title="追问 AI" closeLabel="关闭追问"
+      className={expanded ? 'followup-mobile followup-expanded' : 'followup-mobile'}
+      triggerRef={trigger} snapPoints={mobileSnapPoints} snapPoint={expanded ? expandedHeight : peekHeight}
+      onSnapPointChange={(point, event) => {
+        if (event.reason !== 'swipe') return;
+        if (point === expandedHeight) setExpanded(true);
+        else if (point === peekHeight && expanded) show(false);
+      }}
+      nonModal={!expanded} headerActions={headerActions} footer={composer}>
       {() => log}
     </MobileDrawer> : <Dialog.Root open={open} onOpenChange={show} modal={false} disablePointerDismissal>
       <Dialog.Portal><Dialog.Popup className="followup-side" finalFocus={trigger}>

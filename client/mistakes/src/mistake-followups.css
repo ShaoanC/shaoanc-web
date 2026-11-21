@@ -1,11 +1,43 @@
-.followup-trigger { gap: 8px; white-space: nowrap; }
+.followup-trigger {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 5px 11px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 9px;
+  background: var(--primary-soft);
+  color: var(--primary-dark);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.followup-trigger::after { content: ''; position: absolute; inset: -5px 0; }
+.followup-trigger:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.followup-trigger:is(:active, [aria-expanded="true"]) { border-color: var(--primary); }
+@media (hover: hover) {
+  .followup-trigger:hover { border-color: var(--border-medium); background: var(--surface-4); }
+}
+.followup-count {
+  padding-inline-start: 7px;
+  border-inline-start: 1px solid var(--border-medium);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
 .detail-document .section-heading:has(.followup-trigger) { flex-wrap: wrap; }
 .detail-document .section-heading .followup-trigger { margin-inline-start: auto; }
 .revealed-content .followup-trigger { justify-self: start; }
 
 .followup-mobile.mobile-filters-popup {
-  height: 92%;
-  max-height: 92%;
+  height: 100%;
+  max-height: 100%;
+  overflow: hidden;
+  overscroll-behavior: contain;
   box-sizing: border-box;
   padding-bottom: var(--drawer-snap-point-offset, 0px);
   transform: translateY(calc(var(--drawer-snap-point-offset, 0px) + var(--drawer-swipe-movement-y, 0px)));
@@ -13,9 +45,19 @@
   box-shadow: 0 -8px 30px #20392e24;
 }
 .followup-mobile.mobile-filters-popup:is([data-starting-style], [data-ending-style]) { transform: translateY(100%); }
+.followup-expanded.mobile-filters-popup { border: 0; border-radius: 0; }
 .mobile-filters-viewport:has(.followup-mobile) {
   z-index: 1202;
   bottom: var(--drawer-keyboard-inset, 0px);
+}
+/* Safari shows page pixels behind its translucent keyboard toolbar below the visual viewport. */
+.mobile-filters-viewport:has(> .followup-expanded)::after {
+  content: '';
+  position: absolute;
+  inset: 100% 0 auto;
+  height: 100lvh;
+  background: var(--surface-2);
+  pointer-events: none;
 }
 .followup-mobile .mobile-filters-heading { align-items: center; gap: 8px; padding: 0 16px 9px; }
 .followup-mobile .mobile-filters-heading > div:first-child { margin-right: auto; }

@@ -151,12 +151,9 @@
 .photo-history-order { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
 .photo-history-number { color: var(--primary); font-weight: 600; margin-right: auto; }
 @media (max-width: 640px) {
-  .photo-dialog { width: 100vw; max-height: 94dvh; top: auto; bottom: 0; left: 0; transform: none; border-radius: 12px 12px 0 0; padding: 20px 16px max(24px, env(safe-area-inset-bottom)); }
-  .photo-dialog-heading h2 { font-size: 21px; }
-  /* Phones get a bottom sheet that slides up rather than a fading card. */
-  .photo-dialog:not(.ai-tasks-dialog) { transition: translate 400ms var(--sheet-ease); }
-  .photo-dialog:not(.ai-tasks-dialog):is([data-starting-style], [data-ending-style]) { opacity: 1; scale: 1; translate: 0 100%; }
-  .photo-dialog:not(.ai-tasks-dialog)[data-ending-style] { transition-duration: 280ms; transition-timing-function: var(--sheet-ease); }
+  .mobile-filters-backdrop:has(+ .mobile-filters-viewport > .photo-mobile-drawer) { z-index: 1200; }
+  .mobile-filters-viewport:has(> .photo-mobile-drawer) { z-index: 1201; }
+  .mobile-filters-popup.photo-mobile-drawer { max-height: 94dvh; }
   .photo-thumbnails { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 8px 0; }
   .photo-thumbnail { padding: 3px 5px; }
   .photo-thumbnail img { height: 62px; }
@@ -169,8 +166,7 @@
   .photo-library-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
   .photo-library-photo { padding: 8px; }
   .photo-library-photo img { height: 120px; }
-  .photo-dialog:has(.ai-review-grid) { width: 100vw; }
-  .ai-review-tabs { display: flex; gap: 8px; position: sticky; top: -20px; background: var(--surface-2); padding: 8px 0 12px; z-index: 4; }
+  .ai-review-tabs { display: flex; gap: 8px; position: sticky; top: 0; background: var(--surface-2); padding: 8px 0 12px; z-index: 4; }
   .ai-review-tabs button { flex: 1; }
   .ai-review-grid { display: block; }
   .ai-review-source, .ai-review-result { display: none; border: 0; padding: 0; }
