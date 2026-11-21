@@ -199,6 +199,8 @@ async function checkStreamingStates(actor, mistakeId, width) {
         await page.getByRole('button', { name: /追问 AI/ }).click();
         const drawer = page.getByRole('dialog', { name: '追问 AI' });
         const turn = drawer.locator('.followup-turn').last();
+        const thoughtToggle = turn.getByRole('button', { name: '思考过程', exact: true });
+        const thoughtText = turn.getByText('核对条件', { exact: true });
         const word = turn.locator('.followup-thinking-word');
         const wave = turn.locator('.followup-wave');
         const writing = turn.locator('.followup-writing');
@@ -211,8 +213,11 @@ async function checkStreamingStates(actor, mistakeId, width) {
         for (const outcome of ['completed', 'cancelled', 'failed']) {
             await drawer.getByRole('textbox', { name: '输入追问' }).fill('逐步推导');
             await send.click();
-            await turn.getByText('核对条件').waitFor();
             await wave.waitFor();
+            await thoughtText.waitFor();
+            assert.equal(await thoughtToggle.getAttribute('aria-expanded'), 'true');
+            assert.equal(await drawer.getByRole('button', { name: '思考过程', exact: true }).count(), 1);
+            await drawer.locator('.followup-turn:not(:last-child) .followup-thought-toggle').waitFor({ state: 'detached' });
             const initialWord = await word.innerText();
             assert.match(initialWord, /^[A-Z][a-z ]+\.\.\.$/);
             assert.equal(await turn.getByText(/正在生成/).count(), 0);
@@ -236,8 +241,26 @@ async function checkStreamingStates(actor, mistakeId, width) {
                 loadingResponse.write('data: ' + JSON.stringify({ choices: [{ delta: { content: '解' } }] }) + '\n\n');
                 await turn.locator('.followup-answer-text').getByText('解', { exact: true }).waitFor();
                 await writing.waitFor();
+                assert.equal(await thoughtToggle.getAttribute('aria-expanded'), 'false');
+                await thoughtText.waitFor({ state: 'hidden' });
                 assert.equal(await turn.getByText(/书写中/).count(), 0);
-                assert.ok(await writing.evaluate((status) => parseFloat(getComputedStyle(status, '::before').width) > 0));
+                const dots = writing.locator('.followup-dots > i');
+                const animations = () => dots.evaluateAll((items) => items.map((dot) => getComputedStyle(dot).animationName));
+                assert.deepEqual(await animations(), Array(3).fill('followup-dot-bounce'));
+                const delays = await dots.evaluateAll((items) => items.map((dot) => parseFloat(getComputedStyle(dot).animationDelay)));
+                assert.ok(delays[0] < delays[1] && delays[1] < delays[2]);
+                if (outcome === 'completed') {
+                    await thoughtToggle.click();
+                    await thoughtText.waitFor();
+                    loadingResponse.write('data: ' + JSON.stringify({ choices: [{ delta: { content: '题' } }] }) + '\n\n');
+                    await turn.locator('.followup-answer-text').getByText('解题', { exact: true }).waitFor();
+                    assert.equal(await thoughtToggle.getAttribute('aria-expanded'), 'true');
+                    assert.ok(await thoughtText.evaluate((text) => getComputedStyle(text.parentElement).transitionProperty.includes('height')));
+                    await page.emulateMedia({ reducedMotion: 'reduce' });
+                    assert.deepEqual(await animations(), Array(3).fill('none'));
+                    assert.equal(await thoughtText.evaluate((text) => getComputedStyle(text.parentElement).transitionProperty), 'none');
+                    await page.emulateMedia({ reducedMotion: 'no-preference' });
+                }
                 assert.equal(await word.count() + await wave.count(), 0);
                 assert.ok(await stop.isEnabled() && await fits());
                 if (outcome === 'cancelled') {
@@ -307,14 +330,16 @@ async function checkViewport(owner, first, second, width) {
         }));
         const replies = drawer.locator('.followup-reply-meta');
         const deepReply = replies.filter({ hasText: "Claude's text" });
-        const latestThought = drawer.locator('.followup-turn').last().locator('.followup-thought[open] > div');
-        assert.ok(await latestThought.isVisible());
+        const latestThought = drawer.locator('.followup-turn').last();
+        const thoughtToggle = latestThought.getByRole('button', { name: '思考过程', exact: true });
+        assert.equal(await thoughtToggle.getAttribute('aria-expanded'), 'false');
+        assert.equal(await drawer.getByRole('button', { name: '思考过程', exact: true }).count(), 1);
+        await thoughtToggle.click();
+        await latestThought.locator('.followup-thought-text').waitFor();
+        await thoughtToggle.click();
+        await latestThought.locator('.followup-thought-text').waitFor({ state: 'hidden' });
         assert.ok(await deepReply.getByText('2,000 token').isVisible());
         assert.ok(await deepReply.locator('.followup-reply-tokens > .lucide-cpu:first-child').isVisible());
-        const thought = deepReply.locator('..').locator('.followup-thought');
-        await thought.locator('summary').click();
-        assert.ok(await thought.getByText('检查题目条件').isVisible());
-        await thought.locator('summary').click();
         assert.equal(await deepReply.getByText('-3', { exact: true }).count(), 1);
         assert.equal(await deepReply.locator('.followup-reply-charge > .lucide-coins:first-child').count(), 1);
         assert.equal(await deepReply.locator('.followup-reply-charge').getAttribute('title'), '扣除 3 积分');
@@ -422,7 +447,7 @@ async function checkViewport(owner, first, second, width) {
             await waitForPeek();
             assert.equal(await input.inputValue(), '切换错题');
             await send.click();
-            await drawer.locator('details[open]').getByText('检查题目条件').waitFor();
+            await drawer.locator('.followup-turn').last().getByRole('button', { name: '思考过程', exact: true }).waitFor();
             await drawer.locator('.followup-writing').waitFor();
             await waitForExpanded();
             await checkComposeAction(stop);

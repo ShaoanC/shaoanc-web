@@ -1,6 +1,7 @@
 import { AlertDialog } from '@base-ui/react/alert-dialog';
+import { Collapsible } from '@base-ui/react/collapsible';
 import { Dialog } from '@base-ui/react/dialog';
-import { ArrowUp, ArrowUpRight, Clock3, Coins, Cpu, MessageCircle, Square, SquarePen, X } from 'lucide-react';
+import { ArrowUp, ArrowUpRight, ChevronRight, Clock3, Coins, Cpu, MessageCircle, Square, SquarePen, X } from 'lucide-react';
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent } from 'react';
 import { toast } from 'react-toastify';
 import { api } from './api';
@@ -19,7 +20,16 @@ const expandedHeight = 1;
 const mobileSnapPoints = [peekHeight, expandedHeight];
 const background = { background: true, notifyUpdate: false };
 const FollowupMarkdown = memo(MarkdownContent);
-const thinkingWords = ['Thinking', 'Pondering', 'Reasoning', 'Untangling', 'Sketching', 'Checking steps', 'Deriving', 'Connecting'];
+const thinkingWords = [
+  'Thinking', 'Pondering', 'Reasoning', 'Untangling', 'Sketching', 'Checking steps', 'Deriving', 'Connecting',
+  'Analyzing', 'Exploring', 'Tracing', 'Comparing', 'Verifying', 'Simplifying', 'Estimating', 'Calculating',
+  'Interpreting', 'Reviewing', 'Organizing', 'Refining', 'Synthesizing', 'Visualizing', 'Outlining', 'Reframing',
+  'Mapping it out', 'Checking assumptions', 'Spotting patterns', 'Linking ideas', 'Weighing options',
+  'Testing a hunch', 'Sorting clues', 'Working backwards',
+  'Clarifying', 'Distilling', 'Decomposing', 'Retracing', 'Generalizing', 'Rearranging', 'Substituting', 'Balancing',
+  'Listing givens', 'Checking units', 'Examining cases', 'Finding bounds', 'Testing an example',
+  'Following the logic', 'Narrowing it down', 'Checking the result',
+];
 const waveBars = Array.from({ length: 8 }, (_, i) => <span key={i} style={{ '--i': i } as CSSProperties} />);
 const hasBodyText = (content: string) => /[^\s\p{Default_Ignorable_Code_Point}\p{Cc}]/u.test(content);
 
@@ -75,6 +85,25 @@ function FollowupModelOption({ profile, unavailable, compact = false }: {
   </span>;
 }
 
+function FollowupThought({ message, latest }: { message: FollowupMessage; latest: boolean }) {
+  const waitingForBody = message.status === 'streaming' && !hasBodyText(message.content);
+  const [expanded, setExpanded] = useState(waitingForBody);
+  useLayoutEffect(() => { setExpanded(waitingForBody); }, [waitingForBody]);
+
+  return <Collapsible.Root open={latest}>
+    <Collapsible.Panel className="followup-thought-slide" inert={!latest} aria-hidden={!latest || undefined}>
+      <Collapsible.Root className="followup-thought" open={expanded} onOpenChange={setExpanded}>
+        <Collapsible.Trigger className="followup-thought-toggle">
+          <ChevronRight size={14} aria-hidden="true" />思考过程
+        </Collapsible.Trigger>
+        <Collapsible.Panel className="followup-thought-slide" inert={!expanded} aria-hidden={!expanded || undefined}>
+          <div className="followup-thought-text">{message.thought}</div>
+        </Collapsible.Panel>
+      </Collapsible.Root>
+    </Collapsible.Panel>
+  </Collapsible.Root>;
+}
+
 function FollowupReplies({ messages, enteringId, readOnly, maySend, onRetry }: {
   messages: FollowupMessage[];
   enteringId: number | null;
@@ -87,6 +116,7 @@ function FollowupReplies({ messages, enteringId, readOnly, maySend, onRetry }: {
   const reply = useRef<HTMLDivElement>(null);
   const latestReply = messages.filter((message) => message.status === 'streaming' || hasBodyText(message.content)).at(-1);
   const latestId = latestReply?.id;
+  const newestMessageId = messages.at(-1)?.id;
 
   useLayoutEffect(() => {
     const list = turns.current;
@@ -111,13 +141,11 @@ function FollowupReplies({ messages, enteringId, readOnly, maySend, onRetry }: {
       <p className="followup-question">{message.question}</p>
       <div className="followup-answer" ref={message.id === latestId ? reply : undefined}
         data-streaming={message.status === 'streaming' || undefined}>
-        {message.thought && <details className="followup-thought" open={message.id === latestId}>
-          <summary>思考过程</summary>
-          <div>{message.thought}</div>
-        </details>}
+        {message.thought && <FollowupThought message={message} latest={message.id === newestMessageId} />}
         {hasBodyText(message.content) ? <>
           <FollowupMarkdown className="prose followup-answer-text" skipImages>{message.content}</FollowupMarkdown>
           {message.status === 'streaming' && <p className="followup-state followup-writing" role="status">
+            <span className="followup-dots" aria-hidden="true"><i /><i /><i /></span>
             <span className="visually-hidden">正在写入回复</span>
           </p>}
         </> : message.status === 'streaming' && <FollowupThinking />}
