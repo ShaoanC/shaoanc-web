@@ -36,6 +36,8 @@ npm start
 
 添加模型时可以沿用已保存的接口，保存时会复制基础地址、协议和密钥。以后可在各模型中分别修改接口。思考强度可在下拉框内选择。
 
+积分倍率支持最多六位小数，可设置为 `0.5` 等小于 1 的数。设置为 `0` 时，该模型的追问免扣积分。
+
 管理员也可以直接在服务端 `.env.ai` 配置。模型数组写在一行，以下密钥为占位符：
 
 ```dotenv
@@ -44,7 +46,7 @@ MISTAKES_AI_FOLLOWUP_DEFAULT_PROFILE_ID='fast'
 MISTAKES_AI_FOLLOWUP_PROFILES='[{"id":"fast","name":"轻量 GPT","tierLabel":"极速","enabledForFollowup":true,"protocol":"openai","baseUrl":"https://api.openai.com/v1","model":"gpt-5-mini","apiKey":"your-api-key","vision":true,"creditCost":1,"thinkingEffort":"low","vendorIcon":"","sortOrder":null}]'
 ```
 
-省略 `tierLabel` 时显示配置名称，省略 `vendorIcon` 时自动识别厂商，省略 `sortOrder` 时按积分倍率排序。思考强度留空时使用上游模型默认值。追问积分使用新的建表定义，运行验收使用新建数据库。
+省略 `tierLabel` 时显示配置名称，省略 `vendorIcon` 时自动识别厂商，省略 `sortOrder` 时按积分倍率排序。思考强度留空时使用上游模型默认值。已有追问记录会保留各轮的实际扣费。
 
 ## 目录与验证
 

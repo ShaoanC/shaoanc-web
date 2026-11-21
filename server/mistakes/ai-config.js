@@ -12,6 +12,7 @@ const profiles = {
     analysisFallback: { prefix: 'MISTAKES_AI_ANALYSIS_FALLBACK', name: '解析模型升级' }
 };
 const followupPrefix = 'MISTAKES_AI_FOLLOWUP';
+const FOLLOWUP_CREDIT_DECIMALS = 6;
 
 function configProfile(profile = 'general') {
     if (!Object.hasOwn(profiles, profile)) fail(400, '无效的 AI 配置类型');
@@ -112,7 +113,10 @@ function followupProfile(entry, savedKey = '') {
     if (typeof enabledForFollowup !== 'boolean' || typeof vision !== 'boolean' || !['openai', 'gemini'].includes(protocol)) {
         fail(400, '请选择有效的启用、接口协议和图片输入设置');
     }
-    if (!Number.isSafeInteger(creditCost) || creditCost < 1) fail(400, '积分倍率须为正整数');
+    if (!Number.isFinite(creditCost) || creditCost < 0 || creditCost > Number.MAX_SAFE_INTEGER
+        || Number(creditCost.toFixed(FOLLOWUP_CREDIT_DECIMALS)) !== creditCost) {
+        fail(400, `积分倍率须为非负数，最多 ${FOLLOWUP_CREDIT_DECIMALS} 位小数`);
+    }
     if (sortOrder !== null && !Number.isFinite(sortOrder)) fail(400, '排序须为数字');
     if (typeof thinkingEffort !== 'string' || thinkingEffort.length > 32) fail(400, '无效的思考强度');
     if (typeof vendorIcon !== 'string' || (vendorIcon && !Object.hasOwn(vendorNames, vendorIcon))) fail(400, '请选择有效的厂商 Logo');
@@ -213,4 +217,4 @@ function safeAiError(error, { details = false } = {}) {
 }
 
 module.exports = { readConfig, publicConfig, saveConfig, requireAiConfig, safeAiError,
-    readFollowupConfig, availableFollowupProfiles, defaultFollowupProfile };
+    readFollowupConfig, availableFollowupProfiles, defaultFollowupProfile, FOLLOWUP_CREDIT_DECIMALS };

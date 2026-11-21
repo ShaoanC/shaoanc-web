@@ -4,6 +4,7 @@ const Database = require('better-sqlite3');
 
 const followupDayStart = "strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '+8 hours', 'start of day', '-8 hours')";
 const followupDayEnd = "strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '+8 hours', 'start of day', '+16 hours')";
+const followupCostColumn = 'credit_cost REAL NOT NULL DEFAULT 1 CHECK (credit_cost >= 0)';
 function billableFollowup(alias) {
     return `(${alias}.status = 'completed' OR (${alias}.status = 'cancelled'
         AND COALESCE(${alias}.deleted_body_length, length(${alias}.content)) >= 100))`;
@@ -86,7 +87,7 @@ db.exec(`
         profile_id TEXT,
         profile_name TEXT,
         vendor_icon TEXT,
-        credit_cost INTEGER NOT NULL DEFAULT 1 CHECK (credit_cost > 0),
+        ${followupCostColumn},
         duration_ms INTEGER,
         token_usage TEXT,
         context_revision TEXT,
@@ -96,15 +97,6 @@ db.exec(`
     );
     CREATE INDEX IF NOT EXISTS followups_history ON mistake_followups(user_id, mistake_id, created_at);
     CREATE INDEX IF NOT EXISTS followups_credits ON mistake_followups(user_id, created_at) WHERE role = 'assistant';
-    -- Clearing a conversation keeps only the already settled charge through the end of the Beijing day.
-    CREATE TRIGGER IF NOT EXISTS retain_today_followup_charge AFTER DELETE ON mistake_followups
-    WHEN OLD.mistake_id IS NOT NULL AND OLD.role = 'assistant' AND ${billableFollowup('OLD')}
-        AND OLD.created_at >= ${followupDayStart} AND OLD.created_at < ${followupDayEnd}
-        AND EXISTS (SELECT 1 FROM users WHERE id = OLD.user_id)
-    BEGIN
-        INSERT INTO mistake_followups (user_id, role, status, credit_cost, created_at, deleted_body_length)
-        VALUES (OLD.user_id, 'assistant', OLD.status, OLD.credit_cost, OLD.created_at, length(OLD.content));
-    END;
     CREATE TABLE IF NOT EXISTS reviews (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         mistake_id INTEGER NOT NULL REFERENCES mistakes(id) ON DELETE CASCADE,
@@ -115,6 +107,29 @@ db.exec(`
 `);
 
 const followupColumns = db.prepare('PRAGMA table_info(mistake_followups)').all();
+db.transaction(() => {
+    if (followupColumns.find(({ name }) => name === 'credit_cost').type === 'INTEGER') {
+        db.exec(`
+            DROP TRIGGER IF EXISTS retain_today_followup_charge;
+            ALTER TABLE mistake_followups RENAME COLUMN credit_cost TO previous_credit_cost;
+            ALTER TABLE mistake_followups ADD COLUMN ${followupCostColumn};
+            UPDATE mistake_followups SET credit_cost = previous_credit_cost WHERE previous_credit_cost <> 1;
+            ALTER TABLE mistake_followups DROP COLUMN previous_credit_cost;
+        `);
+    }
+    db.exec(`
+        -- Clearing a conversation keeps only the already settled charge through the end of the Beijing day.
+        CREATE TRIGGER IF NOT EXISTS retain_today_followup_charge AFTER DELETE ON mistake_followups
+        WHEN OLD.mistake_id IS NOT NULL AND OLD.role = 'assistant' AND OLD.credit_cost > 0 AND ${billableFollowup('OLD')}
+            AND OLD.created_at >= ${followupDayStart} AND OLD.created_at < ${followupDayEnd}
+            AND EXISTS (SELECT 1 FROM users WHERE id = OLD.user_id)
+        BEGIN
+            INSERT INTO mistake_followups (user_id, role, status, credit_cost, created_at, deleted_body_length)
+            VALUES (OLD.user_id, 'assistant', OLD.status, OLD.credit_cost, OLD.created_at, length(OLD.content));
+        END;
+    `);
+})();
+
 for (const [name, type] of [['profile_name', 'TEXT'], ['duration_ms', 'INTEGER']]) {
     if (!followupColumns.some((column) => column.name === name)) db.exec(`ALTER TABLE mistake_followups ADD COLUMN ${name} ${type}`);
 }

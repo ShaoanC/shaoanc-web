@@ -1,6 +1,6 @@
 import { AlertDialog } from '@base-ui/react/alert-dialog';
 import { Dialog } from '@base-ui/react/dialog';
-import { ArrowUp, Clock3, Image, MessageCircle, Plus, Square, X } from 'lucide-react';
+import { ArrowUp, Clock3, Coins, Image, MessageCircle, Square, SquarePen, X } from 'lucide-react';
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { toast } from 'react-toastify';
 import { api } from './api';
@@ -53,12 +53,6 @@ function FollowupModelOption({ profile, unavailable, compact = false }: {
   </span>;
 }
 
-function formatDuration(durationMs: number) {
-  if (durationMs < 1000) return '<1 秒';
-  const seconds = Math.floor(durationMs / 1000);
-  return seconds < 60 ? `${seconds} 秒` : `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`;
-}
-
 function FollowupReplies({ messages, enteringId, readOnly, maySend, onRetry }: {
   messages: FollowupMessage[];
   enteringId: number | null;
@@ -107,9 +101,11 @@ function FollowupReplies({ messages, enteringId, readOnly, maySend, onRetry }: {
           <VendorLogo vendorIcon={message.vendorIcon} size={16} />
           <span className="followup-reply-profile" title={message.profileName ?? undefined}>{message.profileName ?? '未知配置'}</span>
           {message.durationMs != null && <time className="followup-reply-duration" dateTime={`PT${message.durationMs / 1000}S`}>
-            <Clock3 size={13} aria-hidden="true" /><span className="visually-hidden">用时 </span>{formatDuration(message.durationMs)}
+            <Clock3 size={13} aria-hidden="true" /><span className="visually-hidden">用时 </span>{(message.durationMs / 1000).toFixed(1)} s
           </time>}
-          {message.creditsCharged > 0 && <span className="followup-reply-charge">-{message.creditsCharged} 积分</span>}
+          {message.creditsCharged > 0 && <span className="followup-reply-charge" title={`扣除 ${message.creditsCharged} 积分`}>
+            <Coins size={13} aria-hidden="true" /><span>-{message.creditsCharged}</span><span className="visually-hidden"> 积分</span>
+          </span>}
         </div>}
       </div>
     </article>)}
@@ -335,8 +331,8 @@ export function MistakeFollowups({ mistake }: { mistake: Mistake }) {
     if (busy) event.cancel();
     else setConfirmNewChat(value);
   }}>
-    {Boolean(history?.count) && !history?.readOnly && <AlertDialog.Trigger className="button secondary followup-new" disabled={generating || busy}>
-      <Plus size={15} aria-hidden="true" />新对话
+    {Boolean(history?.count) && !history?.readOnly && <AlertDialog.Trigger className="followup-new" disabled={generating || busy}>
+      <SquarePen size={15} aria-hidden="true" />新对话
     </AlertDialog.Trigger>}
     <AlertDialog.Portal container={document.body}>
       <AlertDialog.Backdrop forceRender className="followup-confirm-backdrop" />
@@ -354,7 +350,11 @@ export function MistakeFollowups({ mistake }: { mistake: Mistake }) {
     </AlertDialog.Portal>
   </AlertDialog.Root>;
   const headerActions = <>
-    {history && <span className="followup-quota" title="今日剩余积分"><strong>{remaining}</strong>/{history.dailyCreditLimit} 积分</span>}
+    {history && <span className="followup-quota" title="今日剩余积分">
+      <span className="visually-hidden">今日剩余积分 </span>
+      <span className="followup-quota-value"><strong>{remaining}</strong>/{history.dailyCreditLimit}</span>
+      <Coins size={14} aria-hidden="true" />
+    </span>}
     {controls}
   </>;
   const log = <>

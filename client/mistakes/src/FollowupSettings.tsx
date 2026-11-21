@@ -86,7 +86,7 @@ function ProfileEditor({ profile, sources, update, remove }: {
       readOnly={Boolean(source)} required={required && !source && !profile.hasApiKey}
       placeholder={source ? '沿用已有密钥' : profile.hasApiKey ? '已保存，留空保持原密钥' : ''}
       onChange={(event) => update({ apiKey: event.target.value })} /></label>
-    <label className="field"><span>积分倍率</span><input type="number" min={1} step={1} required
+    <label className="field"><span>积分倍率</span><input type="number" min={0} step="any" required
       value={Number.isNaN(profile.creditCost) ? '' : profile.creditCost} onChange={(event) => update({ creditCost: event.target.valueAsNumber })} /></label>
     <label className="field"><span>排序权重</span><input type="number" step="any" placeholder="默认按积分倍率" value={profile.sortOrder ?? ''}
       onChange={(event) => update({ sortOrder: event.target.value ? event.target.valueAsNumber : null })} /></label>
@@ -161,7 +161,7 @@ export function FollowupSettings() {
                     <VendorLogo vendorIcon={resolveVendorIcon(profile.vendorIcon, profile.model,
                       sources.find(({ id }) => id === profile.endpointSourceId)?.baseUrl ?? profile.baseUrl)} size={20} />
                     <span className="followup-settings-profile-name"><strong>{name}</strong>{profile.model && <small>{profile.model}</small>}</span>
-                    <span className="model-multiplier">{profile.creditCost || '—'}×</span><ChevronDown size={15} aria-hidden="true" />
+                    <span className="model-multiplier">{Number.isNaN(profile.creditCost) ? '—' : `${profile.creditCost}×`}</span><ChevronDown size={15} aria-hidden="true" />
                   </button>
                   <label className="followup-settings-toggle"><Checkbox aria-label={`开放 ${name}`} checked={profile.enabledForFollowup}
                     onChange={(event) => setSettings({ ...settings, profiles: settings.profiles.map((item) => item.id === profile.id

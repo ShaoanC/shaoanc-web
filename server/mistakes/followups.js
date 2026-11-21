@@ -4,7 +4,7 @@ const { rateLimit } = require('express-rate-limit');
 const { db, followupDayStart, followupDayEnd, billableFollowup } = require('./database');
 const { fail, requireSession, requireUser } = require('./auth');
 const { assertWritable } = require('./backup-coordination');
-const { readFollowupConfig, availableFollowupProfiles, defaultFollowupProfile, safeAiError } = require('./ai-config');
+const { readFollowupConfig, availableFollowupProfiles, defaultFollowupProfile, safeAiError, FOLLOWUP_CREDIT_DECIMALS } = require('./ai-config');
 const { resolveVendorIcon } = require('../../shared/vendor-icon.mjs');
 const { analysisImages } = require('./ai');
 const { imagePath, questionForMistake } = require('./images');
@@ -25,13 +25,14 @@ const pairSelect = `SELECT a.*, q.content AS question, CASE WHEN ${billableFollo
     FROM mistake_followups a JOIN mistake_followups q ON q.id = a.question_id`;
 const pairFilter = "WHERE a.user_id = ? AND a.mistake_id = ? AND a.role = 'assistant'";
 
-const sumCredits = db.prepare(`SELECT COALESCE(SUM(a.credit_cost), 0) AS used FROM mistake_followups a
+const sumCredits = db.prepare(`SELECT COALESCE(ROUND(SUM(a.credit_cost), ${FOLLOWUP_CREDIT_DECIMALS}), 0) AS used FROM mistake_followups a
     WHERE a.user_id = ? AND a.role = 'assistant' AND a.created_at >= ${followupDayStart}
     AND a.created_at < ${followupDayEnd} AND ${billableFollowup('a')}`);
 
 function quota(userId, dailyCreditLimit) {
     const { used: dailyCreditsUsed } = sumCredits.get(userId);
-    return { dailyCreditLimit, dailyCreditsUsed, dailyCreditsRemaining: Math.max(0, dailyCreditLimit - dailyCreditsUsed) };
+    const dailyCreditsRemaining = Math.max(0, Number((dailyCreditLimit - dailyCreditsUsed).toFixed(FOLLOWUP_CREDIT_DECIMALS)));
+    return { dailyCreditLimit, dailyCreditsUsed, dailyCreditsRemaining };
 }
 
 function displayProfile(profile, defaultId) {

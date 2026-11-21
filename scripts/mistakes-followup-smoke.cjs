@@ -199,7 +199,8 @@ async function checkViewport(owner, first, second, width) {
         assert.ok(await drawer.evaluate((element) => [...element.querySelectorAll('.followup-heading, .mobile-filters-heading, .followup-compose')]
             .every((part) => part.scrollWidth <= part.clientWidth + 1)));
         const credits = await owner.data('GET', followups(first.id));
-        assert.equal(await drawer.locator('.followup-quota').textContent(), credits.dailyCreditsRemaining + '/' + credits.dailyCreditLimit + ' 积分');
+        assert.equal(await drawer.locator('.followup-quota-value').textContent(), credits.dailyCreditsRemaining + '/' + credits.dailyCreditLimit);
+        assert.equal(await drawer.locator('.followup-quota .lucide-coins').count(), 1);
         assert.ok(await newChat.evaluate((button) => {
             const balance = button.parentElement.querySelector('.followup-quota');
             const action = getComputedStyle(button);
@@ -208,16 +209,19 @@ async function checkViewport(owner, first, second, width) {
         }));
         const replies = drawer.locator('.followup-reply-meta');
         const deepReply = replies.filter({ hasText: "Claude's text" });
-        assert.equal(await deepReply.getByText('-3 积分').count(), 1);
+        assert.equal(await deepReply.getByText('-3', { exact: true }).count(), 1);
+        assert.equal(await deepReply.locator('.followup-reply-charge > .lucide-coins:first-child').count(), 1);
+        assert.equal(await deepReply.locator('.followup-reply-charge').getAttribute('title'), '扣除 3 积分');
         assert.match(await deepReply.locator('time').getAttribute('datetime'), /^PT\d+(\.\d+)?S$/);
-        assert.match(await deepReply.locator('time').textContent(), /用时.*秒/);
+        assert.match(await deepReply.locator('time').textContent(), /\d+\.\d s$/);
         assert.equal(await replies.filter({ hasText: /claude-sonnet|gpt-5-mini/ }).count(), 0);
-        assert.equal(await replies.filter({ hasText: '极速' }).getByText('-1 积分').count(), credits.dailyCreditsUsed === 5 ? 2 : 3);
+        assert.equal(await replies.filter({ hasText: '极速' }).getByText('-1', { exact: true }).count(), credits.dailyCreditsUsed === 5 ? 2 : 3);
         const oldReply = drawer.locator('.followup-turn').filter({ hasText: '验证搜索隔离' });
         assert.equal(await oldReply.locator('.followup-reply-profile').textContent(), '极速');
         assert.equal(await oldReply.locator('time').count(), 0);
         await assertVisibleLogo(modelPicker, 'openai', 18);
-        assert.ok(await modelPicker.evaluate((button) => parseFloat(getComputedStyle(button).borderRadius) > button.offsetHeight));
+        const controlShape = (button) => [button.offsetHeight, getComputedStyle(button).borderRadius];
+        assert.deepEqual(await modelPicker.evaluate(controlShape), await newChat.evaluate(controlShape));
         await modelPicker.click();
         const menu = drawer.getByRole('listbox', { name: '追问模型' });
         await menu.waitFor();
@@ -395,6 +399,7 @@ async function checkViewport(owner, first, second, width) {
         if (!mobile) {
             await added.getByLabel('配置名称').fill('复用接口测试');
             await added.getByLabel('模型名称').fill('gemini-shared');
+            await added.getByRole('spinbutton', { name: '积分倍率' }).fill('0.125');
             await added.getByRole('checkbox', { name: '开放 复用接口测试' }).check();
             const saveRequest = page.waitForRequest((request) => request.method() === 'PATCH' && request.url().endsWith(configRoute));
             await settings.getByRole('button', { name: '保存错题追问配置' }).click();
@@ -410,6 +415,7 @@ async function checkViewport(owner, first, second, width) {
             const copy = saved.profiles.find(({ id }) => id === draft.id);
             assert.equal(copy.baseUrl, saved.profiles.find(({ id }) => id === 'native').baseUrl);
             assert.deepEqual([copy.protocol, copy.hasApiKey, copy.thinkingEffort, copy.enabledForFollowup], ['gemini', true, 'low', true]);
+            assert.equal(copy.creditCost, 0.125);
             assert.equal(copy.apiKey, undefined);
             assert.equal(copy.endpointSourceId, undefined);
             const { readFollowupConfig } = require('../server/mistakes/ai-config');
@@ -417,7 +423,10 @@ async function checkViewport(owner, first, second, width) {
             await page.goto(appUrl + '/mistakes/' + first.id);
             await entry.click();
             await assertVisibleLogo(modelPicker, 'google', 18);
-            await drawer.locator('.followup-reply-meta').filter({ hasText: "Claude's text" }).getByText('-3 积分').waitFor();
+            await modelPicker.click();
+            await menu.getByRole('option', { name: /复用接口测试.*0\.125×/ }).waitFor();
+            await menu.press('Escape');
+            await drawer.locator('.followup-reply-meta').filter({ hasText: "Claude's text" }).getByText('-3', { exact: true }).waitFor();
             await newChat.click();
             await confirm.getByRole('button', { name: '开始新对话', exact: true }).click();
             await notices.getByText('已开始新对话。', { exact: true }).waitFor();
@@ -662,24 +671,48 @@ async function main() {
         seed.run(speed.id, speedUser, 'assistant', question, '历史回答' + index, 'completed', yesterday);
     }
     assert.equal((await limited.data('GET', followups(speed.id))).dailyCreditsUsed, 0);
-    assert.match((await ask(limited, speed.id, '兼容接口非流式')).at(-1).message.content, /兼容接口完整回复/);
+    const fractional = [
+        { id: 'fractional-high', creditCost: 0.8 },
+        { id: 'fractional-low', creditCost: 0.2 },
+        { id: 'free', creditCost: 0 }
+    ].map((profile) => ({ ...endpoint, enabledForFollowup: true, model: 'gpt-5-mini', name: profile.id, ...profile }));
+    await owner.data('PATCH', configRoute, { dailyCreditLimit: 1, profiles: [...settings.profiles, ...fractional] });
+    const firstCharge = (await ask(limited, speed.id, '兼容接口非流式', 'fractional-high')).at(-1);
+    assert.match(firstCharge.message.content, /兼容接口完整回复/);
+    assert.deepEqual([firstCharge.message.creditsCharged, firstCharge.dailyCreditsRemaining], [0.8, 0.2]);
     const messages = calls.at(-1).body.messages;
     assert.equal(messages.length, 19);
     assert.equal(messages[2].content, '历史问题2');
     assert.equal(messages.at(-2).content, '历史回答9');
-    for (let index = 0; index < 5; index++) {
-        assert.equal((await ask(limited, speed.id, '频率测试')).at(-1).message.status, 'completed');
+    const lastCharge = (await ask(limited, speed.id, '用完最后积分', 'fractional-low')).at(-1);
+    assert.deepEqual([lastCharge.message.creditsCharged, lastCharge.dailyCreditsRemaining], [0.2, 0]);
+    assert.match((await limited.data('POST', followups(speed.id) + '/stream', { question: '积分用完', profileId: 'fractional-low' }, 429)).message, /积分不足/);
+    for (let index = 0; index < 3; index++) {
+        const free = (await ask(limited, speed.id, '频率测试', 'free')).at(-1);
+        assert.deepEqual([free.message.status, free.message.creditsCharged, free.dailyCreditsUsed], ['completed', 0, 1]);
     }
     assert.equal((await limited.data('POST', followups(speed.id) + '/stream', { question: '频率测试' }, 429)).code, 'RATE_LIMITED');
     await limited.data('DELETE', '/mistakes/' + speed.id);
     await limited.data('DELETE', '/mistakes/' + speed.id + '/permanent');
     assert.equal(db.prepare('SELECT COUNT(*) AS count FROM mistake_followups WHERE mistake_id = ?').get(speed.id).count, 0);
+    await owner.data('PATCH', configRoute, { dailyCreditLimit: 16, profiles: settings.profiles });
 
     const snapshot = path.join(directory, 'snapshot.sqlite');
     db.prepare("UPDATE mistake_followups SET status = 'streaming' WHERE id = ?").run(failure.id);
     await db.backup(snapshot);
     const previousSchema = new (require('better-sqlite3'))(snapshot);
-    previousSchema.exec('ALTER TABLE mistake_followups DROP COLUMN profile_name; ALTER TABLE mistake_followups DROP COLUMN duration_ms;');
+    const trigger = previousSchema.prepare("SELECT sql FROM sqlite_schema WHERE name = 'retain_today_followup_charge'").get().sql;
+    previousSchema.exec('DROP TRIGGER retain_today_followup_charge');
+    previousSchema.prepare('DELETE FROM mistake_followups WHERE user_id = ?').run(speedUser);
+    previousSchema.exec(`
+        ALTER TABLE mistake_followups RENAME COLUMN credit_cost TO fractional_cost;
+        ALTER TABLE mistake_followups ADD COLUMN credit_cost INTEGER NOT NULL DEFAULT 1 CHECK (credit_cost > 0);
+        UPDATE mistake_followups SET credit_cost = fractional_cost;
+        ALTER TABLE mistake_followups DROP COLUMN fractional_cost;
+        ALTER TABLE mistake_followups DROP COLUMN profile_name;
+        ALTER TABLE mistake_followups DROP COLUMN duration_ms;
+        ${trigger}
+    `);
     previousSchema.close();
     execFileSync(process.execPath, ['-e', `
         const { db, billableFollowup } = require('./server/mistakes/database');
@@ -689,6 +722,8 @@ async function main() {
         assert.match(row.error_message, /服务重启中断/);
         assert.equal(row.profile_name, null);
         assert.equal(row.duration_ms, null);
+        assert.equal(row.credit_cost, 3);
+        assert.equal(db.prepare('PRAGMA table_info(mistake_followups)').all().find(({ name }) => name === 'credit_cost').type, 'REAL');
         assert.equal(db.prepare('SELECT SUM(a.credit_cost) AS used FROM mistake_followups a WHERE user_id = ? AND role = ? AND ' +
             billableFollowup('a')).get(row.user_id, 'assistant').used, 2);
     `, String(failure.id)], {
