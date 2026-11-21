@@ -227,11 +227,12 @@ async function checkViewport(owner, first, second, width) {
         await menu.waitFor();
         const premium = menu.getByRole('option', { name: /旗舰.*12×.*积分不足/ });
         assert.ok(await premium.isDisabled());
-        assert.ok(await menu.getByLabel('支持图片输入').count());
+        assert.equal(await menu.getByLabel('支持图片输入').count(), 0);
+        assert.doesNotMatch(await menu.textContent(), /claude-sonnet|gpt-5-mini|gemini-3-flash-preview|mimo-v2/);
         const menuBounds = await menu.boundingBox();
         assert.ok(menuBounds.x >= 0 && menuBounds.x + menuBounds.width <= width + 1);
         assert.ok(await menu.evaluate((element) => element.scrollWidth <= element.clientWidth + 1));
-        const deep = menu.getByRole('option', { name: /深度.*claude-sonnet.*3×/ });
+        const deep = menu.getByRole('option', { name: /^深度\s*3×$/ });
         await assertVisibleLogo(deep, 'anthropic', 18);
         await deep.click();
         await assertVisibleLogo(modelPicker, 'anthropic', 18);
@@ -241,7 +242,7 @@ async function checkViewport(owner, first, second, width) {
         await assertVisibleLogo(modelPicker, 'anthropic', 18);
         if (mobile) {
             await modelPicker.click();
-            await menu.getByRole('option', { name: /极速.*gpt-5-mini.*1×/ }).click();
+            await menu.getByRole('option', { name: /^极速\s*1×$/ }).click();
         }
         await newChat.click();
         await confirm.waitFor();

@@ -1,6 +1,6 @@
 import { AlertDialog } from '@base-ui/react/alert-dialog';
 import { Dialog } from '@base-ui/react/dialog';
-import { ArrowUp, Clock3, Coins, Image, MessageCircle, Square, SquarePen, X } from 'lucide-react';
+import { ArrowUp, ArrowUpRight, Clock3, Coins, MessageCircle, Square, SquarePen, X } from 'lucide-react';
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { toast } from 'react-toastify';
 import { api } from './api';
@@ -41,11 +41,7 @@ function FollowupModelOption({ profile, unavailable, compact = false }: {
 }) {
   return <span className={compact ? 'followup-model-value' : 'followup-model-option'}>
     <span className="followup-model-mark"><VendorLogo vendorIcon={profile.vendorIcon} /></span>
-    <span className="followup-model-label">
-      <strong>{profile.tierLabel}</strong>
-      {!compact && <span className="followup-model-name">{profile.model}</span>}
-    </span>
-    {!compact && profile.supportsVision && <span className="followup-model-vision" title="支持图片输入" aria-label="支持图片输入"><Image size={16} /></span>}
+    <strong className="followup-model-label">{profile.tierLabel}</strong>
     <span className="followup-model-cost">
       <span className="model-multiplier">{profile.creditCost}×</span>
       {!compact && unavailable && <span className="followup-model-unavailable">积分不足</span>}
@@ -372,7 +368,7 @@ export function MistakeFollowups({ mistake }: { mistake: Mistake }) {
       {prompts.map((prompt, index) =>
         <button type="button" key={prompt} className="followup-prompt" ref={index === 0 ? firstPrompt : undefined}
           disabled={!maySend} onClick={() => void send(prompt)}>
-          {prompt}<span aria-hidden="true"><ArrowUp size={13} /></span>
+          {prompt}<ArrowUpRight size={12} strokeWidth={1.6} aria-hidden="true" />
         </button>)}
     </div>}
     <div ref={scrollAnchor} />
