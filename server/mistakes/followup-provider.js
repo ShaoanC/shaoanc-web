@@ -47,6 +47,7 @@ const providers = {
                 refusal: choice?.delta?.refusal || choice?.message?.refusal || choice?.finish_reason === 'content_filter',
                 usage: packet.usage && {
                     inputTokens: packet.usage.prompt_tokens, outputTokens: packet.usage.completion_tokens,
+                    cachedReadTokens: packet.usage.prompt_tokens_details?.cached_tokens ?? packet.usage.prompt_cache_hit_tokens,
                     totalTokens: packet.usage.total_tokens
                 }
             };
@@ -80,7 +81,8 @@ const providers = {
                 done: response.status === 'completed',
                 truncated: response.status === 'incomplete',
                 refusal: response.status === 'failed' || packet.type === 'response.refusal.delta' || content.some((part) => part.type === 'refusal'),
-                usage: usage && { inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, totalTokens: usage.total_tokens }
+                usage: usage && { inputTokens: usage.input_tokens, outputTokens: usage.output_tokens,
+                    totalTokens: usage.total_tokens, cachedReadTokens: usage.input_tokens_details?.cached_tokens }
             };
         }
     },
@@ -106,7 +108,8 @@ const providers = {
                 done: Boolean(reason),
                 truncated: reason === 'MAX_TOKENS',
                 refusal: packet.promptFeedback?.blockReason || (reason && reason !== 'STOP' && reason !== 'MAX_TOKENS'),
-                usage: usage && { inputTokens: usage.promptTokenCount, outputTokens: usage.candidatesTokenCount, totalTokens: usage.totalTokenCount }
+                usage: usage && { inputTokens: usage.promptTokenCount, outputTokens: usage.candidatesTokenCount,
+                    totalTokens: usage.totalTokenCount, cachedReadTokens: usage.cachedContentTokenCount }
             };
         }
     }

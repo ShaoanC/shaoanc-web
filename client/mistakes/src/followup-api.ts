@@ -13,9 +13,9 @@ export interface FollowupProfile {
 }
 
 type FollowupCredits = {
-  dailyCreditLimit: number;
+  dailyCreditLimit: number | null;
   dailyCreditsUsed: number;
-  dailyCreditsRemaining: number;
+  dailyCreditsRemaining: number | null;
 };
 
 type FollowupModel = {
@@ -30,6 +30,7 @@ export interface FollowupMessage extends FollowupModel {
   content: string;
   thought: string;
   totalTokens: number | null;
+  cachedReadTokens: number | null;
   status: 'streaming' | 'completed' | 'failed' | 'cancelled';
   error: string | null;
   imagesSkipped: boolean;

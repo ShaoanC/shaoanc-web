@@ -12,7 +12,8 @@ const profiles = {
     analysisFallback: { prefix: 'MISTAKES_AI_ANALYSIS_FALLBACK', name: '解析模型升级' }
 };
 const followupPrefix = 'MISTAKES_AI_FOLLOWUP';
-const FOLLOWUP_CREDIT_DECIMALS = 6;
+const FOLLOWUP_MULTIPLIER_DECIMALS = 6;
+const defaultDailyCredits = 100;
 
 function configProfile(profile = 'general') {
     if (!Object.hasOwn(profiles, profile)) fail(400, '无效的 AI 配置类型');
@@ -114,8 +115,8 @@ function followupProfile(entry, savedKey = '') {
         fail(400, '请选择有效的启用、接口协议和图片输入设置');
     }
     if (!Number.isFinite(creditCost) || creditCost < 0 || creditCost > Number.MAX_SAFE_INTEGER
-        || Number(creditCost.toFixed(FOLLOWUP_CREDIT_DECIMALS)) !== creditCost) {
-        fail(400, `积分倍率须为非负数，最多 ${FOLLOWUP_CREDIT_DECIMALS} 位小数`);
+        || Number(creditCost.toFixed(FOLLOWUP_MULTIPLIER_DECIMALS)) !== creditCost) {
+        fail(400, `积分倍率须为非负数，最多 ${FOLLOWUP_MULTIPLIER_DECIMALS} 位小数`);
     }
     if (sortOrder !== null && !Number.isFinite(sortOrder)) fail(400, '排序须为数字');
     if (typeof thinkingEffort !== 'string' || thinkingEffort.length > 32) fail(400, '无效的思考强度');
@@ -129,14 +130,15 @@ function followupProfile(entry, savedKey = '') {
 
 function readFollowupConfig() {
     const saved = readSavedConfig();
-    const dailyCreditLimit = Number(saved[`${followupPrefix}_DAILY_CREDIT_LIMIT`] || 60);
+    const legacyLimit = Number(saved[`${followupPrefix}_DAILY_CREDIT_LIMIT`]);
+    const dailyCreditLimit = Number(saved[`${followupPrefix}_USER_DAILY_CREDIT_LIMIT`] ?? (legacyLimit === 60 ? defaultDailyCredits : legacyLimit));
     let entries;
     try { entries = JSON.parse(saved[`${followupPrefix}_PROFILES`] || '[]'); } catch { fail(400, '追问模型配置须为 JSON 数组'); }
     if (!Array.isArray(entries)) fail(400, '追问模型配置须为 JSON 数组');
     return {
         profiles: entries.map((entry) => followupProfile(entry)),
         defaultProfileId: saved[`${followupPrefix}_DEFAULT_PROFILE_ID`] || null,
-        dailyCreditLimit: Number.isSafeInteger(dailyCreditLimit) && dailyCreditLimit > 0 ? dailyCreditLimit : 60
+        dailyCreditLimit: Number.isSafeInteger(dailyCreditLimit) && dailyCreditLimit > 0 ? dailyCreditLimit : defaultDailyCredits
     };
 }
 
@@ -164,7 +166,7 @@ function saveFollowupConfig(body) {
     if (new Set(entries.map(({ id }) => id)).size !== entries.length) fail(400, '追问模型配置编号不能重复');
     const selected = defaultFollowupProfile({ defaultProfileId }, availableFollowupProfiles({ profiles: entries }));
     writeConfig({
-        [`${followupPrefix}_DAILY_CREDIT_LIMIT`]: String(dailyCreditLimit),
+        [`${followupPrefix}_USER_DAILY_CREDIT_LIMIT`]: String(dailyCreditLimit),
         [`${followupPrefix}_DEFAULT_PROFILE_ID`]: selected?.id || '',
         [`${followupPrefix}_PROFILES`]: JSON.stringify(entries).replace(/'/g, '\\u0027')
     });
@@ -217,4 +219,4 @@ function safeAiError(error, { details = false } = {}) {
 }
 
 module.exports = { readConfig, publicConfig, saveConfig, requireAiConfig, safeAiError,
-    readFollowupConfig, availableFollowupProfiles, defaultFollowupProfile, FOLLOWUP_CREDIT_DECIMALS };
+    readFollowupConfig, availableFollowupProfiles, defaultFollowupProfile, FOLLOWUP_MULTIPLIER_DECIMALS };

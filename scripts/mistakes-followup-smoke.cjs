@@ -53,7 +53,7 @@ const provider = http.createServer(async (req, res) => {
         res.write(packet({ type: 'response.output_text.delta', delta: '得到两个根' }));
         const status = calls.filter((call) => call.last === last).length === 1 ? 'incomplete' : 'completed';
         res.end(packet({ type: 'response.' + status, response: {
-            status, usage: { input_tokens: 1800, output_tokens: 700, total_tokens: 2500 }
+            status, usage: { input_tokens: 1800, input_tokens_details: { cached_tokens: 500 }, output_tokens: 700, total_tokens: 2500 }
         } }));
         return;
     }
@@ -63,7 +63,7 @@ const provider = http.createServer(async (req, res) => {
     if (gemini) {
         res.write(packet({ candidates: [{ content: { parts: [{ text: '内部推理', thought: true }, { text: 'Gemini 流式答复 ' }] } }] }));
         res.end(packet({ candidates: [{ content: { parts: [{ text: '$x=4$' }] }, finishReason: 'STOP' }],
-            usageMetadata: { promptTokenCount: 1000, candidatesTokenCount: 700, thoughtsTokenCount: 300, totalTokenCount: 2000 } }));
+            usageMetadata: { promptTokenCount: 1000, cachedContentTokenCount: 500, candidatesTokenCount: 700, thoughtsTokenCount: 300, totalTokenCount: 2000 } }));
         return;
     }
     if (last === '暂时故障' || last === '切换错题') {
@@ -80,9 +80,11 @@ const provider = http.createServer(async (req, res) => {
     }
     if (last === '断连继续') await delay(750);
     if (last === '切换错题') await delay(1800);
-    const total = last === '用完最后积分' ? 3000 : 2000;
+    const total = last === '用完最后积分' ? 4000 : last === '小数倍率舍入' ? 10000 : 2000;
     if (!res.destroyed) res.end(packet({ choices: [{ delta: { content: ' $x=4$' }, finish_reason: 'stop' }] })
-        + packet({ choices: [], usage: { prompt_tokens: 1500, completion_tokens: total - 1500, total_tokens: total } }) + 'data: [DONE]\n\n');
+        + packet({ choices: [], usage: { prompt_tokens: 1500, completion_tokens: total - 1500, total_tokens: total,
+            ...(last === '断连继续' && { prompt_cache_hit_tokens: 1000 }),
+            ...(last === '用完最后积分' && { prompt_tokens_details: { cached_tokens: 1500 } }) } }) + 'data: [DONE]\n\n');
 });
 
 function client() {
@@ -214,7 +216,7 @@ async function checkViewport(owner, first, second, width) {
         assert.ok(await drawer.evaluate((element) => [...element.querySelectorAll('.followup-heading, .mobile-filters-heading, .followup-compose')]
             .every((part) => part.scrollWidth <= part.clientWidth + 1)));
         const credits = await owner.data('GET', followups(first.id));
-        assert.equal(await drawer.locator('.followup-quota-value').textContent(), credits.dailyCreditsRemaining + '/' + credits.dailyCreditLimit);
+        assert.equal(await drawer.locator('.followup-quota-value').textContent(), '∞');
         assert.equal(await drawer.locator('.followup-quota .lucide-coins').count(), 1);
         assert.ok(await newChat.evaluate((button) => {
             const balance = button.parentElement.querySelector('.followup-quota');
@@ -225,6 +227,7 @@ async function checkViewport(owner, first, second, width) {
         const replies = drawer.locator('.followup-reply-meta');
         const deepReply = replies.filter({ hasText: "Claude's text" });
         assert.ok(await deepReply.getByText('2,000 token').isVisible());
+        assert.ok(await deepReply.locator('.followup-reply-tokens > .lucide-cpu:first-child').isVisible());
         const thought = deepReply.locator('..').locator('.followup-thought');
         await thought.locator('summary').click();
         assert.ok(await thought.getByText('检查题目条件').isVisible());
@@ -235,7 +238,7 @@ async function checkViewport(owner, first, second, width) {
         assert.match(await deepReply.locator('time').getAttribute('datetime'), /^PT\d+(\.\d+)?S$/);
         assert.match(await deepReply.locator('time').textContent(), /\d+\.\d s$/);
         assert.equal(await replies.filter({ hasText: /claude-sonnet|gpt-5-mini/ }).count(), 0);
-        assert.equal(await replies.filter({ hasText: '极速' }).getByText('-1', { exact: true }).count(), credits.dailyCreditsUsed === 5 ? 2 : 3);
+        assert.equal(await replies.filter({ hasText: '极速' }).getByText('-1', { exact: true }).count(), credits.dailyCreditsUsed === 4.6 ? 1 : 2);
         const oldReply = drawer.locator('.followup-turn').filter({ hasText: '验证搜索隔离' });
         assert.equal(await oldReply.locator('.followup-reply-profile').textContent(), '极速');
         assert.equal(await oldReply.locator('time').count(), 0);
@@ -245,8 +248,8 @@ async function checkViewport(owner, first, second, width) {
         await modelPicker.click();
         const menu = drawer.getByRole('listbox', { name: '追问模型' });
         await menu.waitFor();
-        const premium = menu.getByRole('option', { name: /旗舰.*12×.*积分不足/ });
-        assert.ok(await premium.isDisabled());
+        const premium = menu.getByRole('option', { name: /旗舰.*12×/ });
+        assert.ok(await premium.isEnabled());
         assert.equal(await menu.getByLabel('支持图片输入').count(), 0);
         assert.doesNotMatch(await menu.textContent(), /claude-sonnet|gpt-5-mini|gemini-3-flash-preview|mimo-v2/);
         const menuBounds = await menu.boundingBox();
@@ -422,7 +425,7 @@ async function checkViewport(owner, first, second, width) {
         await vendorMenu.getByRole('option', { name: 'OpenAI' }).click();
         await assertVisibleLogo(row, 'openai', 20);
         if (!mobile) {
-            await settings.getByRole('spinbutton', { name: '单账号每日追问积分上限' }).fill('34');
+            await settings.getByRole('spinbutton', { name: '普通账号每日追问积分上限' }).fill('34');
             await settings.getByRole('spinbutton', { name: '积分倍率' }).fill('4');
             await settings.getByRole('textbox', { name: '配置名称' }).fill('更新后的配置名称');
             await settings.getByRole('spinbutton', { name: '排序权重' }).fill('9');
@@ -563,7 +566,9 @@ async function main() {
     await other.login('followup_other');
     await limited.login('followup_rate');
     const endpoint = { baseUrl: upstream + '/v1', apiKey: 'local-smoke-key' };
-    assert.deepEqual(await owner.data('GET', configRoute), { dailyCreditLimit: 60, defaultProfileId: null, profiles: [] });
+    assert.deepEqual(await owner.data('GET', configRoute), { dailyCreditLimit: 100, defaultProfileId: null, profiles: [] });
+    fs.writeFileSync(process.env.MISTAKES_AI_CONFIG_PATH, "MISTAKES_AI_FOLLOWUP_DAILY_CREDIT_LIMIT='60'\n");
+    assert.equal((await owner.data('GET', configRoute)).dailyCreditLimit, 100);
     const models = [
         { ...endpoint, id: 'fast', name: '极速', model: 'gpt-5-mini', enabledForFollowup: true },
         { ...endpoint, id: 'deep', name: "Claude's text", tierLabel: '深度', model: 'claude-sonnet', vision: false,
@@ -607,8 +612,8 @@ async function main() {
     const completed = result.at(-1).message;
     assert.equal(completed.status, 'completed');
     assert.equal(calls.at(-1).body.model, 'gpt-5-mini');
-    for (const [frame, remaining] of [[result[0], 16], [result.at(-1), 15]]) {
-        assert.deepEqual([frame.profileId, frame.vendorIcon, frame.creditCost, frame.dailyCreditsRemaining], ['fast', 'openai', 1, remaining]);
+    for (const frame of [result[0], result.at(-1)]) {
+        assert.deepEqual([frame.profileId, frame.vendorIcon, frame.creditCost, frame.dailyCreditsRemaining, frame.dailyCreditLimit], ['fast', 'openai', 1, null, null]);
     }
     assert.equal(completed.creditsCharged, 1);
     assert.equal(result[0].message.profileName, '极速');
@@ -638,7 +643,8 @@ async function main() {
     assert.equal(stopped.at(-1).message.creditsCharged, 0);
     assert.equal(stopped.at(-1).message.totalTokens, null);
     assert.ok(Number.isInteger(stopped.at(-1).message.durationMs));
-    assert.equal(stopped.at(-1).dailyCreditsRemaining, 15);
+    assert.equal(stopped.at(-1).dailyCreditsRemaining, null);
+    await owner.data('PATCH', configRoute, { dailyCreditLimit: 1 });
     for (let i = 0; i < 20 && !cancelled; i++) await delay(50);
     assert.equal(cancelled, true);
     const failed = (await ask(owner, first.id, '暂时故障', 'deep')).at(-1);
@@ -646,12 +652,13 @@ async function main() {
     assert.equal(failure.status, 'failed');
     assert.equal(failure.creditsCharged, 0);
     assert.ok(Number.isInteger(failure.durationMs));
-    assert.equal(failed.dailyCreditsRemaining, 15);
+    assert.equal(failed.dailyCreditsRemaining, null);
     assert.equal(calls.at(-1).body.reasoning_effort, 'high');
     const retried = await events(await owner.request('POST', followups(first.id) + '/stream', { retryMessageId: failure.id, profileId: 'deep' }));
     assert.equal(retried.at(-1).message.id, failure.id);
     assert.equal(retried[0].message.durationMs, null);
-    assert.deepEqual([retried.at(-1).message.model, retried.at(-1).message.creditsCharged, retried.at(-1).dailyCreditsRemaining], ['claude-sonnet', 3, 12]);
+    assert.deepEqual([retried.at(-1).message.model, retried.at(-1).message.creditsCharged, retried.at(-1).dailyCreditsRemaining], ['claude-sonnet', 3, null]);
+    await owner.data('PATCH', configRoute, { dailyCreditLimit: 16 });
     assert.match(calls.at(-1).body.messages[3].content, new RegExp(replyOnlyText));
     assert.match(retried.at(-1).message.content, new RegExp(exportText));
 
@@ -671,8 +678,9 @@ async function main() {
     assert.equal(history.messages[0].profileName, '极速');
     assert.equal(history.messages[0].durationMs, null);
     assert.equal(history.messages.length, 4);
-    assert.equal(history.dailyCreditsUsed, 5);
-    assert.equal(history.dailyCreditsRemaining, 11);
+    assert.equal(history.dailyCreditsUsed, 4.6);
+    assert.equal(history.dailyCreditsRemaining, null);
+    assert.equal(history.messages.at(-1).cachedReadTokens, 1000);
     assert.equal(db.prepare('SELECT COUNT(*) AS count FROM ai_jobs').get().count, 0);
 
     const file = 'owned-followup.jpg';
@@ -696,6 +704,7 @@ async function main() {
     assert.equal(calls.at(-1).body.contents[0].parts.length, 1);
     assert.equal(calls.at(-1).body.contents.length, 4);
     assert.equal(native.at(-1).message.totalTokens, 2000);
+    assert.equal(native.at(-1).message.creditsCharged, 4.7);
     const longStop = await other.request('POST', followups(gemini.id) + '/stream', { question: '足量停止', profileId: 'deep' });
     const longStopped = await events(longStop, async (frame) => {
         if (frame.type === 'delta') await other.data('POST', followups(gemini.id) + '/' + frame.id + '/cancel', {});
@@ -704,7 +713,7 @@ async function main() {
     assert.equal(typeof calls.at(-1).body.messages[1].content, 'string');
     assert.equal(longStopped.at(-1).message.status, 'cancelled');
     assert.equal(longStopped.at(-1).message.creditsCharged, 3);
-    assert.equal(longStopped.at(-1).dailyCreditsRemaining, 1);
+    assert.equal(longStopped.at(-1).dailyCreditsRemaining, 2.3);
     const pairCount = db.prepare('SELECT COUNT(*) AS count FROM mistake_followups WHERE mistake_id = ?');
     const before = pairCount.get(gemini.id).count;
     const rejected = await other.data('POST', followups(gemini.id) + '/stream', { question: '额度不足', profileId: 'deep' }, 429);
@@ -721,7 +730,7 @@ async function main() {
     await other.data('DELETE', followups(gemini.id));
     const cleared = await other.data('GET', followups(gemini.id));
     assert.equal(cleared.messages.length, 0);
-    assert.equal(cleared.dailyCreditsRemaining, 1);
+    assert.equal(cleared.dailyCreditsRemaining, 2.3);
     const speedUser = db.prepare('SELECT user_id FROM mistakes WHERE id = ?').get(speed.id).user_id;
     const seed = db.prepare('INSERT INTO mistake_followups (mistake_id, user_id, role, question_id, content, status, created_at) VALUES (?,?,?,?,?,?,?)');
     const yesterday = new Date(Date.now() - 86400000).toISOString();
@@ -745,7 +754,8 @@ async function main() {
     assert.equal(messages.at(-2).content, '历史回答9');
     const lastCharge = (await ask(limited, speed.id, '用完最后积分', 'fractional-low')).at(-1);
     assert.deepEqual([lastCharge.message.creditsCharged, lastCharge.dailyCreditsRemaining], [0.2, 0]);
-    assert.equal(lastCharge.message.totalTokens, 3000);
+    assert.equal(lastCharge.message.totalTokens, 4000);
+    assert.equal(lastCharge.message.cachedReadTokens, 1500);
     assert.match((await limited.data('POST', followups(speed.id) + '/stream', { question: '积分用完', profileId: 'fractional-low' }, 429)).message, /积分不足/);
     for (let index = 0; index < 3; index++) {
         const free = (await ask(limited, speed.id, '频率测试', 'free')).at(-1);
@@ -796,16 +806,20 @@ async function main() {
     const responsesProfile = { ...models[0], id: 'responses-model', protocol: 'responses', creditCost: 2 };
     await owner.data('PATCH', configRoute, { profiles: [...settings.profiles, responsesProfile] });
     const incomplete = (await ask(responsesUser, responsesQuestion.id, '摘要流式回答', responsesProfile.id)).at(-1);
-    assert.deepEqual([incomplete.message.status, incomplete.message.creditsCharged], ['failed', 2.5]);
+    assert.deepEqual([incomplete.message.status, incomplete.message.creditsCharged], ['failed', 2.1]);
     const responseEvents = await events(await responsesUser.request('POST', followups(responsesQuestion.id) + '/stream',
         { retryMessageId: incomplete.message.id, profileId: responsesProfile.id }));
     assert.equal(calls.at(-1).body.reasoning.summary, 'auto');
     assert.deepEqual(responseEvents.map((frame) => frame.type), ['meta', 'thought', 'delta', 'done']);
     const settled = responseEvents.at(-1);
     assert.deepEqual([settled.message.thought, settled.message.content, settled.message.totalTokens,
-        settled.message.creditsCharged, settled.dailyCreditsUsed], ['先列方程', '得到两个根', 2500, 2.5, 5]);
+        settled.message.creditsCharged, settled.dailyCreditsUsed], ['先列方程', '得到两个根', 2500, 2.1, 4.2]);
     await responsesUser.data('DELETE', followups(responsesQuestion.id));
-    assert.equal((await responsesUser.data('GET', followups(responsesQuestion.id))).dailyCreditsUsed, 5);
+    assert.equal((await responsesUser.data('GET', followups(responsesQuestion.id))).dailyCreditsUsed, 4.2);
+    const roundingProfile = { ...models[0], id: 'rounding', creditCost: 0.29 };
+    await owner.data('PATCH', configRoute, { profiles: [...settings.profiles, roundingProfile] });
+    const rounded = (await ask(responsesUser, responsesQuestion.id, '小数倍率舍入', roundingProfile.id)).at(-1);
+    assert.deepEqual([rounded.message.creditsCharged, rounded.dailyCreditsUsed], [1.5, 5.7]);
     await owner.data('PATCH', configRoute, { profiles: settings.profiles });
     assert.equal(db.prepare('SELECT user_id FROM mistakes WHERE id = ?').get(first.id).user_id, ownerId);
 

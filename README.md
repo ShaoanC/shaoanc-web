@@ -34,9 +34,9 @@ npm start
 
 在“AI 设置 → 错题追问”添加模型，勾选要向用户开放的档位并指定默认模型。追问支持 OpenAI 兼容、OpenAI Responses 和 Gemini 原生接口。模型返回思考内容或摘要时，追问面板会逐段显示，生成结束后可展开回看。使用 OpenAI 官方推理摘要时，请选择 OpenAI Responses（`protocol: "responses"`）。
 
-每轮按 `总 token ÷ 2000 × 模型倍率` 结算，保留最多六位小数。回复下方显示上游报告的总 token 和实扣积分。缺少完整用量时，完成回复按一次倍率扣分，主动停止且有效正文满 100 字也按一次倍率扣分，其余情况免扣。
+每轮按 `（总 token − 缓存读取 token + 缓存读取 token × 0.1）÷ 2000 × 模型倍率` 结算，最后四舍五入到 0.1 积分。缓存折扣只用于上游报告的缓存读取量。回复下方的芯片图标旁显示实际总 token，积分图标旁显示实扣积分。缺少完整用量时，完成回复按一次倍率扣分，主动停止且有效正文满 100 字也按一次倍率扣分，其余情况免扣。
 
-单账号默认每日 60 积分，北京时间零点重置。发起时余额须达到所选模型的一次倍率，每轮扣费以发起时的余额为上限。清空对话会保留当日已结算的积分消耗。
+普通账号默认每日 100 积分，北京时间零点重置。发起时余额须达到所选模型的一次倍率，每轮扣费以发起时的余额为上限。管理员每日额度显示为 ∞，每轮仍记录用量和积分。清空对话会保留当日已结算的积分消耗。
 
 添加模型时可以沿用已保存的接口，保存时会复制基础地址、协议和密钥。以后可在各模型中分别修改接口。思考强度可在下拉框内选择。
 
@@ -45,7 +45,7 @@ npm start
 管理员也可以直接在服务端 `.env.ai` 配置。模型数组写在一行，以下密钥为占位符：
 
 ```dotenv
-MISTAKES_AI_FOLLOWUP_DAILY_CREDIT_LIMIT='60'
+MISTAKES_AI_FOLLOWUP_USER_DAILY_CREDIT_LIMIT='100'
 MISTAKES_AI_FOLLOWUP_DEFAULT_PROFILE_ID='fast'
 MISTAKES_AI_FOLLOWUP_PROFILES='[{"id":"fast","name":"轻量 GPT","tierLabel":"极速","enabledForFollowup":true,"protocol":"openai","baseUrl":"https://api.openai.com/v1","model":"gpt-5-mini","apiKey":"your-api-key","vision":true,"creditCost":1,"thinkingEffort":"low","vendorIcon":"","sortOrder":null}]'
 ```

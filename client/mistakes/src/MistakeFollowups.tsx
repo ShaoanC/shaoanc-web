@@ -1,6 +1,6 @@
 import { AlertDialog } from '@base-ui/react/alert-dialog';
 import { Dialog } from '@base-ui/react/dialog';
-import { ArrowUp, ArrowUpRight, Clock3, Coins, MessageCircle, Square, SquarePen, X } from 'lucide-react';
+import { ArrowUp, ArrowUpRight, Clock3, Coins, Cpu, MessageCircle, Square, SquarePen, X } from 'lucide-react';
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { toast } from 'react-toastify';
 import { api } from './api';
@@ -103,9 +103,12 @@ function FollowupReplies({ messages, enteringId, readOnly, maySend, onRetry }: {
           {message.durationMs != null && <time className="followup-reply-duration" dateTime={`PT${message.durationMs / 1000}S`}>
             <Clock3 size={13} aria-hidden="true" /><span className="visually-hidden">用时 </span>{(message.durationMs / 1000).toFixed(1)} s
           </time>}
-          {message.totalTokens != null && <span>{message.totalTokens.toLocaleString('zh-CN')} token</span>}
-          {message.creditsCharged > 0 && <span className="followup-reply-charge" title={`扣除 ${message.creditsCharged} 积分`}>
-            <Coins size={13} aria-hidden="true" /><span>-{message.creditsCharged}</span><span className="visually-hidden"> 积分</span>
+          {message.totalTokens != null && <span className="followup-reply-tokens"
+            title={message.cachedReadTokens != null ? `其中缓存读取 ${message.cachedReadTokens.toLocaleString('zh-CN')} token` : '总 token 用量'}>
+            <Cpu size={13} aria-hidden="true" />{message.totalTokens.toLocaleString('zh-CN')} token
+          </span>}
+          {(message.creditsCharged > 0 || message.totalTokens != null) && <span className="followup-reply-charge" title={`扣除 ${message.creditsCharged} 积分`}>
+            <Coins size={13} aria-hidden="true" /><span>{-message.creditsCharged || 0}</span><span className="visually-hidden"> 积分</span>
           </span>}
         </div>}
       </div>
@@ -143,7 +146,7 @@ export function MistakeFollowups({ mistake }: { mistake: Mistake }) {
   const shownRevision = useRef('');
   const available = history?.availableProfiles ?? [];
   const selected = available.find(({ id }) => id === preferredProfile) ?? available.find(({ isDefault }) => isDefault);
-  const remaining = history?.dailyCreditsRemaining ?? 0;
+  const remaining = history?.dailyCreditsRemaining === null ? Infinity : history?.dailyCreditsRemaining ?? 0;
 
   function chooseProfile(id: string | null) {
     setPreferredProfile(id);
@@ -355,7 +358,8 @@ export function MistakeFollowups({ mistake }: { mistake: Mistake }) {
   const headerActions = <>
     {history && <span className="followup-quota" title="今日剩余积分">
       <span className="visually-hidden">今日剩余积分 </span>
-      <span className="followup-quota-value"><strong>{remaining}</strong>/{history.dailyCreditLimit}</span>
+      <span className="followup-quota-value">{history.dailyCreditLimit === null ? <strong aria-label="无限">∞</strong> :
+        <><strong>{remaining}</strong>/{history.dailyCreditLimit}</>}</span>
       <Coins size={14} aria-hidden="true" />
     </span>}
     {controls}

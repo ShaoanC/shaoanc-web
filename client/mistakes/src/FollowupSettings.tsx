@@ -143,7 +143,7 @@ export function FollowupSettings() {
       {settings && <form className="ai-profile-form" onSubmit={save}>
         <fieldset disabled={saving} className="followup-settings-fields">
           <div className="followup-settings-general">
-            <label className="field"><span>单账号每日追问积分上限</span><input type="number" min={1} step={1} required
+            <label className="field"><span>普通账号每日追问积分上限</span><input type="number" min={1} step={1} required
               value={Number.isNaN(settings.dailyCreditLimit) ? '' : settings.dailyCreditLimit}
               onChange={(event) => setSettings({ ...settings, dailyCreditLimit: event.target.valueAsNumber })} /></label>
             <div className="field"><span>默认选中模型</span><Select ariaLabel="默认选中模型" disabled={!enabled.length || saving}

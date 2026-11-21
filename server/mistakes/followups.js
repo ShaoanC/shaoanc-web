@@ -4,7 +4,7 @@ const { rateLimit } = require('express-rate-limit');
 const { db, followupDayStart, followupDayEnd } = require('./database');
 const { fail, requireSession, requireUser } = require('./auth');
 const { assertWritable } = require('./backup-coordination');
-const { readFollowupConfig, availableFollowupProfiles, defaultFollowupProfile, safeAiError, FOLLOWUP_CREDIT_DECIMALS } = require('./ai-config');
+const { readFollowupConfig, availableFollowupProfiles, defaultFollowupProfile, safeAiError, FOLLOWUP_MULTIPLIER_DECIMALS } = require('./ai-config');
 const { resolveVendorIcon } = require('../../shared/vendor-icon.mjs');
 const { analysisImages } = require('./ai');
 const { imagePath, questionForMistake } = require('./images');
@@ -25,13 +25,13 @@ const pairSelect = `SELECT a.*, q.content AS question
     FROM mistake_followups a JOIN mistake_followups q ON q.id = a.question_id`;
 const pairFilter = "WHERE a.user_id = ? AND a.mistake_id = ? AND a.role = 'assistant'";
 
-const sumCredits = db.prepare(`SELECT COALESCE(ROUND(SUM(a.credits_charged), ${FOLLOWUP_CREDIT_DECIMALS}), 0) AS used FROM mistake_followups a
+const sumCredits = db.prepare(`SELECT COALESCE(ROUND(SUM(a.credits_charged), 1), 0) AS used FROM mistake_followups a
     WHERE a.user_id = ? AND a.role = 'assistant' AND a.created_at >= ${followupDayStart}
     AND a.created_at < ${followupDayEnd}`);
 
 function quota(userId, dailyCreditLimit) {
     const { used: dailyCreditsUsed } = sumCredits.get(userId);
-    const dailyCreditsRemaining = Math.max(0, Number((dailyCreditLimit - dailyCreditsUsed).toFixed(FOLLOWUP_CREDIT_DECIMALS)));
+    const dailyCreditsRemaining = dailyCreditLimit === null ? null : Math.max(0, Number((dailyCreditLimit - dailyCreditsUsed).toFixed(1)));
     return { dailyCreditLimit, dailyCreditsUsed, dailyCreditsRemaining };
 }
 
@@ -60,9 +60,10 @@ function contextRevision(context) {
 }
 
 function serialize(row, currentProfileName = null) {
+    const usage = row.token_usage && JSON.parse(row.token_usage);
     return {
         id: row.id, question: row.question, content: row.content, status: row.status,
-        thought: row.thought, totalTokens: row.token_usage ? JSON.parse(row.token_usage)?.totalTokens ?? null : null,
+        thought: row.thought, totalTokens: usage?.totalTokens ?? null, cachedReadTokens: usage?.cachedReadTokens ?? null,
         error: row.error_message, createdAt: row.created_at, profileId: row.profile_id, model: row.model,
         profileName: row.profile_name ?? currentProfileName, durationMs: row.duration_ms,
         vendorIcon: row.vendor_icon, creditCost: row.credit_cost, creditsCharged: row.credits_charged,
@@ -154,7 +155,11 @@ async function generate(res, row, message, dailyCreditLimit, request, stream) {
                 },
                 onImagesSkipped() { imagesSkipped = true; meta(); },
                 onUsage(value) {
-                    if (Number.isSafeInteger(value.totalTokens) && value.totalTokens >= 0) usage = value;
+                    if (!Number.isSafeInteger(value.totalTokens) || value.totalTokens < 0) return;
+                    const cached = value.cachedReadTokens;
+                    const maxInput = Number.isSafeInteger(value.inputTokens) ? value.inputTokens : value.totalTokens;
+                    const cachedReadTokens = Number.isSafeInteger(cached) ? Math.max(0, Math.min(cached, maxInput, value.totalTokens)) : null;
+                    usage = { ...value, cachedReadTokens };
                 }
             });
             content = removeReplyImages(content);
@@ -168,8 +173,13 @@ async function generate(res, row, message, dailyCreditLimit, request, stream) {
         }
         const durationMs = Math.round(performance.now() - started);
         const fallbackBillable = status === 'completed' || (status === 'cancelled' && Array.from(content).length >= 100);
-        const units = usage ? usage.totalTokens / 2000 : Number(fallbackBillable);
-        const charge = Number(Math.min(stream.remaining, units * message.credit_cost).toFixed(FOLLOWUP_CREDIT_DECIMALS));
+        const cached = usage?.cachedReadTokens ?? 0;
+        // Ten units per regular token and one per cache read. Round only the final debit.
+        const weightedTenths = usage ? (usage.totalTokens - cached) * 10 + cached : Number(fallbackBillable) * 20000;
+        const multiplierScale = 10 ** FOLLOWUP_MULTIPLIER_DECIMALS;
+        const scaledMultiplier = Math.round(message.credit_cost * multiplierScale);
+        const roundedCharge = Math.round(weightedTenths * scaledMultiplier / (2000 * multiplierScale)) / 10;
+        const charge = Math.min(stream.remaining ?? Infinity, roundedCharge);
         const { changes } = db.prepare(`UPDATE mistake_followups SET content = ?, thought = ?, credits_charged = ?, status = ?, error_message = ?,
             token_usage = ?, images_skipped = ?, duration_ms = ? WHERE id = ?`)
             .run(content, thought, charge, status, errorMessage, usage && JSON.stringify(usage), Number(imagesSkipped), durationMs, message.id);
@@ -201,7 +211,7 @@ function mountFollowups(router, { success, ownMistake }) {
         res.set('Cache-Control', 'no-store');
         success(res, {
             messages: messages.slice(0, 25).reverse().map((message) => serialize(message, profileNames.get(message.profile_id))), count, nextBefore,
-            ...quota(row.user_id, settings.dailyCreditLimit),
+            ...quota(row.user_id, req.user.role === 'admin' ? null : settings.dailyCreditLimit),
             availableProfiles: available.map((profile) => displayProfile(profile, defaultId)),
             activeMessageId: stream?.mistakeId === row.id ? stream.id : null,
             contextRevision: contextRevision(topicContext(row)), updatedAt: row.updated_at,
@@ -228,8 +238,9 @@ function mountFollowups(router, { success, ownMistake }) {
         const available = availableFollowupProfiles(settings);
         const config = available.find(({ id }) => id === profileId) ?? defaultFollowupProfile(settings, available);
         if (!config) fail(503, '管理员尚未启用并配置错题追问 AI 服务');
-        const { dailyCreditsRemaining } = quota(row.user_id, settings.dailyCreditLimit);
-        if (dailyCreditsRemaining < config.creditCost) {
+        const dailyCreditLimit = req.user.role === 'admin' ? null : settings.dailyCreditLimit;
+        const { dailyCreditsRemaining } = quota(row.user_id, dailyCreditLimit);
+        if (dailyCreditsRemaining !== null && dailyCreditsRemaining < config.creditCost) {
             fail(429, '今日剩余积分不足，可切换更低倍率模型或明日再试');
         }
         const context = topicContext(row);
@@ -241,7 +252,7 @@ function mountFollowups(router, { success, ownMistake }) {
         const stream = { id: message.id, mistakeId: row.id, remaining: dailyCreditsRemaining, controller: new AbortController() };
         active.set(row.user_id, stream);
         try {
-            stream.finished = generate(res, row, message, settings.dailyCreditLimit, { config, turns }, stream);
+            stream.finished = generate(res, row, message, dailyCreditLimit, { config, turns }, stream);
             await stream.finished;
         } finally {
             active.delete(row.user_id);
