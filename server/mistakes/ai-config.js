@@ -150,8 +150,13 @@ function saveFollowupConfig(body) {
     const { dailyCreditLimit = existing.dailyCreditLimit, defaultProfileId = existing.defaultProfileId } = body;
     if (!Number.isSafeInteger(dailyCreditLimit) || dailyCreditLimit < 1) fail(400, '每日追问积分上限须为正整数');
     if (body.profiles !== undefined && !Array.isArray(body.profiles)) fail(400, '追问模型配置须为数组');
-    const savedKeys = new Map(existing.profiles.map(({ id, apiKey }) => [id, apiKey]));
-    const entries = body.profiles?.map((entry) => followupProfile(entry, savedKeys.get(entry?.id))) ?? existing.profiles;
+    const savedProfiles = new Map(existing.profiles.map((entry) => [entry.id, entry]));
+    const entries = body.profiles?.map((entry) => {
+        if (entry?.endpointSourceId == null) return followupProfile(entry, savedProfiles.get(entry?.id)?.apiKey);
+        const source = savedProfiles.get(entry.endpointSourceId);
+        if (!source?.baseUrl || !source.apiKey) fail(400, '沿用的接口已不可用，请重新选择');
+        return followupProfile({ ...entry, baseUrl: source.baseUrl, apiKey: source.apiKey, protocol: source.protocol });
+    }) ?? existing.profiles;
     if (new Set(entries.map(({ id }) => id)).size !== entries.length) fail(400, '追问模型配置编号不能重复');
     const selected = defaultFollowupProfile({ defaultProfileId }, availableFollowupProfiles({ profiles: entries }));
     writeConfig({

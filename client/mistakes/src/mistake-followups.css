@@ -57,11 +57,15 @@
 
 .followup-compose { position: relative; }
 .followup-quota {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+.followup-quota strong { color: var(--text-primary); font-size: 14px; font-weight: 650; }
 .followup-compose-field {
   position: relative;
   min-width: 0;
@@ -97,23 +101,36 @@
   min-height: 52px;
   width: fit-content;
   max-width: calc(100% - 60px);
-  padding-inline-start: 7px;
+  padding-inline-start: 8px;
 }
 .followup-model-picker .custom-select-trigger {
   min-height: 44px;
-  gap: 6px;
-  padding: 5px 8px;
-  background: transparent;
+  gap: 7px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border-color: transparent;
+  background: var(--surface-1);
+  color: var(--primary-dark);
   font-size: 13px;
 }
+.followup-model-picker .custom-select-trigger[aria-expanded="true"] { background: var(--primary-soft); }
+.followup-model-picker .custom-select-chevron { width: 14px; color: var(--primary); }
 .followup-model-value, .followup-model-option, .followup-reply-meta {
   display: flex;
   min-width: 0;
   align-items: center;
   gap: 7px;
 }
+.followup-model-mark { display: grid; place-items: center; flex: none; line-height: 0; }
+.followup-model-option .followup-model-mark {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--surface-1);
+  color: var(--primary-dark);
+}
 .followup-model-label { min-width: 0; }
-.followup-model-value strong, .followup-model-name, .followup-reply-model {
+.followup-model-value strong, .followup-model-name, .followup-reply-profile {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -121,13 +138,21 @@
 }
 .followup-model-name { font-size: 12px; color: var(--text-secondary); }
 .followup-model-option .followup-model-label { flex: 1; }
+.followup-model-cost { display: grid; justify-items: end; gap: 2px; flex: none; }
+.followup-model-value .model-multiplier { border-radius: 999px; background: var(--surface-2); }
 .followup-model-vision { flex: none; line-height: 0; }
 .followup-model-unavailable { flex: none; white-space: nowrap; font-size: 12px; }
+.followup-compose .custom-select-popup { border-radius: 14px; }
+.followup-compose .custom-select-options { padding: 5px; }
 .followup-compose .custom-select-option-label { flex: 1; }
-.followup-compose .custom-select-option { min-height: 48px; }
+.followup-compose .custom-select-option {
+  min-height: 54px;
+  padding: 6px 8px;
+  border-radius: 9px;
+}
 .followup-compose .custom-select-option:disabled {
   opacity: .62;
-  background: var(--surface-1);
+  background: transparent;
   color: var(--text-secondary);
 }
 .followup-mobile .followup-compose .custom-select-popup { max-block-size: min(275px, 32dvh); }
@@ -173,7 +198,8 @@
   color: var(--text-secondary);
   font-size: 12px;
 }
-.followup-reply-charge { flex: none; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.followup-reply-duration, .followup-reply-charge { flex: none; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.followup-reply-duration { display: inline-flex; align-items: center; gap: 4px; }
 .followup-turns { position: relative; display: grid; gap: 16px; }
 .followup-turn { display: grid; min-width: 0; gap: 8px; }
 .followup-turn[data-entering] .followup-question { animation: followup-appear 220ms var(--motion-ease-out) backwards; }
@@ -217,7 +243,19 @@
 }
 .followup-dots > i:nth-child(2) { animation-delay: 110ms; }
 .followup-dots > i:nth-child(3) { animation-delay: 220ms; }
-.followup-new { min-height: 40px; font-size: 13px; gap: 5px; white-space: nowrap; }
+.button.secondary.followup-new {
+  flex: none;
+  min-height: 44px;
+  padding: 6px 10px;
+  gap: 4px;
+  border-radius: 8px;
+  color: var(--primary);
+  font-size: 13px;
+}
+@media (max-width: 359px) {
+  .followup-mobile .mobile-filters-heading { gap: 6px; padding-inline: 12px; }
+  .button.secondary.followup-new { padding-inline: 8px; }
+}
 .followup-prompts {
   display: flex;
   flex-wrap: wrap;

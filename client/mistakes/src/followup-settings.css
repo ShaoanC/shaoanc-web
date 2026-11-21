@@ -57,6 +57,7 @@
   font-size: 13px;
 }
 .followup-settings-editor { padding: 14px 10px; border-top: 1px solid var(--border-subtle); }
+.followup-settings-source { grid-column: 1 / -1; }
 .followup-settings-editor-actions {
   display: flex;
   grid-column: 1 / -1;

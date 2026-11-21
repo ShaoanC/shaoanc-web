@@ -33,6 +33,8 @@ export interface FollowupMessage extends FollowupModel {
   imagesSkipped: boolean;
   contextRevision: string;
   model: string | null;
+  profileName: string | null;
+  durationMs: number | null;
   creditsCharged: number;
 }
 

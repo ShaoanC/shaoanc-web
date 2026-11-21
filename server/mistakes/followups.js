@@ -58,10 +58,11 @@ function contextRevision(context) {
     return crypto.createHash('sha256').update(JSON.stringify(context)).digest('hex');
 }
 
-function serialize(row) {
+function serialize(row, currentProfileName = null) {
     return {
         id: row.id, question: row.question, content: row.content, status: row.status,
         error: row.error_message, createdAt: row.created_at, profileId: row.profile_id, model: row.model,
+        profileName: row.profile_name ?? currentProfileName, durationMs: row.duration_ms,
         vendorIcon: row.vendor_icon, creditCost: row.credit_cost, creditsCharged: row.credits_charged,
         imagesSkipped: Boolean(row.images_skipped), contextRevision: row.context_revision
     };
@@ -97,8 +98,9 @@ const startTurn = db.transaction(({ row, question, retry, profile, revision, ima
         ).run(row.id, row.user_id, questionId, createdAt).lastInsertRowid;
     }
     db.prepare(`UPDATE mistake_followups SET content = '', status = 'streaming', error_message = NULL, token_usage = NULL,
-        model = ?, profile_id = ?, vendor_icon = ?, credit_cost = ?, context_revision = ?, images_skipped = ?, created_at = ? WHERE id = ?`)
-        .run(profile.model, profile.id, profile.vendorIcon, profile.creditCost, revision, Number(imagesSkipped), createdAt, id);
+        model = ?, profile_id = ?, profile_name = ?, vendor_icon = ?, credit_cost = ?, duration_ms = NULL,
+        context_revision = ?, images_skipped = ?, created_at = ? WHERE id = ?`)
+        .run(profile.model, profile.id, profile.name, profile.vendorIcon, profile.creditCost, revision, Number(imagesSkipped), createdAt, id);
     return findPair(row, id);
 });
 
@@ -111,6 +113,7 @@ function removeReplyImages(content) {
 }
 
 async function generate(res, row, message, dailyCreditLimit, request, stream) {
+    const started = performance.now();
     let content = '';
     let usage = null;
     let imagesSkipped = Boolean(message.images_skipped);
@@ -149,8 +152,10 @@ async function generate(res, row, message, dailyCreditLimit, request, stream) {
                 errorMessage = stream.interruption || (/^AI .+可(?:重试|尝试换一种问法)$/.test(error.message) ? error.message : safeAiError(error));
             }
         }
-        const { changes } = db.prepare('UPDATE mistake_followups SET content = ?, status = ?, error_message = ?, token_usage = ?, images_skipped = ? WHERE id = ?')
-            .run(content, status, errorMessage, usage && JSON.stringify(usage), Number(imagesSkipped), message.id);
+        const durationMs = Math.round(performance.now() - started);
+        const { changes } = db.prepare(`UPDATE mistake_followups SET content = ?, status = ?, error_message = ?,
+            token_usage = ?, images_skipped = ?, duration_ms = ? WHERE id = ?`)
+            .run(content, status, errorMessage, usage && JSON.stringify(usage), Number(imagesSkipped), durationMs, message.id);
         if (!changes) return;
         write(status === 'failed' ? 'error' : 'done', {
             ...metadata, message: serialize(findPair(row, message.id)), ...quota(row.user_id, dailyCreditLimit)
@@ -175,9 +180,10 @@ function mountFollowups(router, { success, ownMistake }) {
         const settings = readFollowupConfig();
         const available = availableFollowupProfiles(settings);
         const defaultId = defaultFollowupProfile(settings, available)?.id;
+        const profileNames = new Map(settings.profiles.map(({ id, name }) => [id, name]));
         res.set('Cache-Control', 'no-store');
         success(res, {
-            messages: messages.slice(0, 25).reverse().map(serialize), count, nextBefore,
+            messages: messages.slice(0, 25).reverse().map((message) => serialize(message, profileNames.get(message.profile_id))), count, nextBefore,
             ...quota(row.user_id, settings.dailyCreditLimit),
             availableProfiles: available.map((profile) => displayProfile(profile, defaultId)),
             activeMessageId: stream?.mistakeId === row.id ? stream.id : null,

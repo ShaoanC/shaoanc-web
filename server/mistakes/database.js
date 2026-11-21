@@ -84,8 +84,10 @@ db.exec(`
         error_message TEXT,
         model TEXT,
         profile_id TEXT,
+        profile_name TEXT,
         vendor_icon TEXT,
         credit_cost INTEGER NOT NULL DEFAULT 1 CHECK (credit_cost > 0),
+        duration_ms INTEGER,
         token_usage TEXT,
         context_revision TEXT,
         images_skipped INTEGER NOT NULL DEFAULT 0,
@@ -112,6 +114,10 @@ db.exec(`
     CREATE INDEX IF NOT EXISTS reviews_mistake ON reviews(mistake_id, id);
 `);
 
+const followupColumns = db.prepare('PRAGMA table_info(mistake_followups)').all();
+for (const [name, type] of [['profile_name', 'TEXT'], ['duration_ms', 'INTEGER']]) {
+    if (!followupColumns.some((column) => column.name === name)) db.exec(`ALTER TABLE mistake_followups ADD COLUMN ${name} ${type}`);
+}
 db.prepare("UPDATE mistake_followups SET status = 'failed', error_message = '服务重启中断，可重试' WHERE status = 'streaming'").run();
 
 // Upgrade existing accounts without changing their data.

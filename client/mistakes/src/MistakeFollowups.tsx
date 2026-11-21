@@ -1,6 +1,6 @@
 import { AlertDialog } from '@base-ui/react/alert-dialog';
 import { Dialog } from '@base-ui/react/dialog';
-import { ArrowUp, Image, MessageCircle, Plus, Square, X } from 'lucide-react';
+import { ArrowUp, Clock3, Image, MessageCircle, Plus, Square, X } from 'lucide-react';
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { toast } from 'react-toastify';
 import { api } from './api';
@@ -40,15 +40,23 @@ function FollowupModelOption({ profile, unavailable, compact = false }: {
   profile: FollowupProfile; unavailable?: boolean; compact?: boolean;
 }) {
   return <span className={compact ? 'followup-model-value' : 'followup-model-option'}>
-    <VendorLogo vendorIcon={profile.vendorIcon} />
+    <span className="followup-model-mark"><VendorLogo vendorIcon={profile.vendorIcon} /></span>
     <span className="followup-model-label">
       <strong>{profile.tierLabel}</strong>
       {!compact && <span className="followup-model-name">{profile.model}</span>}
     </span>
     {!compact && profile.supportsVision && <span className="followup-model-vision" title="支持图片输入" aria-label="支持图片输入"><Image size={16} /></span>}
-    <span className="model-multiplier">{profile.creditCost}×</span>
-    {!compact && unavailable && <span className="followup-model-unavailable">积分不足</span>}
+    <span className="followup-model-cost">
+      <span className="model-multiplier">{profile.creditCost}×</span>
+      {!compact && unavailable && <span className="followup-model-unavailable">积分不足</span>}
+    </span>
   </span>;
+}
+
+function formatDuration(durationMs: number) {
+  if (durationMs < 1000) return '<1 秒';
+  const seconds = Math.floor(durationMs / 1000);
+  return seconds < 60 ? `${seconds} 秒` : `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`;
 }
 
 function FollowupReplies({ messages, enteringId, readOnly, maySend, onRetry }: {
@@ -95,9 +103,12 @@ function FollowupReplies({ messages, enteringId, readOnly, maySend, onRetry }: {
         {message.status === 'failed' && <div className="followup-state"><span>{message.error}</span>
           {!readOnly && <button className="button ghost" disabled={!maySend} onClick={() => onRetry(message.id)}>重试</button>}
         </div>}
-        {message.model && <div className="followup-reply-meta">
+        {(message.profileName || message.profileId || message.model) && <div className="followup-reply-meta">
           <VendorLogo vendorIcon={message.vendorIcon} size={16} />
-          <span className="followup-reply-model" title={message.model}>{message.model}</span>
+          <span className="followup-reply-profile" title={message.profileName ?? undefined}>{message.profileName ?? '未知配置'}</span>
+          {message.durationMs != null && <time className="followup-reply-duration" dateTime={`PT${message.durationMs / 1000}S`}>
+            <Clock3 size={13} aria-hidden="true" /><span className="visually-hidden">用时 </span>{formatDuration(message.durationMs)}
+          </time>}
           {message.creditsCharged > 0 && <span className="followup-reply-charge">-{message.creditsCharged} 积分</span>}
         </div>}
       </div>
@@ -324,8 +335,8 @@ export function MistakeFollowups({ mistake }: { mistake: Mistake }) {
     if (busy) event.cancel();
     else setConfirmNewChat(value);
   }}>
-    {Boolean(history?.count) && !history?.readOnly && <AlertDialog.Trigger className="button ghost followup-new" disabled={generating || busy}>
-      <Plus size={15} />新对话
+    {Boolean(history?.count) && !history?.readOnly && <AlertDialog.Trigger className="button secondary followup-new" disabled={generating || busy}>
+      <Plus size={15} aria-hidden="true" />新对话
     </AlertDialog.Trigger>}
     <AlertDialog.Portal container={document.body}>
       <AlertDialog.Backdrop forceRender className="followup-confirm-backdrop" />
@@ -343,7 +354,7 @@ export function MistakeFollowups({ mistake }: { mistake: Mistake }) {
     </AlertDialog.Portal>
   </AlertDialog.Root>;
   const headerActions = <>
-    {history && <span className="followup-quota" aria-label="今日剩余积分">{remaining}/{history.dailyCreditLimit} 积分</span>}
+    {history && <span className="followup-quota" title="今日剩余积分"><strong>{remaining}</strong>/{history.dailyCreditLimit} 积分</span>}
     {controls}
   </>;
   const log = <>
@@ -374,7 +385,7 @@ export function MistakeFollowups({ mistake }: { mistake: Mistake }) {
       {selected && <div className="followup-model-picker">
         <Select ariaLabel="追问模型" value={selected.id} onChange={chooseProfile} disabled={generating || busy}
           options={available.map((profile) => ({ value: profile.id, label: profile.tierLabel, disabled: profile.creditCost > remaining }))}
-          portalContainer={composerElement} popupMinWidth={280}
+          portalContainer={composerElement} popupMinWidth={296}
           renderValue={() => <FollowupModelOption profile={selected} compact />}
           renderOption={(option) => <FollowupModelOption profile={available.find(({ id }) => id === option.value)!} unavailable={option.disabled} />} />
       </div>}

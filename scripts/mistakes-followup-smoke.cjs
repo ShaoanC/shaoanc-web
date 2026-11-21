@@ -12,6 +12,7 @@ const directory = fs.mkdtempSync(path.join(root, 'data', 'followup-smoke-'));
 const exportText = '导出追问独有词';
 const replyOnlyText = '钨铼合金反应堆';
 const password = 'FollowupSmoke2026!';
+const geminiKey = 'local-gemini-smoke-key';
 const calls = [];
 let base;
 let app;
@@ -199,9 +200,24 @@ async function checkViewport(owner, first, second, width) {
             .every((part) => part.scrollWidth <= part.clientWidth + 1)));
         const credits = await owner.data('GET', followups(first.id));
         assert.equal(await drawer.locator('.followup-quota').textContent(), credits.dailyCreditsRemaining + '/' + credits.dailyCreditLimit + ' 积分');
-        assert.equal(await drawer.locator('.followup-reply-meta').filter({ hasText: 'claude-sonnet' }).getByText('-3 积分').count(), 1);
-        assert.equal(await drawer.locator('.followup-reply-meta').filter({ hasText: 'gpt-5-mini' }).getByText('-1 积分').count(), credits.dailyCreditsUsed === 5 ? 2 : 3);
+        assert.ok(await newChat.evaluate((button) => {
+            const balance = button.parentElement.querySelector('.followup-quota');
+            const action = getComputedStyle(button);
+            return balance.tagName === 'SPAN' && getComputedStyle(balance).borderTopWidth === '0px'
+                && action.borderTopStyle === 'solid' && action.borderTopColor !== 'rgba(0, 0, 0, 0)';
+        }));
+        const replies = drawer.locator('.followup-reply-meta');
+        const deepReply = replies.filter({ hasText: "Claude's text" });
+        assert.equal(await deepReply.getByText('-3 积分').count(), 1);
+        assert.match(await deepReply.locator('time').getAttribute('datetime'), /^PT\d+(\.\d+)?S$/);
+        assert.match(await deepReply.locator('time').textContent(), /用时.*秒/);
+        assert.equal(await replies.filter({ hasText: /claude-sonnet|gpt-5-mini/ }).count(), 0);
+        assert.equal(await replies.filter({ hasText: '极速' }).getByText('-1 积分').count(), credits.dailyCreditsUsed === 5 ? 2 : 3);
+        const oldReply = drawer.locator('.followup-turn').filter({ hasText: '验证搜索隔离' });
+        assert.equal(await oldReply.locator('.followup-reply-profile').textContent(), '极速');
+        assert.equal(await oldReply.locator('time').count(), 0);
         await assertVisibleLogo(modelPicker, 'openai', 18);
+        assert.ok(await modelPicker.evaluate((button) => parseFloat(getComputedStyle(button).borderRadius) > button.offsetHeight));
         await modelPicker.click();
         const menu = drawer.getByRole('listbox', { name: '追问模型' });
         await menu.waitFor();
@@ -347,22 +363,61 @@ async function checkViewport(owner, first, second, width) {
         if (!mobile) {
             await settings.getByRole('spinbutton', { name: '单账号每日追问积分上限' }).fill('34');
             await settings.getByRole('spinbutton', { name: '积分倍率' }).fill('4');
+            await settings.getByRole('textbox', { name: '配置名称' }).fill('更新后的配置名称');
             await settings.getByRole('spinbutton', { name: '排序权重' }).fill('9');
-            await settings.getByLabel('思考强度').fill('xhigh');
+            await settings.getByRole('button', { name: /思考强度/ }).click();
+            await page.getByRole('option', { name: '超高 (xhigh)' }).click();
             await settings.getByRole('checkbox', { name: '开放 深度' }).uncheck();
             await settings.getByRole('button', { name: /默认选中模型/ }).click();
             await page.getByRole('option', { name: '均衡' }).click();
+        }
+
+        await settings.getByRole('button', { name: '添加追问模型' }).click();
+        const added = settings.locator('.followup-settings-profile').last();
+        const sourcePicker = added.getByRole('button', { name: /沿用已有接口/ });
+        const apiUrl = added.getByLabel('API 基础地址');
+        const apiKey = added.getByLabel('API 密钥');
+        assert.match(await sourcePicker.textContent(), /Claude's text/);
+        await sourcePicker.click();
+        await page.getByRole('option', { name: '独立填写' }).click();
+        assert.ok(await apiUrl.isEditable() && await apiKey.isEditable());
+        await sourcePicker.click();
+        await page.getByRole('option', { name: /Google.*gemini-3-flash-preview/ }).click();
+        assert.match(await apiUrl.inputValue(), /\/v1beta$/);
+        assert.equal(await apiKey.inputValue(), '');
+        assert.equal(await apiKey.getAttribute('placeholder'), '沿用已有密钥');
+        assert.equal(await added.getByRole('button', { name: /接口协议.*Gemini 原生/ }).isDisabled(), true);
+        const effortPicker = added.getByRole('button', { name: /思考强度/ });
+        await effortPicker.click();
+        await page.getByRole('option', { name: '低 (low)' }).click();
+        assert.match(await effortPicker.textContent(), /低 \(low\)/);
+
+        if (!mobile) {
+            await added.getByLabel('配置名称').fill('复用接口测试');
+            await added.getByLabel('模型名称').fill('gemini-shared');
+            await added.getByRole('checkbox', { name: '开放 复用接口测试' }).check();
+            const saveRequest = page.waitForRequest((request) => request.method() === 'PATCH' && request.url().endsWith(configRoute));
             await settings.getByRole('button', { name: '保存错题追问配置' }).click();
             await page.getByText('错题追问配置已保存。', { exact: true }).waitFor();
+            const draft = (await saveRequest).postDataJSON().profiles.find(({ name }) => name === '复用接口测试');
+            assert.equal(draft.endpointSourceId, 'native');
+            assert.equal(draft.apiKey, undefined);
             const saved = await owner.data('GET', configRoute);
             assert.equal(saved.dailyCreditLimit, 34);
             assert.equal(saved.defaultProfileId, 'native');
             const edited = saved.profiles.find(({ id }) => id === 'deep');
             assert.deepEqual([edited.creditCost, edited.sortOrder, edited.thinkingEffort, edited.vendorIcon, edited.enabledForFollowup], [4, 9, 'xhigh', 'openai', false]);
+            const copy = saved.profiles.find(({ id }) => id === draft.id);
+            assert.equal(copy.baseUrl, saved.profiles.find(({ id }) => id === 'native').baseUrl);
+            assert.deepEqual([copy.protocol, copy.hasApiKey, copy.thinkingEffort, copy.enabledForFollowup], ['gemini', true, 'low', true]);
+            assert.equal(copy.apiKey, undefined);
+            assert.equal(copy.endpointSourceId, undefined);
+            const { readFollowupConfig } = require('../server/mistakes/ai-config');
+            assert.equal(readFollowupConfig().profiles.find(({ id }) => id === copy.id).apiKey, geminiKey);
             await page.goto(appUrl + '/mistakes/' + first.id);
             await entry.click();
             await assertVisibleLogo(modelPicker, 'google', 18);
-            await drawer.locator('.followup-reply-meta').filter({ hasText: 'claude-sonnet' }).getByText('-3 积分').waitFor();
+            await drawer.locator('.followup-reply-meta').filter({ hasText: "Claude's text" }).getByText('-3 积分').waitFor();
             await newChat.click();
             await confirm.getByRole('button', { name: '开始新对话', exact: true }).click();
             await notices.getByText('已开始新对话。', { exact: true }).waitFor();
@@ -448,7 +503,8 @@ async function main() {
         { ...endpoint, id: 'deep', name: "Claude's text", tierLabel: '深度', model: 'claude-sonnet', vision: false,
             enabledForFollowup: true, creditCost: 3, thinkingEffort: 'high' },
         { ...endpoint, id: 'native', name: 'Google', tierLabel: '均衡', model: 'gemini-3-flash-preview',
-            protocol: 'gemini', baseUrl: upstream + '/v1beta', enabledForFollowup: true, creditCost: 6, sortOrder: 0, thinkingEffort: 'low' },
+            protocol: 'gemini', baseUrl: upstream + '/v1beta', apiKey: geminiKey,
+            enabledForFollowup: true, creditCost: 6, sortOrder: 0, thinkingEffort: 'low' },
         { ...endpoint, id: 'premium', name: '旗舰', model: 'mimo-v2', enabledForFollowup: true, creditCost: 12 },
         { id: 'disabled', name: '停用档', model: 'mistral', enabledForFollowup: false, creditCost: 2 },
     ];
@@ -489,6 +545,11 @@ async function main() {
         assert.deepEqual([frame.profileId, frame.vendorIcon, frame.creditCost, frame.dailyCreditsRemaining], ['fast', 'openai', 1, remaining]);
     }
     assert.equal(completed.creditsCharged, 1);
+    assert.equal(result[0].message.profileName, '极速');
+    assert.equal(result[0].message.durationMs, null);
+    assert.equal(completed.profileName, '极速');
+    assert.ok(Number.isInteger(completed.durationMs) && completed.durationMs >= 0);
+    db.prepare('UPDATE mistake_followups SET profile_name = NULL, duration_ms = NULL WHERE id = ?').run(completed.id);
     assert.ok(calls.at(-1).body.messages[1].content.includes(longQuestion.split('\n')[0]));
     assert.ok(!JSON.stringify(calls.at(-1)).includes('不可信题面'));
     assert.match(completed.content, new RegExp(replyOnlyText));
@@ -509,6 +570,7 @@ async function main() {
     });
     assert.equal(stopped.at(-1).message.status, 'cancelled');
     assert.equal(stopped.at(-1).message.creditsCharged, 0);
+    assert.ok(Number.isInteger(stopped.at(-1).message.durationMs));
     assert.equal(stopped.at(-1).dailyCreditsRemaining, 15);
     for (let i = 0; i < 20 && !cancelled; i++) await delay(50);
     assert.equal(cancelled, true);
@@ -516,10 +578,12 @@ async function main() {
     const failure = failed.message;
     assert.equal(failure.status, 'failed');
     assert.equal(failure.creditsCharged, 0);
+    assert.ok(Number.isInteger(failure.durationMs));
     assert.equal(failed.dailyCreditsRemaining, 15);
     assert.equal(calls.at(-1).body.reasoning_effort, 'high');
     const retried = await events(await owner.request('POST', followups(first.id) + '/stream', { retryMessageId: failure.id, profileId: 'deep' }));
     assert.equal(retried.at(-1).message.id, failure.id);
+    assert.equal(retried[0].message.durationMs, null);
     assert.deepEqual([retried.at(-1).message.model, retried.at(-1).message.creditsCharged, retried.at(-1).dailyCreditsRemaining], ['claude-sonnet', 3, 12]);
     assert.match(calls.at(-1).body.messages[3].content, new RegExp(replyOnlyText));
     assert.match(retried.at(-1).message.content, new RegExp(exportText));
@@ -536,6 +600,9 @@ async function main() {
     }
     const history = await owner.data('GET', followups(first.id));
     assert.equal(history.messages.at(-1).status, 'completed');
+    assert.ok(history.messages.at(-1).durationMs >= 700);
+    assert.equal(history.messages[0].profileName, '极速');
+    assert.equal(history.messages[0].durationMs, null);
     assert.equal(history.messages.length, 4);
     assert.equal(history.dailyCreditsUsed, 5);
     assert.equal(history.dailyCreditsRemaining, 11);
@@ -611,12 +678,17 @@ async function main() {
     const snapshot = path.join(directory, 'snapshot.sqlite');
     db.prepare("UPDATE mistake_followups SET status = 'streaming' WHERE id = ?").run(failure.id);
     await db.backup(snapshot);
+    const previousSchema = new (require('better-sqlite3'))(snapshot);
+    previousSchema.exec('ALTER TABLE mistake_followups DROP COLUMN profile_name; ALTER TABLE mistake_followups DROP COLUMN duration_ms;');
+    previousSchema.close();
     execFileSync(process.execPath, ['-e', `
         const { db, billableFollowup } = require('./server/mistakes/database');
         const assert = require('node:assert/strict');
         const row = db.prepare('SELECT * FROM mistake_followups WHERE id = ?').get(Number(process.argv[1]));
         assert.equal(row.status, 'failed');
         assert.match(row.error_message, /服务重启中断/);
+        assert.equal(row.profile_name, null);
+        assert.equal(row.duration_ms, null);
         assert.equal(db.prepare('SELECT SUM(a.credit_cost) AS used FROM mistake_followups a WHERE user_id = ? AND role = ? AND ' +
             billableFollowup('a')).get(row.user_id, 'assistant').used, 2);
     `, String(failure.id)], {
