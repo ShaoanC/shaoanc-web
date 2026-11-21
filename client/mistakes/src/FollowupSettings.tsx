@@ -15,7 +15,7 @@ type Profile = {
   tierLabel: string;
   model: string;
   baseUrl: string;
-  protocol: 'openai' | 'responses' | 'gemini';
+  protocol: 'openai' | 'responses' | 'anthropic' | 'gemini';
   enabledForFollowup: boolean;
   vision: boolean;
   creditCost: number;
@@ -34,7 +34,10 @@ type Settings = {
 };
 
 const endpoint = '/admin/ai/config?profile=followup';
-const protocols = [{ value: 'openai', label: 'OpenAI 兼容' }, { value: 'responses', label: 'OpenAI Responses' }, { value: 'gemini', label: 'Gemini 原生' }];
+const protocols = [
+  { value: 'openai', label: 'OpenAI 兼容' }, { value: 'responses', label: 'OpenAI Responses' },
+  { value: 'anthropic', label: 'Claude Messages' }, { value: 'gemini', label: 'Gemini 原生' },
+];
 const vendors = [{ value: '', label: '自动识别' }, ...Object.entries(vendorNames).map(([value, label]) => ({ value, label }))];
 const efforts = [
   { value: '', label: '模型默认' },
@@ -81,6 +84,7 @@ function ProfileEditor({ profile, sources, update, remove }: {
       onChange={(protocol) => update({ protocol: protocol as Profile['protocol'] })} /></div>
     <label className="field"><span>模型名称</span><input value={profile.model} required={required} onChange={(event) => update({ model: event.target.value })} /></label>
     <label className="field"><span>API 基础地址</span><input type="url" value={baseUrl} required={required && !source} readOnly={Boolean(source)}
+      placeholder={(source?.protocol ?? profile.protocol) === 'anthropic' ? 'https://api.anthropic.com' : undefined}
       onChange={(event) => update({ baseUrl: event.target.value })} /></label>
     <label className="field"><span>API 密钥</span><input type="password" autoComplete="new-password" value={source ? '' : profile.apiKey ?? ''}
       readOnly={Boolean(source)} required={required && !source && !profile.hasApiKey}

@@ -21,6 +21,15 @@ let browser;
 let cancelled = false;
 let failedOnce = false;
 let loadingResponse;
+function claudeEvent(type, fields = {}) {
+    return 'event: ' + type + '\r\ndata: ' + JSON.stringify({ type, ...fields }) + '\r\n\r\n';
+}
+function claudeText(text) {
+    return claudeEvent('content_block_delta', { index: 2, delta: { type: 'text_delta', text } });
+}
+const claudeFinish = claudeEvent('content_block_stop', { index: 2 })
+    + claudeEvent('message_delta', { delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 500 } })
+    + claudeEvent('message_stop');
 const provider = http.createServer(async (req, res) => {
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
@@ -31,6 +40,36 @@ const provider = http.createServer(async (req, res) => {
     function json(status, value) {
         res.writeHead(status, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(value));
+    }
+    if (req.url === '/v1/messages') {
+        if (!req.headers['x-api-key'] || req.headers['anthropic-version'] !== '2023-06-01') {
+            return json(401, { error: { message: 'Missing Messages API credentials or version' } });
+        }
+        const usage = { input_tokens: 1000, cache_creation_input_tokens: 100, cache_read_input_tokens: 400, output_tokens: 1 };
+        if (last === '非流式思考摘要') {
+            if (body.stream) return json(400, { error: { message: 'Streaming is not supported' } });
+            return json(200, { type: 'message', stop_reason: 'end_turn', usage: { ...usage, output_tokens: 500 }, content: [
+                { type: 'thinking', thinking: '列式' }, { type: 'redacted_thinking', data: 'opaque' }, { type: 'text', text: '解题' }
+            ] });
+        }
+        res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+        res.write(claudeEvent('message_start', { message: { type: 'message', content: [], usage } })
+            + claudeEvent('content_block_start', { index: 0, content_block: { type: 'thinking', thinking: '' } })
+            + claudeEvent('content_block_delta', { index: 0, delta: { type: 'thinking_delta', thinking: '核对' } })
+            + claudeEvent('ping')
+            + claudeEvent('content_block_delta', { index: 0, delta: { type: 'thinking_delta', thinking: '条件' } })
+            + claudeEvent('content_block_delta', { index: 0, delta: { type: 'signature_delta', signature: 'opaque' } })
+            + claudeEvent('content_block_stop', { index: 0 })
+            + claudeEvent('content_block_start', { index: 1, content_block: { type: 'redacted_thinking', data: 'opaque' } })
+            + claudeEvent('content_block_stop', { index: 1 })
+            + claudeEvent('content_block_start', { index: 2, content_block: { type: 'text', text: '' } }));
+        if (last === '逐步推导') {
+            loadingResponse = res;
+            res.write(claudeText('') + claudeText(' \n\t'));
+        } else {
+            res.end(claudeText('解') + claudeText('题') + claudeFinish);
+        }
+        return;
     }
     if (last === '暂时故障' && !failedOnce) {
         failedOnce = true;
@@ -49,13 +88,6 @@ const provider = http.createServer(async (req, res) => {
     }
     res.writeHead(200, { 'Content-Type': 'text/event-stream' });
     const packet = (value) => 'data: ' + JSON.stringify(value) + '\r\n\r\n';
-    if (last === '逐步推导') {
-        loadingResponse = res;
-        res.write(': heartbeat\n\n' + packet({ choices: [{ delta: { content: '' } }] })
-            + packet({ choices: [{ delta: { content: ' \n\t' } }] })
-            + packet({ choices: [{ delta: { reasoning_content: '核对条件' } }] }));
-        return;
-    }
     if (req.url.endsWith('/responses')) {
         const status = calls.filter((call) => call.last === last).length === 1 ? 'incomplete' : 'completed';
         if (status === 'incomplete') res.write(packet({ type: 'response.reasoning_summary_text.delta', delta: '先列' }));
@@ -235,10 +267,10 @@ async function checkStreamingStates(actor, mistakeId, width) {
                 await page.emulateMedia({ reducedMotion: 'no-preference' });
             }
             if (outcome === 'failed') {
-                loadingResponse.end('data: [DONE]\n\n');
+                loadingResponse.end(claudeEvent('error', { error: { type: 'overloaded_error', message: 'Overloaded' } }));
                 await turn.getByRole('button', { name: '重试' }).waitFor();
             } else {
-                loadingResponse.write('data: ' + JSON.stringify({ choices: [{ delta: { content: '解' } }] }) + '\n\n');
+                loadingResponse.write(claudeText('解'));
                 await turn.locator('.followup-answer-text').getByText('解', { exact: true }).waitFor();
                 await writing.waitFor();
                 assert.equal(await thoughtToggle.getAttribute('aria-expanded'), 'false');
@@ -252,7 +284,7 @@ async function checkStreamingStates(actor, mistakeId, width) {
                 if (outcome === 'completed') {
                     await thoughtToggle.click();
                     await thoughtText.waitFor();
-                    loadingResponse.write('data: ' + JSON.stringify({ choices: [{ delta: { content: '题' } }] }) + '\n\n');
+                    loadingResponse.write(claudeText('题'));
                     await turn.locator('.followup-answer-text').getByText('解题', { exact: true }).waitFor();
                     assert.equal(await thoughtToggle.getAttribute('aria-expanded'), 'true');
                     assert.ok(await thoughtText.evaluate((text) => getComputedStyle(text.parentElement).transitionProperty.includes('height')));
@@ -267,7 +299,7 @@ async function checkStreamingStates(actor, mistakeId, width) {
                     await stop.click();
                     await turn.getByText('已停止生成', { exact: true }).waitFor();
                 } else {
-                    loadingResponse.end('data: [DONE]\n\n');
+                    loadingResponse.end(claudeFinish);
                 }
             }
             await send.waitFor();
@@ -553,6 +585,9 @@ async function checkViewport(owner, first, second, width) {
         await sourcePicker.click();
         await page.getByRole('option', { name: '独立填写' }).click();
         assert.ok(await apiUrl.isEditable() && await apiKey.isEditable());
+        await added.getByRole('button', { name: /接口协议/ }).click();
+        await page.getByRole('option', { name: 'Claude Messages' }).click();
+        assert.equal(await apiUrl.getAttribute('placeholder'), 'https://api.anthropic.com');
         await sourcePicker.click();
         await page.getByRole('option', { name: /Google.*gemini-3-flash-preview/ }).click();
         assert.match(await apiUrl.inputValue(), /\/v1beta$/);
@@ -943,8 +978,28 @@ async function main() {
     const loadingUser = client();
     await loadingUser.login('followup_loading');
     const loadingMistake = await create(loadingUser, {});
+    const claude = { ...models[0], id: 'claude-native', name: 'Claude Messages', model: 'claude-sonnet-4-6',
+        baseUrl: upstream, protocol: 'anthropic', thinkingEffort: 'high' };
+    await owner.data('PATCH', configRoute, { profiles: [...settings.profiles, claude], defaultProfileId: claude.id });
+    const nativeFrames = await ask(responsesUser, responsesQuestion.id, '原生思考摘要', claude.id);
+    assert.deepEqual(nativeFrames.map((frame) => frame.type), ['meta', 'thought', 'thought', 'delta', 'delta', 'done']);
+    const nativeMessage = nativeFrames.at(-1).message;
+    assert.deepEqual([nativeMessage.thought, nativeMessage.content, nativeMessage.totalTokens, nativeMessage.cachedReadTokens,
+        nativeMessage.creditsCharged], ['核对条件', '解题', 2000, 400, 0.8]);
+    const claudeBody = calls.at(-1).body;
+    assert.ok(claudeBody.system && claudeBody.stream && claudeBody.max_tokens > 0);
+    assert.deepEqual(claudeBody.thinking, { type: 'adaptive', display: 'summarized' });
+    assert.deepEqual(claudeBody.output_config, { effort: 'high' });
+    const legacy = { ...claude, model: 'claude-haiku-4-5', baseUrl: upstream + '/v1' };
+    await owner.data('PATCH', configRoute, { profiles: [...settings.profiles, legacy] });
+    const full = (await ask(responsesUser, responsesQuestion.id, '非流式思考摘要', claude.id)).at(-1).message;
+    assert.deepEqual([full.status, full.thought, full.content, full.totalTokens], ['completed', '列式', '解题', 2000]);
+    assert.equal(calls.at(-1).body.thinking.type, 'enabled');
+    assert.ok(calls.at(-1).body.thinking.budget_tokens < calls.at(-1).body.max_tokens);
+    await owner.data('PATCH', configRoute, { profiles: [...settings.profiles, claude] });
     await checkStreamingStates(loadingUser, loadingMistake.id, 390);
     await checkStreamingStates(loadingUser, loadingMistake.id, 1440);
+    await owner.data('PATCH', configRoute, { profiles: settings.profiles, defaultProfileId: settings.defaultProfileId });
     await checkViewport(owner, first, second, 390);
     await checkViewport(owner, first, second, 1440);
     console.log('Mistake follow-up smoke passed: two-stage streaming on mobile and desktop, multi-profile routing, credit settlement, cancellation threshold, detached completion, rate limit, recovery, selectors, settings and PDF.');

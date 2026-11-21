@@ -111,7 +111,7 @@ function followupProfile(entry, savedKey = '') {
         thinkingEffort = '', vendorIcon = '', sortOrder = null, protocol = 'openai', vision = true
     } = entry;
     if (typeof name !== 'string' || !name.trim() || typeof tierLabel !== 'string') fail(400, '请填写追问配置名称');
-    if (typeof enabledForFollowup !== 'boolean' || typeof vision !== 'boolean' || !['openai', 'responses', 'gemini'].includes(protocol)) {
+    if (typeof enabledForFollowup !== 'boolean' || typeof vision !== 'boolean' || !['openai', 'responses', 'anthropic', 'gemini'].includes(protocol)) {
         fail(400, '请选择有效的启用、接口协议和图片输入设置');
     }
     if (!Number.isFinite(creditCost) || creditCost < 0 || creditCost > Number.MAX_SAFE_INTEGER

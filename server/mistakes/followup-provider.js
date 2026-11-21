@@ -1,4 +1,5 @@
 const { recordAiCall, httpAiError, analysisText } = require('./ai-request');
+const { createClaudeMessages } = require('./followup-claude');
 
 const instructions = [
     '你是这道错题的学科助教。直接回答本轮追问，结合题目条件讲清关键步骤。不要编造或擅自修改原题条件。',
@@ -176,7 +177,7 @@ function unsupportedThinking(error) {
 
 async function requestFollowup({ config, turns, userId, signal, onDelta, onThought, onImagesSkipped, onUsage }) {
     const protocol = config.protocol || 'openai';
-    const provider = providers[protocol];
+    const provider = protocol === 'anthropic' ? createClaudeMessages(config.model, instructions) : providers[protocol];
     const deadline = AbortSignal.any([signal, AbortSignal.timeout(90000)]);
     let delivered = false;
     let receivedThought = '';
@@ -246,6 +247,11 @@ async function requestFollowup({ config, turns, userId, signal, onDelta, onThoug
                 onImagesSkipped();
             } else if (stream && includeUsage && [400, 422].includes(error.status) && /stream_options|include_usage/i.test(error.providerMessage)) {
                 includeUsage = false;
+            } else if (includeThoughts && provider.retryThinking?.(error)) {
+                continue;
+            } else if (protocol === 'anthropic' && config.thinkingEffort && config.thinkingEffort !== 'none'
+                && [400, 422].includes(error.status) && /effort|output_config/i.test(error.providerMessage)) {
+                config = { ...config, thinkingEffort: '' };
             } else if (includeThoughts && (protocol !== 'openai' || !unsupportedThinking(error)) && [400, 403, 422].includes(error.status)
                 && /include.?thoughts|summary|summaries|thinking|reasoning/i.test(error.providerMessage)) {
                 includeThoughts = false;
