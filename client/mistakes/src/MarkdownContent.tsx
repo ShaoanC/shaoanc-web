@@ -9,6 +9,7 @@ import { rehypeKeepPunctuation } from './text-layout';
 import { ScrollArea } from './ScrollArea';
 import { Checkbox } from './components';
 import { MarkdownImage, MarkdownImageLink } from './MarkdownImage';
+import { rehypeStreamChunks } from './stream-text';
 import type { Nodes, PhrasingContent, Root } from 'mdast';
 import 'katex/dist/katex.min.css';
 import './text-layout.css';
@@ -20,6 +21,7 @@ type MarkdownContentProps = {
   emptyText?: string;
   imageUrls?: Record<string, string>;
   skipImages?: boolean;
+  streamChunks?: number[];
 };
 
 // Flatten parsed blocks, keeping formula nodes intact rather than slicing source text.
@@ -102,7 +104,7 @@ const compactComponents: Components = {
   p: ({ children }) => <span>{children}</span>,
 };
 
-export function MarkdownContent({ children, variant = 'full', className = '', emptyText, imageUrls, skipImages }: MarkdownContentProps) {
+export function MarkdownContent({ children, variant = 'full', className = '', emptyText, imageUrls, skipImages, streamChunks }: MarkdownContentProps) {
   const compact = variant === 'compact';
   const Tag = compact ? 'span' : 'div';
   const showEmptyText = !children.trim() && Boolean(emptyText);
@@ -111,7 +113,7 @@ export function MarkdownContent({ children, variant = 'full', className = '', em
     <MarkdownImageUrls.Provider value={imageUrls}>
       <ReactMarkdown
         remarkPlugins={compact ? [remarkGfm, remarkMath, remarkCompact] : [remarkGfm, remarkMath, remarkBreaks, remarkListNumbers]}
-        rehypePlugins={[rehypeKatex, rehypeKeepPunctuation]}
+        rehypePlugins={streamChunks ? [rehypeKatex, rehypeKeepPunctuation, [rehypeStreamChunks, { starts: streamChunks, source: children }]] : [rehypeKatex, rehypeKeepPunctuation]}
         disallowedElements={skipImages ? ['img'] : undefined}
         components={compact ? compactComponents : fullComponents}
       >{showEmptyText ? emptyText : children}</ReactMarkdown>

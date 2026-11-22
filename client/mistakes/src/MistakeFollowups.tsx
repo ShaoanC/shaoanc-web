@@ -1,7 +1,7 @@
 import { AlertDialog } from '@base-ui/react/alert-dialog';
 import { Collapsible } from '@base-ui/react/collapsible';
 import { Dialog } from '@base-ui/react/dialog';
-import { ArrowUp, ArrowUpRight, ChevronRight, Clock3, Coins, Cpu, MessageCircle, Square, SquarePen, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpRight, ChevronRight, Clock3, Coins, Cpu, MessageCircle, Square, SquarePen, X } from 'lucide-react';
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent } from 'react';
 import { toast } from 'react-toastify';
 import { api } from './api';
@@ -11,6 +11,7 @@ import { streamFollowup, type FollowupHistory, type FollowupMessage, type Follow
 import { pickFollowupPrompts } from './followup-prompts';
 import { useApp } from './context';
 import { Select } from './Select';
+import { streamTextPieces, useStreamChunks } from './stream-text';
 import { VendorLogo } from './VendorLogo';
 import type { Mistake } from './types';
 import './mistake-followups.css';
@@ -86,7 +87,9 @@ function FollowupModelOption({ profile, unavailable, compact = false }: {
 }
 
 function FollowupThought({ message, latest }: { message: FollowupMessage; latest: boolean }) {
-  const waitingForBody = message.status === 'streaming' && !hasBodyText(message.content);
+  const streaming = message.status === 'streaming';
+  const waitingForBody = streaming && !hasBodyText(message.content);
+  const chunks = useStreamChunks(message.thought, streaming);
   const [expanded, setExpanded] = useState(waitingForBody);
   useLayoutEffect(() => { setExpanded(waitingForBody); }, [waitingForBody]);
 
@@ -97,11 +100,19 @@ function FollowupThought({ message, latest }: { message: FollowupMessage; latest
           <ChevronRight size={14} aria-hidden="true" />思考过程
         </Collapsible.Trigger>
         <Collapsible.Panel className="followup-thought-slide" inert={!expanded} aria-hidden={!expanded || undefined}>
-          <div className="followup-thought-text">{message.thought}</div>
+          <div className="followup-thought-text">{chunks.length ? streamTextPieces(message.thought, chunks).map((piece) =>
+            <span key={piece.start} className={piece.animated ? 'followup-stream-chunk' : undefined}>{piece.text}</span>) : message.thought}</div>
         </Collapsible.Panel>
       </Collapsible.Root>
     </Collapsible.Panel>
   </Collapsible.Root>;
+}
+
+function FollowupAnswerText({ message }: { message: FollowupMessage }) {
+  const chunks = useStreamChunks(message.content, message.status === 'streaming');
+  return <FollowupMarkdown className="prose followup-answer-text" skipImages streamChunks={chunks.length ? chunks : undefined}>
+    {message.content}
+  </FollowupMarkdown>;
 }
 
 function FollowupReplies({ messages, enteringId, readOnly, maySend, onRetry }: {
@@ -143,7 +154,7 @@ function FollowupReplies({ messages, enteringId, readOnly, maySend, onRetry }: {
         data-streaming={message.status === 'streaming' || undefined}>
         {message.thought && <FollowupThought message={message} latest={message.id === newestMessageId} />}
         {hasBodyText(message.content) ? <>
-          <FollowupMarkdown className="prose followup-answer-text" skipImages>{message.content}</FollowupMarkdown>
+          <FollowupAnswerText message={message} />
           {message.status === 'streaming' && <p className="followup-state followup-writing" role="status">
             <span className="followup-dots" aria-hidden="true"><i /><i /><i /></span>
             <span className="visually-hidden">正在写入回复</span>
@@ -190,6 +201,8 @@ export function MistakeFollowups({ mistake }: { mistake: Mistake }) {
   const [enteringId, setEnteringId] = useState<number | null>(null);
   const [sending, setSending] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [hasRepliesBelow, setHasRepliesBelow] = useState(false);
+  const [logContent, setLogContent] = useState<HTMLDivElement | null>(null);
   const [composerElement, setComposerElement] = useState<HTMLFormElement | null>(null);
   const [preferredProfile, setPreferredProfile] = useState(() => {
     try { return localStorage.getItem(preferenceKey); } catch { return null; }
@@ -197,8 +210,7 @@ export function MistakeFollowups({ mistake }: { mistake: Mistake }) {
   const lifetime = useRef<AbortController | null>(null);
   const requestNo = useRef(0);
   const currentStream = useRef(false);
-  const scrollAnchor = useRef<HTMLDivElement>(null);
-  const followTail = useRef(true);
+  const positionOnOpen = useRef(false);
   const shownRevision = useRef('');
   const available = history?.availableProfiles ?? [];
   const selected = available.find(({ id }) => id === preferredProfile) ?? available.find(({ isDefault }) => isDefault);
@@ -272,18 +284,10 @@ export function MistakeFollowups({ mistake }: { mistake: Mistake }) {
     try { localStorage.removeItem(preferenceKey); } catch { /* Storage can be blocked. */ }
   }, [history, preferenceKey, preferredProfile]);
 
-  useLayoutEffect(() => {
-    const scroll = scrollAnchor.current?.closest<HTMLElement>('.followup-scroll, .mobile-filters-content');
-    if (!scroll || !open) return;
-    if (followTail.current) scroll.scrollTop = scroll.scrollHeight;
-    const track = () => { followTail.current = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 72; };
-    scroll.addEventListener('scroll', track, { passive: true });
-    return () => scroll.removeEventListener('scroll', track);
-  });
-
   function show(value: boolean) {
     if (value) {
-      followTail.current = true;
+      positionOnOpen.current = true;
+      setHasRepliesBelow(false);
       setExpanded(currentStream.current || Boolean(history?.activeMessageId));
       setEnteringId(null);
       setPrompts(pickFollowupPrompts(mistake.subjectId));
@@ -303,7 +307,6 @@ export function MistakeFollowups({ mistake }: { mistake: Mistake }) {
     const signal = lifetime.current!.signal;
     requestNo.current += 1;
     currentStream.current = true;
-    followTail.current = !retryMessageId;
     expandDrawer();
     setSending(true);
     let imagesNotified = false;
@@ -380,6 +383,35 @@ export function MistakeFollowups({ mistake }: { mistake: Mistake }) {
   const composeAction = generating ? '停止生成' : '发送';
   const maySend = Boolean(selected && selected.creditCost <= remaining && !history?.readOnly) && !generating && !busy;
   const messages = history?.messages ?? [];
+  const historyReady = history !== null;
+
+  useLayoutEffect(() => {
+    const content = logContent;
+    const scroll = content?.parentElement;
+    if (!content || !scroll || !open) return;
+    if (positionOnOpen.current && historyReady) {
+      positionOnOpen.current = false;
+      if (!generating) scroll.scrollTop = scroll.scrollHeight;
+    }
+    const track = () => setHasRepliesBelow(historyReady && scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight > 6);
+    track();
+    const observer = new ResizeObserver(track);
+    observer.observe(content);
+    observer.observe(scroll);
+    scroll.addEventListener('scroll', track, { passive: true });
+    return () => {
+      observer.disconnect();
+      scroll.removeEventListener('scroll', track);
+    };
+  }, [open, logContent, historyReady, generating]);
+
+  function scrollToLatest() {
+    const scroll = logContent?.parentElement;
+    if (!scroll) return;
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    scroll.scrollTo({ top: scroll.scrollHeight, behavior: reduced ? 'instant' : 'smooth' });
+  }
+
   function submit(event: FormEvent) { event.preventDefault(); void send(input); }
 
   function handleComposeKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -420,12 +452,11 @@ export function MistakeFollowups({ mistake }: { mistake: Mistake }) {
     </span>}
     {controls}
   </>;
-  const log = <>
+  const log = <div ref={setLogContent} className="followup-log-content">
     {!history && (loadError
       ? <button type="button" className="button secondary" onClick={() => { setLoadError(''); void refresh(); }}>重新加载</button>
       : <p className="followup-state" role="status">正在加载追问…</p>)}
     {history?.nextBefore && <button className="button ghost followup-earlier" onClick={() => {
-      followTail.current = false;
       expandDrawer();
       void refresh(history.nextBefore!);
     }}>加载更早的追问</button>}
@@ -438,9 +469,10 @@ export function MistakeFollowups({ mistake }: { mistake: Mistake }) {
           {prompt}<ArrowUpRight size={12} strokeWidth={1.6} aria-hidden="true" />
         </button>)}
     </div>}
-    <div ref={scrollAnchor} />
-  </>;
+  </div>;
   const composer = history && !history.readOnly && <form className="followup-compose" ref={setComposerElement} onSubmit={submit}>
+    {hasRepliesBelow && messages.length > 0 && <button className="followup-scroll-latest" type="button" aria-label="滚动到底部"
+      title="滚动到底部" onClick={scrollToLatest}><ArrowDown size={18} aria-hidden="true" /></button>}
     <div className="followup-compose-field">
       <textarea id={'followup-question-' + mistake.id} aria-label="输入追问" rows={2} maxLength={1000} value={input}
         placeholder={selected ? '输入你的追问' : '暂无可用模型'} disabled={!selected} onFocus={expandDrawer} onKeyDown={handleComposeKeyDown}

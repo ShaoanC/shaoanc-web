@@ -227,17 +227,19 @@ async function checkStreamingStates(actor, mistakeId, width) {
         }]);
         const page = await context.newPage();
         page.setDefaultTimeout(12000);
-        await page.goto(base + '/mistakes/#/mistakes/' + mistakeId);
+        await page.goto(base + '/mistakes/#/mistakes/' + mistakeId, { waitUntil: 'domcontentloaded' });
         await page.getByRole('button', { name: /追问 AI/ }).click();
         const drawer = page.getByRole('dialog', { name: '追问 AI' });
         const turn = drawer.locator('.followup-turn').last();
         const thoughtToggle = turn.getByRole('button', { name: '思考过程', exact: true });
-        const thoughtText = turn.getByText('核对条件', { exact: true });
+        const thoughtText = turn.locator('.followup-thought-text');
         const word = turn.locator('.followup-thinking-word');
         const wave = turn.locator('.followup-wave');
         const writing = turn.locator('.followup-writing');
         const stop = drawer.getByRole('button', { name: '停止生成' });
         const send = drawer.getByRole('button', { name: '发送', exact: true });
+        const scroll = drawer.locator('.followup-scroll, .mobile-filters-content');
+        const jump = drawer.getByRole('button', { name: '滚动到底部' });
         const fits = () => drawer.evaluate((panel) => document.documentElement.scrollWidth <= innerWidth + 1
             && [panel, panel.querySelector('.followup-scroll, .mobile-filters-content'), panel.querySelector('.followup-turn:last-child .followup-answer')]
                 .every((part) => part.scrollWidth <= part.clientWidth + 1));
@@ -247,6 +249,7 @@ async function checkStreamingStates(actor, mistakeId, width) {
             await send.click();
             await wave.waitFor();
             await thoughtText.waitFor();
+            assert.equal(await thoughtText.textContent(), '核对条件');
             assert.equal(await thoughtToggle.getAttribute('aria-expanded'), 'true');
             assert.equal(await drawer.getByRole('button', { name: '思考过程', exact: true }).count(), 1);
             await drawer.locator('.followup-turn:not(:last-child) .followup-thought-toggle').waitFor({ state: 'detached' });
@@ -285,13 +288,33 @@ async function checkStreamingStates(actor, mistakeId, width) {
                     await thoughtToggle.click();
                     await thoughtText.waitFor();
                     loadingResponse.write(claudeText('题'));
-                    await turn.locator('.followup-answer-text').getByText('解题', { exact: true }).waitFor();
+                    const answer = turn.locator('.followup-answer-text');
+                    const newText = answer.locator('.followup-stream-chunk').filter({ hasText: /^题\s*$/ });
+                    await page.waitForFunction(() => document.querySelector('.followup-turn:last-child .followup-answer-text')?.textContent.trim() === '解题');
+                    assert.equal(await newText.count(), 1, await answer.innerHTML());
+                    assert.equal(await newText.evaluate((text) => getComputedStyle(text).animationName), 'followup-text-reveal');
                     assert.equal(await thoughtToggle.getAttribute('aria-expanded'), 'true');
                     assert.ok(await thoughtText.evaluate((text) => getComputedStyle(text.parentElement).transitionProperty.includes('height')));
                     await page.emulateMedia({ reducedMotion: 'reduce' });
                     assert.deepEqual(await animations(), Array(3).fill('none'));
+                    assert.equal(await newText.evaluate((text) => getComputedStyle(text).animationName), 'none');
                     assert.equal(await thoughtText.evaluate((text) => getComputedStyle(text.parentElement).transitionProperty), 'none');
                     await page.emulateMedia({ reducedMotion: 'no-preference' });
+                    const previousTop = await scroll.evaluate((element) => {
+                        element.scrollTop = element.scrollHeight;
+                        return element.scrollTop;
+                    });
+                    loadingResponse.write(claudeText('\n\n' + '逐步验证等式的两边。\n\n'.repeat(36)));
+                    await answer.getByText('逐步验证等式的两边。', { exact: true }).first().waitFor();
+                    await jump.waitFor();
+                    assert.equal(await scroll.evaluate((element) => element.scrollTop), previousTop);
+                    const arrow = await jump.boundingBox();
+                    const input = await drawer.getByRole('textbox', { name: '输入追问' }).boundingBox();
+                    assert.ok(Math.abs(arrow.x + arrow.width / 2 - input.x - input.width / 2) < 2);
+                    assert.ok(arrow.y + arrow.height < input.y);
+                    await jump.click();
+                    await jump.waitFor({ state: 'hidden' });
+                    assert.ok(await scroll.evaluate((element) => element.scrollHeight - element.clientHeight - element.scrollTop <= 6));
                 }
                 assert.equal(await word.count() + await wave.count(), 0);
                 assert.ok(await stop.isEnabled() && await fits());
@@ -512,20 +535,35 @@ async function checkViewport(owner, first, second, width) {
         await drawer.waitFor({ state: 'hidden' });
 
         await page.goto(appUrl + '/review?mistakeId=' + first.id);
-        await page.getByRole('button', { name: '开始复习' }).click();
-        assert.equal(await entry.count(), 0);
-        assert.equal(await page.locator('.followup-turn').count(), 0);
-        await page.getByRole('button', { name: '思考完成，查看答案与分析' }).click();
+        if (mobile) {
+            await page.getByRole('button', { name: '开始复习' }).click();
+            assert.equal(await entry.count(), 0);
+            assert.equal(await page.locator('.followup-turn').count(), 0);
+            await page.getByRole('button', { name: '思考完成，查看答案与分析' }).click();
+        } else {
+            await entry.waitFor();
+            assert.equal(await page.getByRole('button', { name: '答案、分析与笔记' }).getAttribute('aria-expanded'), 'true');
+        }
         await page.waitForFunction(() => document.querySelector('.answer-reveal.open')?.getAnimations().length === 0);
+        await page.evaluate(() => document.fonts.ready.then(() => undefined));
         await entry.scrollIntoViewIfNeeded();
         const y = await page.evaluate(() => scrollY);
         await entry.click();
         await drawer.getByText(exportText, { exact: false }).waitFor();
+        const openedY = await page.evaluate(() => scrollY);
         assert.equal(await drawer.getByRole('button', { name: '追加到解析', exact: true }).count(), 0);
         await drawer.getByRole('button', { name: '关闭追问' }).click();
         await drawer.waitFor({ state: 'hidden' });
         assert.equal(await page.getByRole('button', { name: '答案、分析与笔记' }).getAttribute('aria-expanded'), 'true');
-        assert.ok(Math.abs(await page.evaluate(() => scrollY) - y) < 3, 'Review preserves its scroll position');
+        const closedY = await page.evaluate(() => scrollY);
+        assert.ok(Math.abs(closedY - y) < 3, `Review preserves its scroll position (${y} → ${openedY} → ${closedY})`);
+        if (mobile) {
+            await page.getByRole('button', { name: '稍后继续' }).click();
+            await page.waitForURL('**/#/mistakes');
+        } else {
+            await page.getByRole('button', { name: '结束本次' }).click();
+            await page.getByRole('heading', { name: '本次复习已结束' }).waitFor();
+        }
 
         if (!mobile) {
             // Verify the opt-in reaches the same paginated PDF viewed in the browser.

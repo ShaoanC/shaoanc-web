@@ -778,7 +778,7 @@ input.checkbox-input {
   display: flex; align-items: center; justify-content: space-between;
   margin-bottom: 20px; color: var(--text-tertiary); font-size: 15px;
 }
-.review-session-header > span { letter-spacing: .5px; }
+.review-session-header .button.ghost { min-height: 40px; padding-inline: 10px; }
 .review-progress { margin-bottom: 22px; }
 .review-progress > div { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-size: 15px; color: var(--text-secondary); }
 .review-progress > div > strong { color: var(--text-primary); font-weight: 600; }
@@ -1912,7 +1912,6 @@ html[data-route-enter] .route-view:not([hidden]) { animation: route-fade-in 240m
   .review-candidate > div > span { font-size: 13px; }
   .review-preparation h2, .review-rating h2 { font-size: 23px; }
   .review-session-header { gap: 10px; font-size: 13px; }
-  .review-session-header > span { letter-spacing: 0; }
   .review-session-header .back-link { font-size: 14px; }
   .review-question h1 { font-size: 24px; }
   .review-question-number { width: 100%; margin-left: 0; font-size: 13px; }

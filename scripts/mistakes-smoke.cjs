@@ -428,6 +428,36 @@ async function main() {
     const aggregate = await alice('GET', '/stats');
     assert.deepEqual([aggregate.total, aggregate.archived, aggregate.drafts], [28, 27, 1]);
     assert.equal(aggregate.byKnowledgePoint.find((point) => point.id === null).count, 27);
+
+    const secondDevice = client();
+    await secondDevice('POST', '/auth/login', { username: renamedUsername, password: newPassword });
+    const mistakeIds = firstPage.items.slice(0, 3).map(({ id }) => id);
+    const reviewSession = '/review-session';
+    const start = await alice('POST', reviewSession, { mistakeIds });
+    const update = (actor, session, action, result) => actor('PATCH', reviewSession, {
+        id: session.id, revision: session.revision, mistakeId: session.question.id, action, result
+    });
+    assert.equal(start.question.id, mistakeIds[0]);
+    const { session: revealed } = await update(alice, start, 'reveal');
+    assert.equal(revealed.revealed, true);
+    assert.deepEqual(await secondDevice('GET', reviewSession), revealed);
+    assert.equal(await bob('GET', reviewSession), null);
+    const concurrentRatings = await Promise.all([
+        update(alice, revealed, 'rate', 'familiar'),
+        update(secondDevice, revealed, 'rate', 'familiar')
+    ]);
+    assert.equal(concurrentRatings.filter(({ applied }) => applied).length, 1);
+    const next = concurrentRatings[0].session;
+    assert.equal(next.question.id, mistakeIds[1]);
+    assert.deepEqual(next.results, ['familiar']);
+    assert.equal((await alice('GET', `/mistakes/${mistakeIds[0]}/reviews`)).length, 1);
+    const { session: skipped } = await update(secondDevice, next, 'skip');
+    assert.equal(skipped.question.id, mistakeIds[2]);
+    assert.deepEqual(await alice('GET', reviewSession), skipped);
+    const { session: finished } = await update(alice, skipped, 'rate', 'mastered');
+    assert.deepEqual([finished.question, finished.step, finished.results], [null, 3, ['familiar', 'mastered']]);
+    assert.equal(await secondDevice('GET', reviewSession), null);
+
     app.db.prepare('UPDATE mistakes SET deleted_at = ? WHERE user_id = ?').run(new Date().toISOString(), registrationAlice.user.id);
     await alice('DELETE', '/mistakes/trash');
     await bob('DELETE', `/mistakes/${otherOwner.id}`);

@@ -7,6 +7,7 @@ const { searchMistakes, updateCachedMistake, invalidateUser, invalidateAll, prev
 const { cleanupExpiredTrash } = require('./trash');
 const { enqueueAutomatic, cancelMistakeJobs, analysisNoticeFor } = require('./ai');
 const { mountFollowups, interruptFollowup } = require('./followups');
+const { mountReviewSessions, insertReview } = require('./review-sessions');
 const { deleteMistakeFiles, questionForMistake } = require('./images');
 const { getPublicCaptchaConfig, verifyCaptcha } = require('./captcha');
 const { loginIpLimit, loginFailureLimit, registrationLimit } = require('./auth-limits');
@@ -16,7 +17,6 @@ const {
 } = require('./auth');
 
 const router = express.Router();
-const REVIEW_RESULTS = ['unknown', 'familiar', 'mastered'];
 const STATUS_NAMES = { unreviewed: '未复习', unknown: '不会', familiar: '不熟', mastered: '掌握' };
 const mistakeSelect = `
     SELECT m.*,
@@ -202,6 +202,7 @@ router.get('/auth/data-export', requireSession, require('./personal-export').dow
 
 mountFollowups(router, { success, ownMistake });
 router.use(requireUser);
+mountReviewSessions(router, { mistakeSelect, serializeMistake, success });
 require('./ai-router')(router, { success, ownMistake, serializeMistake, cleanupExpiredTrash });
 
 router.patch('/auth/profile', (req, res) => {
@@ -621,12 +622,7 @@ router.post('/mistakes/:id/reviews', (req, res) => {
     if (row.lifecycle !== 'archived') {
         fail(400, '请先归档错题再开始复习');
     }
-    if (!REVIEW_RESULTS.includes(result)) {
-        fail(400, '请选择有效的复习结果');
-    }
-    const inserted = db.prepare('INSERT INTO reviews (mistake_id, result, created_at) VALUES (?, ?, ?)')
-        .run(row.id, result, new Date().toISOString());
-    success(res, db.prepare('SELECT id, result, created_at AS createdAt FROM reviews WHERE id = ?').get(inserted.lastInsertRowid), 201);
+    success(res, insertReview(row.id, result), 201);
 });
 
 router.get('/stats', (req, res) => {

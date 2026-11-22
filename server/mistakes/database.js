@@ -104,6 +104,16 @@ db.exec(`
         created_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS reviews_mistake ON reviews(mistake_id, id);
+    CREATE TABLE IF NOT EXISTS review_sessions (
+        user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        id TEXT NOT NULL,
+        mistake_ids TEXT NOT NULL,
+        position INTEGER NOT NULL DEFAULT 0,
+        results TEXT NOT NULL DEFAULT '[]',
+        revealed INTEGER NOT NULL DEFAULT 0,
+        revision INTEGER NOT NULL DEFAULT 0,
+        finished INTEGER NOT NULL DEFAULT 0
+    );
 `);
 
 const followupColumns = db.prepare('PRAGMA table_info(mistake_followups)').all();
