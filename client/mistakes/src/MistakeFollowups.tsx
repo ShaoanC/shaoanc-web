@@ -211,6 +211,7 @@ export function MistakeFollowups({ mistake }: { mistake: Mistake }) {
   const requestNo = useRef(0);
   const currentStream = useRef(false);
   const positionOnOpen = useRef(false);
+  const followedScrollTop = useRef<number | null>(null);
   const shownRevision = useRef('');
   const available = history?.availableProfiles ?? [];
   const selected = available.find(({ id }) => id === preferredProfile) ?? available.find(({ isDefault }) => isDefault);
@@ -285,6 +286,7 @@ export function MistakeFollowups({ mistake }: { mistake: Mistake }) {
   }, [history, preferenceKey, preferredProfile]);
 
   function show(value: boolean) {
+    followedScrollTop.current = null;
     if (value) {
       positionOnOpen.current = true;
       setHasRepliesBelow(false);
@@ -393,7 +395,19 @@ export function MistakeFollowups({ mistake }: { mistake: Mistake }) {
       positionOnOpen.current = false;
       if (!generating) scroll.scrollTop = scroll.scrollHeight;
     }
-    const track = () => setHasRepliesBelow(historyReady && scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight > 6);
+    const track = () => {
+      const bottom = scroll.scrollHeight - scroll.clientHeight;
+      if (followedScrollTop.current !== null) {
+        // A shorter reply can clamp scrollTop without the reader scrolling up.
+        if (scroll.scrollTop < Math.min(followedScrollTop.current, bottom) - 1) {
+          followedScrollTop.current = null;
+        } else {
+          scroll.scrollTop = bottom;
+          followedScrollTop.current = generating ? scroll.scrollTop : null;
+        }
+      }
+      setHasRepliesBelow(historyReady && bottom - scroll.scrollTop > 6);
+    };
     track();
     const observer = new ResizeObserver(track);
     observer.observe(content);
@@ -408,6 +422,12 @@ export function MistakeFollowups({ mistake }: { mistake: Mistake }) {
   function scrollToLatest() {
     const scroll = logContent?.parentElement;
     if (!scroll) return;
+    if (generating) {
+      scroll.scrollTop = scroll.scrollHeight;
+      followedScrollTop.current = scroll.scrollTop;
+      setHasRepliesBelow(false);
+      return;
+    }
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     scroll.scrollTo({ top: scroll.scrollHeight, behavior: reduced ? 'instant' : 'smooth' });
   }

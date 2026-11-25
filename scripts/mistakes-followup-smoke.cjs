@@ -240,6 +240,10 @@ async function checkStreamingStates(actor, mistakeId, width) {
         const send = drawer.getByRole('button', { name: '发送', exact: true });
         const scroll = drawer.locator('.followup-scroll, .mobile-filters-content');
         const jump = drawer.getByRole('button', { name: '滚动到底部' });
+        const waitForBottom = () => page.waitForFunction(() => {
+            const log = document.querySelector('.followup-log-content').parentElement;
+            return log.scrollHeight - log.clientHeight - log.scrollTop <= 6;
+        });
         const fits = () => drawer.evaluate((panel) => document.documentElement.scrollWidth <= innerWidth + 1
             && [panel, panel.querySelector('.followup-scroll, .mobile-filters-content'), panel.querySelector('.followup-turn:last-child .followup-answer')]
                 .every((part) => part.scrollWidth <= part.clientWidth + 1));
@@ -310,11 +314,24 @@ async function checkStreamingStates(actor, mistakeId, width) {
                     assert.equal(await scroll.evaluate((element) => element.scrollTop), previousTop);
                     const arrow = await jump.boundingBox();
                     const input = await drawer.getByRole('textbox', { name: '输入追问' }).boundingBox();
-                    assert.ok(Math.abs(arrow.x + arrow.width / 2 - input.x - input.width / 2) < 2);
+                    assert.ok(Math.abs(arrow.x + arrow.width - input.x - input.width) < 2);
                     assert.ok(arrow.y + arrow.height < input.y);
                     await jump.click();
                     await jump.waitFor({ state: 'hidden' });
-                    assert.ok(await scroll.evaluate((element) => element.scrollHeight - element.clientHeight - element.scrollTop <= 6));
+                    await waitForBottom();
+                    loadingResponse.write(claudeText('继续核对计算过程。\n\n'.repeat(10)));
+                    await answer.getByText('继续核对计算过程。', { exact: true }).first().waitFor();
+                    await waitForBottom();
+                    const readingTop = await scroll.evaluate((element) => {
+                        element.scrollTop -= 160;
+                        return element.scrollTop;
+                    });
+                    await jump.waitFor();
+                    loadingResponse.write(claudeText('最后整理推导步骤。\n\n'.repeat(10)));
+                    await answer.getByText('最后整理推导步骤。', { exact: true }).first().waitFor();
+                    assert.equal(await scroll.evaluate((element) => element.scrollTop), readingTop);
+                    await jump.click();
+                    await waitForBottom();
                 }
                 assert.equal(await word.count() + await wave.count(), 0);
                 assert.ok(await stop.isEnabled() && await fits());
