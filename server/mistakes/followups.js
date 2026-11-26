@@ -25,13 +25,16 @@ const pairSelect = `SELECT a.*, q.content AS question
     FROM mistake_followups a JOIN mistake_followups q ON q.id = a.question_id`;
 const pairFilter = "WHERE a.user_id = ? AND a.mistake_id = ? AND a.role = 'assistant'";
 
-const sumCredits = db.prepare(`SELECT COALESCE(ROUND(SUM(a.credits_charged), 1), 0) AS used FROM mistake_followups a
+// One cache-read token is 1/20,000 of the configured multiplier, adding up to five decimal places.
+const creditDecimals = FOLLOWUP_MULTIPLIER_DECIMALS + 5;
+const multiplierScale = 10 ** FOLLOWUP_MULTIPLIER_DECIMALS;
+const sumCredits = db.prepare(`SELECT COALESCE(ROUND(SUM(a.credits_charged), ${creditDecimals}), 0) AS used FROM mistake_followups a
     WHERE a.user_id = ? AND a.role = 'assistant' AND a.created_at >= ${followupDayStart}
     AND a.created_at < ${followupDayEnd}`);
 
 function quota(userId, dailyCreditLimit) {
     const { used: dailyCreditsUsed } = sumCredits.get(userId);
-    const dailyCreditsRemaining = dailyCreditLimit === null ? null : Math.max(0, Number((dailyCreditLimit - dailyCreditsUsed).toFixed(1)));
+    const dailyCreditsRemaining = dailyCreditLimit === null ? null : Math.max(0, Number((dailyCreditLimit - dailyCreditsUsed).toFixed(creditDecimals)));
     return { dailyCreditLimit, dailyCreditsUsed, dailyCreditsRemaining };
 }
 
@@ -174,12 +177,10 @@ async function generate(res, row, message, dailyCreditLimit, request, stream) {
         const durationMs = Math.round(performance.now() - started);
         const fallbackBillable = status === 'completed' || (status === 'cancelled' && Array.from(content).length >= 100);
         const cached = usage?.cachedReadTokens ?? 0;
-        // Ten units per regular token and one per cache read. Round only the final debit.
+        // Ten units per regular token and one per cache read.
         const weightedTenths = usage ? (usage.totalTokens - cached) * 10 + cached : Number(fallbackBillable) * 20000;
-        const multiplierScale = 10 ** FOLLOWUP_MULTIPLIER_DECIMALS;
         const scaledMultiplier = Math.round(message.credit_cost * multiplierScale);
-        const roundedCharge = Math.round(weightedTenths * scaledMultiplier / (2000 * multiplierScale)) / 10;
-        const charge = Math.min(stream.remaining ?? Infinity, roundedCharge);
+        const charge = Math.min(stream.remaining ?? Infinity, weightedTenths * scaledMultiplier / (20000 * multiplierScale));
         const { changes } = db.prepare(`UPDATE mistake_followups SET content = ?, thought = ?, credits_charged = ?, status = ?, error_message = ?,
             token_usage = ?, images_skipped = ?, duration_ms = ? WHERE id = ?`)
             .run(content, thought, charge, status, errorMessage, usage && JSON.stringify(usage), Number(imagesSkipped), durationMs, message.id);

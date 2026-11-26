@@ -21,6 +21,7 @@ const expandedHeight = 1;
 const mobileSnapPoints = [peekHeight, expandedHeight];
 const background = { background: true, notifyUpdate: false };
 const FollowupMarkdown = memo(MarkdownContent);
+const formatCredits = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 1, useGrouping: false }).format;
 const thinkingWords = [
   'Thinking', 'Pondering', 'Reasoning', 'Untangling', 'Sketching', 'Checking steps', 'Deriving', 'Connecting',
   'Analyzing', 'Exploring', 'Tracing', 'Comparing', 'Verifying', 'Simplifying', 'Estimating', 'Calculating',
@@ -115,6 +116,13 @@ function FollowupAnswerText({ message }: { message: FollowupMessage }) {
   </FollowupMarkdown>;
 }
 
+function FollowupCharge({ amount }: { amount: number }) {
+  const display = formatCredits(amount);
+  return <span className="followup-reply-charge" title={`扣除 ${display} 积分`}>
+    <Coins size={13} aria-hidden="true" /><span>{display === '0' ? display : `-${display}`}</span><span className="visually-hidden"> 积分</span>
+  </span>;
+}
+
 function FollowupReplies({ messages, enteringId, readOnly, maySend, onRetry }: {
   messages: FollowupMessage[];
   enteringId: number | null;
@@ -174,9 +182,7 @@ function FollowupReplies({ messages, enteringId, readOnly, maySend, onRetry }: {
             title={message.cachedReadTokens != null ? `其中缓存读取 ${message.cachedReadTokens.toLocaleString('zh-CN')} token` : '总 token 用量'}>
             <Cpu size={13} aria-hidden="true" />{message.totalTokens.toLocaleString('zh-CN')} token
           </span>}
-          {(message.creditsCharged > 0 || message.totalTokens != null) && <span className="followup-reply-charge" title={`扣除 ${message.creditsCharged} 积分`}>
-            <Coins size={13} aria-hidden="true" /><span>{-message.creditsCharged || 0}</span><span className="visually-hidden"> 积分</span>
-          </span>}
+          {(message.creditsCharged > 0 || message.totalTokens != null) && <FollowupCharge amount={message.creditsCharged} />}
         </div>}
       </div>
     </article>)}
@@ -467,7 +473,7 @@ export function MistakeFollowups({ mistake }: { mistake: Mistake }) {
     {history && <span className="followup-quota" title="今日剩余积分">
       <span className="visually-hidden">今日剩余积分 </span>
       <span className="followup-quota-value">{history.dailyCreditLimit === null ? <strong aria-label="无限">∞</strong> :
-        <><strong>{remaining}</strong>/{history.dailyCreditLimit}</>}</span>
+        <><strong>{formatCredits(remaining)}</strong>/{history.dailyCreditLimit}</>}</span>
       <Coins size={14} aria-hidden="true" />
     </span>}
     {controls}
