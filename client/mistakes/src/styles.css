@@ -91,6 +91,12 @@
   --motion-ease: var(--motion-ease-standard);
   --motion-ease-out: var(--motion-ease-enter);
   --sheet-ease: var(--motion-ease-drawer);
+  --motion-reveal: var(--motion-slow);
+  --blur-glass-sm: 10px;
+  --blur-glass-md: 14px;
+  --blur-glass-backdrop: 8px;
+  --blur-motion-sm: 4px;
+  --blur-motion-md: 6px;
 
   color: var(--text-primary);
   background: var(--surface-0);
@@ -439,7 +445,9 @@ input.checkbox-input {
 .main-shell { margin-left: 232px; min-width: 0; }
 .topbar {
   height: 64px; border-bottom: 1px solid var(--border-subtle);
-  background: var(--surface-2);
+  background: rgba(244, 242, 236, .84);
+  -webkit-backdrop-filter: blur(var(--blur-glass-md)) saturate(1.08);
+  backdrop-filter: blur(var(--blur-glass-md)) saturate(1.08);
   display: flex; align-items: center; justify-content: space-between;
   padding: 0 44px; position: sticky; top: 0; z-index: 5;
 }
@@ -803,9 +811,10 @@ input.checkbox-input {
 .review-progress > div > strong { color: var(--text-primary); font-weight: 600; }
 .review-progress > div > span b { color: var(--primary); }
 .review-session-content { overflow-x: clip; margin: -4px; padding: 4px; }
-.review-step.is-entering { animation: review-step-enter var(--motion-panel) var(--motion-ease-enter); }
+.review-step.is-entering { animation: review-step-enter var(--motion-reveal) var(--motion-ease-standard); }
 @keyframes review-step-enter {
-  from { opacity: .48; translate: 14px 0; }
+  from { opacity: .48; translate: 0 6px; filter: blur(var(--blur-motion-md)); }
+  to { filter: none; }
 }
 .progress-track { height: 4px; background: var(--border-subtle); overflow: hidden; }
 .progress-track > span { display: block; height: 100%; background: var(--primary); transition: transform var(--motion-panel) var(--motion-ease-enter); }
@@ -973,10 +982,15 @@ input.checkbox-input {
 .empty-state p { font-size: 16px; color: var(--text-secondary); line-height: 1.7; max-width: 31em; margin: 0; }
 
 /* ─── Modal ─────────────────────────────────────────────────── */
-/* No backdrop blur: re-blurring the page on every fade frame is what makes phones stutter. */
 .modal-backdrop {
   position: fixed; inset: 0; z-index: 100;
   background: var(--scrim);
+  -webkit-backdrop-filter: blur(var(--blur-glass-backdrop));
+  backdrop-filter: blur(var(--blur-glass-backdrop));
+}
+.modal-backdrop:is([data-starting-style], [data-ending-style]) {
+  -webkit-backdrop-filter: blur(0px);
+  backdrop-filter: blur(0px);
 }
 .modal-viewport {
   position: fixed; inset: 0; z-index: 101;
@@ -993,25 +1007,34 @@ input.checkbox-input {
   scrollbar-gutter: stable;
   overscroll-behavior-y: contain;
 }
+:is(.modal, .modal-dialog) { filter: none; }
+:is(.modal, .modal-dialog):is([data-starting-style], [data-ending-style]) { filter: blur(var(--blur-motion-sm)); }
 /* Base UI keeps both layers mounted through the exit. Individual transforms preserve fixed centering. */
-:where(.modal-backdrop, .photo-dialog-backdrop, .quick-task-backdrop, .export-backdrop, .followup-confirm-backdrop, .export-dialog.is-preview) {
-  transition: opacity var(--motion-base) var(--motion-ease-standard);
+:where(.modal-backdrop, .photo-dialog-backdrop, .quick-task-backdrop, .export-backdrop, .followup-confirm-backdrop) {
+  transition: opacity var(--motion-base) var(--motion-ease-standard),
+    -webkit-backdrop-filter var(--motion-base) var(--motion-ease-standard),
+    backdrop-filter var(--motion-base) var(--motion-ease-standard);
 }
-:where(.modal, .photo-dialog, .ai-quick-dialog, .export-dialog:not(.is-preview), .followup-confirm) {
+:where(.export-dialog.is-preview) {
+  transition: opacity var(--motion-base) var(--motion-ease-standard),
+    filter var(--motion-base) var(--motion-ease-standard);
+}
+:where(.modal, .modal-dialog, .photo-dialog, .ai-quick-dialog, .export-dialog:not(.is-preview), .followup-confirm) {
   transition: opacity var(--motion-base) var(--motion-ease-standard),
     translate var(--motion-panel) var(--motion-ease-enter),
-    scale var(--motion-panel) var(--motion-ease-enter);
+    scale var(--motion-panel) var(--motion-ease-enter),
+    filter var(--motion-panel) var(--motion-ease-enter);
 }
-:where(.modal, .photo-dialog, .ai-quick-dialog, .export-dialog:not(.is-preview), .followup-confirm)[data-starting-style] {
+:where(.modal, .modal-dialog, .photo-dialog, .ai-quick-dialog, .export-dialog:not(.is-preview), .followup-confirm)[data-starting-style] {
   translate: 0 calc(var(--motion-dialog-offset) * var(--dialog-direction, 1));
   scale: var(--motion-dialog-scale);
 }
-:where(.modal, .photo-dialog, .ai-quick-dialog, .export-dialog:not(.is-preview), .followup-confirm)[data-ending-style] {
+:where(.modal, .modal-dialog, .photo-dialog, .ai-quick-dialog, .export-dialog:not(.is-preview), .followup-confirm)[data-ending-style] {
   translate: 0 calc(var(--motion-dialog-exit-offset) * var(--dialog-direction, 1));
   scale: var(--motion-dialog-exit-scale);
 }
-:where(.modal, .photo-dialog, .ai-quick-dialog, .export-dialog, .followup-confirm, .modal-backdrop, .photo-dialog-backdrop, .quick-task-backdrop, .export-backdrop, .followup-confirm-backdrop):is([data-starting-style], [data-ending-style]) { opacity: 0; }
-:where(.modal, .photo-dialog, .ai-quick-dialog, .export-dialog, .followup-confirm, .modal-backdrop, .photo-dialog-backdrop, .quick-task-backdrop, .export-backdrop, .followup-confirm-backdrop)[data-ending-style] {
+:where(.modal, .modal-dialog, .photo-dialog, .ai-quick-dialog, .export-dialog, .followup-confirm, .modal-backdrop, .photo-dialog-backdrop, .quick-task-backdrop, .export-backdrop, .followup-confirm-backdrop):is([data-starting-style], [data-ending-style]) { opacity: 0; }
+:where(.modal, .modal-dialog, .photo-dialog, .ai-quick-dialog, .export-dialog, .followup-confirm, .modal-backdrop, .photo-dialog-backdrop, .quick-task-backdrop, .export-backdrop, .followup-confirm-backdrop)[data-ending-style] {
   transition-duration: var(--motion-overlay-exit);
   transition-timing-function: var(--motion-ease-exit);
   pointer-events: none;
@@ -1026,35 +1049,69 @@ input.checkbox-input {
 
 /* ─── React-Toastify overrides ──────────────────────────────── */
 .Toastify__toast-container.mistakes-toast-container {
-  --toastify-toast-bd-radius: 0px;
-  --toastify-font-family: var(--font-numbers), var(--font-ui);
-  --toastify-color-progress-light: var(--primary);
+  --toastify-color-light: var(--surface-2);
+  --toastify-toast-background: var(--surface-2);
+  --toastify-text-color-light: var(--text-primary);
+  --toastify-color-info: var(--info);
+  --toastify-color-success: var(--success);
+  --toastify-color-warning: var(--warning);
+  --toastify-color-error: var(--error);
+  --toastify-icon-color-info: var(--info);
+  --toastify-icon-color-success: var(--success);
+  --toastify-icon-color-warning: var(--warning);
+  --toastify-icon-color-error: var(--error);
+  --toastify-color-progress-light: var(--vermilion);
+  --toastify-color-progress-info: var(--info);
   --toastify-color-progress-success: var(--success);
+  --toastify-color-progress-warning: var(--warning);
   --toastify-color-progress-error: var(--error);
+  --toastify-color-progress-bgo: 0.16;
+  --toastify-spinner-color: var(--vermilion);
+  --toastify-spinner-color-empty-area: var(--border-subtle);
+  --toastify-toast-bd-radius: var(--radius-md);
+  --toastify-toast-shadow: var(--shadow-ink-md);
+  --toastify-font-family: var(--font-numbers), var(--font-ui);
   max-width: calc(100vw - 32px);
   font-family: var(--toastify-font-family);
 }
-.mistakes-toast-container .Toastify__toast {
-  background: var(--surface-2);
+/* Beat the injected light theme while leaving room for the compact mobile styles. */
+.Toastify__toast-container.mistakes-toast-container :where(.Toastify__toast) {
+  --toast-accent: var(--vermilion);
+  background: rgba(250, 249, 245, .92);
+  -webkit-backdrop-filter: blur(var(--blur-glass-sm));
+  backdrop-filter: blur(var(--blur-glass-sm));
   border: 1px solid var(--border-medium);
-  border-left: 4px solid var(--primary);
-  border-radius: 0;
+  border-left: 3px solid var(--toast-accent);
+  border-radius: var(--radius-md);
   overflow: hidden;
   color: var(--text-primary);
-  font-size: 16px;
-  line-height: 1.75;
+  font-size: 15px;
+  line-height: 1.65;
   box-shadow: var(--shadow-ink-md);
-  padding: 16px 28px 16px 18px;
+  padding: 14px 30px 14px 16px;
+  min-height: 54px;
 }
-.mistakes-toast-container .Toastify__toast--error { border-left-color: var(--error); }
-.mistakes-toast-container .Toastify__toast-icon svg { fill: var(--primary); }
-.mistakes-toast-container .Toastify__toast--error .Toastify__toast-icon svg { fill: var(--error); }
-/* The library injects its CSS after mount; scoped selectors keep these overrides stable. */
-.mistakes-toast-container .Toastify__progress-bar--wrp { height: 3px; border-radius: 0; }
-.mistakes-toast-container .Toastify__progress-bar,
-.mistakes-toast-container .Toastify__progress-bar--bg { border-radius: 0; }
-.mistakes-toast-container .Toastify__close-button { color: var(--text-tertiary); opacity: 1; }
-.mistakes-toast-container .Toastify__close-button:hover { color: var(--text-primary); }
+.Toastify__toast-container.mistakes-toast-container .Toastify__toast--success { --toast-accent: var(--success); }
+.Toastify__toast-container.mistakes-toast-container .Toastify__toast--info { --toast-accent: var(--info); }
+.Toastify__toast-container.mistakes-toast-container .Toastify__toast--warning { --toast-accent: var(--warning); }
+.Toastify__toast-container.mistakes-toast-container .Toastify__toast--error { --toast-accent: var(--error); }
+.Toastify__toast-container.mistakes-toast-container .Toastify__toast-icon svg { fill: var(--toast-accent); }
+.Toastify__toast-container.mistakes-toast-container .Toastify__progress-bar--wrp {
+  height: 2px;
+  border-bottom-left-radius: var(--radius-md);
+  border-bottom-right-radius: var(--radius-md);
+}
+.Toastify__toast-container.mistakes-toast-container .Toastify__progress-bar { opacity: .88; }
+.Toastify__toast-container.mistakes-toast-container .Toastify__close-button {
+  color: var(--text-tertiary);
+  opacity: .78;
+  top: 10px;
+  right: 10px;
+}
+.Toastify__toast-container.mistakes-toast-container .Toastify__close-button:is(:hover, :focus) {
+  color: var(--text-primary);
+  opacity: 1;
+}
 
 /* ─── Auth page ─────────────────────────────────────────────── */
 .auth-page {
@@ -1100,7 +1157,10 @@ input.checkbox-input {
 .auth-form-wrap { width: 100%; max-width: 430px; animation: content-rise var(--motion-panel) var(--motion-ease-enter); }
 .auth-form-content[data-auth-mode='register'] { animation: content-rise var(--motion-base) var(--motion-ease-enter); }
 .auth-form-content[data-auth-mode='login'] { animation: auth-return var(--motion-base) var(--motion-ease-enter); }
-@keyframes auth-return { from { opacity: .58; translate: 0 -4px; } }
+@keyframes auth-return {
+  from { opacity: .58; translate: 0 -4px; filter: blur(var(--blur-motion-sm)); }
+  to { filter: none; }
+}
 .auth-icon {
   width: 54px; height: 54px; border-radius: var(--radius-xl);
   background: var(--primary-soft);
@@ -1302,11 +1362,24 @@ button svg, a svg { flex-shrink: 0; }
 .answer-toggle > svg { transition: transform var(--motion-base) var(--motion-ease-enter); }
 .answer-reveal {
   display: grid; grid-template-rows: 0fr; opacity: 0;
-  transition: grid-template-rows var(--motion-base) var(--motion-ease-standard), opacity var(--motion-fast) var(--motion-ease-exit);
+  transition: grid-template-rows var(--motion-reveal) var(--motion-ease-standard),
+    opacity var(--motion-reveal) var(--motion-ease-standard);
 }
 .answer-reveal.open {
   grid-template-rows: 1fr; opacity: 1;
-  transition: grid-template-rows var(--motion-panel) var(--motion-ease-enter), opacity var(--motion-base) var(--motion-ease-standard);
+}
+.answer-reveal .revealed-content {
+  opacity: 0;
+  transform: translateY(8px);
+  filter: blur(var(--blur-motion-md));
+  transition: opacity var(--motion-reveal) var(--motion-ease-standard),
+    transform var(--motion-reveal) var(--motion-ease-standard),
+    filter var(--motion-reveal) var(--motion-ease-standard);
+}
+.answer-reveal.open .revealed-content {
+  opacity: 1;
+  transform: translateY(0);
+  filter: none;
 }
 .revealed-content .revealed-note { padding: 18px 14px; background: var(--warning-bg); border-radius: 0; }
 .review-answer-followups { display: flex; align-items: flex-start; min-height: 34px; }
@@ -1327,8 +1400,16 @@ button svg, a svg { flex-shrink: 0; }
 .loading-progress-fill { display: block; width: 100%; height: 100%; background: var(--vermilion); transform: scaleX(0); transform-origin: left; transition: transform var(--motion-slow) var(--motion-ease-standard); will-change: transform; }
 .loading-content { position: relative; display: grid; grid-template-areas: 'content'; min-width: 0; }
 .loading-content-body, .loading-content-placeholder { grid-area: content; min-width: 0; align-self: stretch; }
-.loading-content-body { opacity: 1; transition: opacity var(--motion-base) var(--motion-ease-enter); }
+.loading-content-body {
+  opacity: 1;
+  filter: none;
+  transition: opacity var(--motion-base) var(--motion-ease-enter), filter var(--motion-base) var(--motion-ease-enter);
+}
 .loading-content.is-loading > .loading-content-body { opacity: 0; pointer-events: none; transition-property: none; }
+/* Keep the shell and editor docks viewport-fixed; the reading document has its own reveal. */
+.loading-content.is-loading:not(.app-entrance, .loading-kind-editor, .loading-kind-detail) > .loading-content-body {
+  filter: blur(var(--blur-motion-sm));
+}
 .loading-content-placeholder { opacity: 1; pointer-events: none; transition: opacity var(--motion-base) var(--motion-ease-standard); }
 .loading-content.is-ready > .loading-content-placeholder { position: absolute; inset: 0; opacity: 0; overflow: hidden; }
 .loading-kind-rows { min-height: 388px; }
@@ -1422,8 +1503,14 @@ html[data-route-direction='forward']::view-transition-old(route-out) { --route-o
 html[data-route-direction='back']::view-transition-old(route-out) { --route-out-x: 16px; }
 html[data-route-direction='forward']::view-transition-new(route-in) { --route-in-x: 24px; --route-in-y: 0px; }
 html[data-route-direction='back']::view-transition-new(route-in) { --route-in-x: -24px; --route-in-y: 0px; }
-@keyframes route-out { to { opacity: 0; translate: var(--route-out-x, 0px) 0; } }
-@keyframes route-in { from { opacity: .25; translate: var(--route-in-x, 0px) var(--route-in-y, 6px); } }
+@keyframes route-out {
+  from { filter: none; }
+  to { opacity: 0; translate: var(--route-out-x, 0px) 0; filter: blur(3px); }
+}
+@keyframes route-in {
+  from { opacity: .25; translate: var(--route-in-x, 0px) var(--route-in-y, 6px); filter: blur(var(--blur-motion-sm)); }
+  to { filter: none; }
+}
 
 /* Relative offsets keep the editor save dock and reading actions fixed to the viewport. */
 html[data-route-enter] .main-shell { overflow-x: clip; }
@@ -1434,17 +1521,31 @@ html[data-route-enter] .route-view:not([hidden]) {
 html[data-route-enter='forward'] .route-view { --route-enter-x: 20px; }
 html[data-route-enter='back'] .route-view { --route-enter-x: -20px; }
 html[data-route-enter='swap'] .route-view { --route-enter-y: 6px; }
+/* A filter on the live route would make its fixed controls use the route as their containing block. */
+html[data-route-enter] .route-view:has(.save-dock, .detail-edit-button) { --route-enter-filter: none; }
+@media (max-width: 960px) {
+  html[data-route-enter] .route-view:has(.review-preparation, .library-archive-dock) { --route-enter-filter: none; }
+}
 @keyframes route-enter {
-  from { opacity: .48; left: var(--route-enter-x, 0px); top: var(--route-enter-y, 0px); }
-  to { opacity: 1; left: 0; top: 0; }
+  from { opacity: .48; left: var(--route-enter-x, 0px); top: var(--route-enter-y, 0px); filter: var(--route-enter-filter, blur(var(--blur-motion-sm))); }
+  to { opacity: 1; left: 0; top: 0; filter: none; }
 }
 
 /* ─── Content reveals ─────────────────────────────────────────── */
-@keyframes content-rise { from { opacity: .55; translate: 0 5px; } }
-@keyframes content-fade { from { opacity: .60; } }
+@keyframes content-rise {
+  from { opacity: .55; translate: 0 5px; filter: blur(var(--blur-motion-sm)); }
+  to { filter: none; }
+}
+@keyframes content-fade {
+  from { opacity: .60; filter: blur(var(--blur-motion-sm)); }
+  to { filter: none; }
+}
 @keyframes motion-confirm { from { opacity: .6; scale: .87; } }
 @keyframes dock-rise { from { transform: translateY(100%); } }
-@keyframes celebrate-pop { from { opacity: .65; scale: .88; rotate: -4deg; } }
+@keyframes celebrate-pop {
+  from { opacity: .65; scale: .88; rotate: -4deg; filter: blur(var(--blur-motion-sm)); }
+  to { filter: none; }
+}
 @keyframes row-returned {
   0%, 40% { background-color: var(--vermilion-soft); box-shadow: inset 3px 0 0 var(--vermilion); }
   100% { background-color: var(--surface-2); box-shadow: inset 3px 0 0 transparent; }
@@ -1457,6 +1558,8 @@ html[data-route-enter='swap'] .route-view { --route-enter-y: 6px; }
 .review-complete { animation: content-fade var(--motion-base) var(--motion-ease-enter); }
 .review-complete .complete-illustration { animation: celebrate-pop var(--motion-slow) var(--motion-ease-spring); }
 @media (max-width: 640px) {
+  /* Let the fixed dock animate independently of the toolbar. */
+  .library-selection-toolbar:has(> .library-archive-dock) { animation: none; }
   .library-archive-dock { animation: dock-rise var(--motion-panel) var(--motion-ease-drawer); }
 }
 
@@ -1471,6 +1574,11 @@ html[data-route-enter='swap'] .route-view { --route-enter-y: 6px; }
 
 @media (max-width: 960px) {
   .sidebar { position: sticky; top: 0; left: auto; bottom: auto; width: 100%; min-height: 0; padding: 18px 24px 0; display: grid; grid-template-columns: minmax(0,1fr) auto; grid-template-rows: auto auto; gap: 14px 20px; border-right: 0; border-bottom: 1px solid var(--border-medium); overflow: visible; z-index: 20; }
+  .sidebar {
+    background: rgba(250, 249, 245, .86);
+    -webkit-backdrop-filter: blur(var(--blur-glass-md)) saturate(1.08);
+    backdrop-filter: blur(var(--blur-glass-md)) saturate(1.08);
+  }
   .sidebar .brand { grid-column: 1; grid-row: 1; justify-content: flex-start; margin: 0; }
   .sidebar-label, .sidebar-reminder { display: none; }
   .navigation { grid-column: 1 / -1; grid-row: 2; display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 0; --nav-indicator-axis: horizontal; --nav-indicator-inset: 10px; }
@@ -1483,7 +1591,7 @@ html[data-route-enter='swap'] .route-view { --route-enter-y: 6px; }
   .account-name { display: flex; max-width: 110px; }
   .account-profile > svg { display: none; }
   .main-shell { margin-left: 0; }
-  .topbar { position: static; height: 54px; padding: 0 24px; background: var(--surface-2); }
+  .topbar { position: static; height: 54px; padding: 0 24px; }
   .topbar-avatar { display: none; }
   .main-content { padding: 30px 28px 0; }
   .metrics-grid { grid-template-columns: repeat(4,minmax(0,1fr)); }
@@ -1669,7 +1777,7 @@ html[data-route-enter='swap'] .route-view { --route-enter-y: 6px; }
     transform: none;
     align-items: stretch;
   }
-  .mistakes-toast-container .Toastify__toast { width: 100%; margin-bottom: 12px; }
+  .Toastify__toast-container.mistakes-toast-container .Toastify__toast { width: 100%; margin-bottom: 12px; }
   .auth-page { grid-template-columns: minmax(0,1fr); }
   .auth-story { padding: 25px 24px 22px; }
   .auth-story .brand { padding-bottom: 0; }
@@ -1724,13 +1832,27 @@ html[data-route-enter='swap'] .route-view { --route-enter-y: 6px; }
   }
   .spin, .mistakes-toast-container .Toastify__spinner { animation: motion-breathe 2.8s var(--motion-ease-breathe) infinite; }
   .skeleton-shimmer::after { animation: none !important; }
-  .review-step.is-entering, .review-complete .complete-illustration, .auth-form-wrap, .auth-form-content[data-auth-mode],
-  .frozen-content, .settings-tab-panel.is-entering, .editor-block[role='tabpanel']:not([hidden]),
-  .detail-page.is-ready > .loading-content-body > .detail-document { animation-name: none !important; }
+  .review-step.is-entering, .review-complete, .review-complete .complete-illustration,
+  .auth-form-wrap, .auth-form-content[data-auth-mode], .frozen-content, .empty-state,
+  .settings-tab-panel.is-entering, .library-selection-toolbar, .editor-block[role='tabpanel']:not([hidden]),
+  .detail-page.is-ready > .loading-content-body > .detail-document, html[data-route-enter] .route-view:not([hidden]),
+  .markdown-field[data-mode]:not([data-mode='initial']) > :is(textarea, .markdown-field-preview),
+  .quick-delete-button > span, .task-status:not(:has(.skeleton-shimmer)) {
+    animation-name: none !important;
+    filter: none !important;
+  }
   .nav-indicator, .tab-indicator, .loading-progress-fill, .progress-track > span, .answer-toggle > svg, .subject-bar > span, .chart-bar > span, .chart-fill { transition-property: none; }
-  .answer-reveal, .answer-reveal.open { transition-property: opacity; }
-  html[data-route-enter] .route-view:not([hidden]) { animation: none; }
-  ::view-transition-old(route-out), ::view-transition-new(route-in) { animation: none; }
+  .answer-reveal, .answer-reveal .revealed-content, .loading-content-body, .modal, .modal-dialog {
+    transition-property: none !important;
+    filter: none !important;
+  }
+  .answer-reveal .revealed-content { transform: none !important; }
+  .modal-backdrop {
+    transition-property: none !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+  ::view-transition-old(route-out), ::view-transition-new(route-in) { animation: none; filter: none !important; }
   ::view-transition-old(route-out) { opacity: 0; }
 }
 
@@ -1750,12 +1872,49 @@ html[data-route-enter='swap'] .route-view { --route-enter-y: 6px; }
 .markdown-content--full a { color: var(--primary); text-decoration: underline; text-underline-offset: 3px; }
 .markdown-content--full img { display: block; width: auto; height: auto; max-width: 100%; max-height: calc(var(--figure-lines, 4) * var(--figure-height-scale, 1.15) * 1lh); margin: .4em auto; }
 .markdown-content--full img[data-figure-lines="long"] { max-height: none; }
-.markdown-figure-image[role="button"] { cursor: zoom-in; }
+.markdown-figure-image[role="button"] {
+  cursor: zoom-in;
+  transition: transform var(--motion-base) var(--motion-ease-standard),
+    box-shadow var(--motion-base) var(--motion-ease-standard), opacity var(--motion-overlay-exit) ease;
+}
+@media (hover: hover) {
+  .markdown-figure-image[role="button"].is-settled:hover { transform: scale(1.012); box-shadow: var(--shadow-ink-sm); }
+}
 .markdown-figure-image[role="button"]:focus-visible { outline: 2px solid var(--primary); outline-offset: 4px; }
 .markdown-image-lightbox { position: fixed; inset: 0; z-index: 1500; border: 0; outline: 0; }
 .markdown-image-lightbox .pswp { --pswp-root-z-index: 0; }
+.markdown-image-lightbox .pswp__bg {
+  background: rgba(20, 19, 18, .9) !important;
+  -webkit-backdrop-filter: blur(var(--blur-glass-md));
+  backdrop-filter: blur(var(--blur-glass-md));
+}
 .markdown-image-lightbox .pswp__button--zoom { margin-right: 60px; }
-.markdown-image-close { position: absolute; top: 0; right: 0; z-index: 1; display: grid; place-items: center; width: 60px; height: 60px; padding: 0; border: 0; background: transparent; color: white; cursor: pointer; }
+.markdown-image-close {
+  position: absolute; top: 8px; right: 8px; z-index: 1;
+  display: grid; place-items: center; width: 44px; height: 44px; padding: 0;
+  border: 1px solid rgba(250, 249, 245, .22); border-radius: 999px;
+  background: rgba(26, 25, 24, .68); color: var(--surface-2); cursor: pointer;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  transition: opacity var(--motion-overlay-exit) var(--motion-ease-standard),
+    transform var(--motion-overlay-exit) var(--motion-ease-standard);
+}
+.markdown-image-close:focus-visible { outline-color: var(--surface-2); border-radius: 999px; }
+.markdown-image-lightbox.is-closing .markdown-image-close {
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(.92);
+}
+@starting-style {
+  .markdown-image-close { opacity: 0; transform: scale(.92); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .markdown-figure-image[role="button"], .markdown-image-close {
+    transition-property: none !important;
+    transform: none !important;
+    filter: none !important;
+  }
+}
 .markdown-content--full hr { border: 0; border-top: 1px solid var(--border-medium); margin: 1.2em 0; }
 .markdown-content--full code, .markdown-content--compact code { font-family: ui-monospace, Consolas, monospace; font-size: .9em; font-weight: 400; padding: .1em .3em; background: var(--surface-1); border-radius: 3px; }
 .markdown-content--full pre { min-width: 0; max-width: 100%; overflow-x: auto; margin: .9em 0; padding: 14px 16px; background: var(--surface-1); border: 1px solid var(--border-subtle); border-radius: 3px; white-space: pre; overflow-wrap: normal; word-break: normal; line-height: 1.65; }
@@ -1851,21 +2010,28 @@ html[data-route-enter='swap'] .route-view { --route-enter-y: 6px; }
 .custom-select-popup {
   position: fixed; z-index: 100; display: flex; flex-direction: column;
   overflow: hidden; border: 1px solid var(--border-medium); border-radius: var(--radius-md);
-  background: var(--surface-2); box-shadow: var(--shadow-ink-md);
+  background: rgba(250, 249, 245, .94); box-shadow: var(--shadow-ink-md);
+  -webkit-backdrop-filter: blur(var(--blur-glass-sm));
+  backdrop-filter: blur(var(--blur-glass-sm));
+  filter: none;
   --select-closed-clip: inset(0 0 100% 0);
   --select-closed-offset: -6px;
   clip-path: var(--select-closed-clip); opacity: 0; translate: 0 var(--select-closed-offset);
   pointer-events: none;
   /* Select.tsx keeps the portal mounted for 220ms (40ms with reduced motion). */
-  transition: clip-path var(--motion-base) var(--motion-ease-standard), translate var(--motion-base) var(--motion-ease-standard), opacity var(--motion-overlay-exit) var(--motion-ease-standard);
+  transition: clip-path var(--motion-base) var(--motion-ease-standard),
+    translate var(--motion-base) var(--motion-ease-standard),
+    opacity var(--motion-overlay-exit) var(--motion-ease-standard),
+    filter var(--motion-base) var(--motion-ease-standard);
 }
 .custom-select-popup.opens-above { --select-closed-clip: inset(100% 0 0 0); --select-closed-offset: 6px; }
 .custom-select-popup.is-open { clip-path: inset(0 0 0 0); opacity: 1; translate: 0 0; pointer-events: auto; }
+.custom-select-popup:is(:not(.is-open), [data-starting-style], [data-ending-style]) { filter: blur(var(--blur-motion-sm)); }
 @starting-style {
-  .custom-select-popup.is-open { clip-path: var(--select-closed-clip); opacity: 0; translate: 0 var(--select-closed-offset); }
+  .custom-select-popup.is-open { clip-path: var(--select-closed-clip); opacity: 0; translate: 0 var(--select-closed-offset); filter: blur(var(--blur-motion-sm)); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .custom-select-popup { transition-property: opacity; }
+  .custom-select-popup { transition-property: none !important; filter: none !important; }
   .custom-select-chevron { transition-property: none; }
 }
 .custom-select-search {
@@ -2162,6 +2328,12 @@ html[data-route-enter='swap'] .route-view { --route-enter-y: 6px; }
 .editor-classification .star-rating-controls .button { min-height: 32px; padding: 4px 8px; font-size: 13px; }
 
 .save-dock { position: fixed; right: calc(24px + env(safe-area-inset-right, 0px)); bottom: calc(24px + env(safe-area-inset-bottom, 0px)); z-index: 40; display: flex; flex-direction: column; align-items: flex-end; gap: 12px; }
+.save-dock.is-open, .library-selection-toolbar > .library-archive-dock {
+  background: rgba(250, 249, 245, .88);
+  -webkit-backdrop-filter: blur(var(--blur-glass-sm)) saturate(1.06);
+  backdrop-filter: blur(var(--blur-glass-sm)) saturate(1.06);
+}
+.save-dock.is-open { border-radius: 24px; }
 .save-dock-trigger { position: relative; display: grid; place-items: center; width: 48px; height: 48px; padding: 0; border: 0; border-radius: 50%; background: var(--primary); color: var(--surface-2); box-shadow: var(--shadow-ink-md); }
 .save-dock-trigger:hover:not(:disabled) { background: var(--primary-dark); }
 .save-dock-trigger > .save-dock-save-icon, .save-dock-trigger > .save-dock-close-icon { grid-area: 1 / 1; transition: opacity var(--motion-fast) var(--motion-ease-standard), transform var(--motion-base) var(--motion-ease-enter); }

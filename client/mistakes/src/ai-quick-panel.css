@@ -12,14 +12,26 @@
 body:has(.ai-quick-dialog, .ai-quick-drawer) .mistakes-toast-container { visibility: hidden; pointer-events: none; }
 
 /* ─── Quick task panel: a popover on wide screens, a bottom sheet on phones ─── */
-.quick-task-backdrop { position: fixed; inset: 0; z-index: 100; background: var(--scrim-light); }
+.quick-task-backdrop {
+  position: fixed; inset: 0; z-index: 100; background: var(--scrim-light);
+  -webkit-backdrop-filter: blur(var(--blur-glass-backdrop));
+  backdrop-filter: blur(var(--blur-glass-backdrop));
+}
+.quick-task-backdrop:is([data-starting-style], [data-ending-style]) {
+  -webkit-backdrop-filter: blur(0px);
+  backdrop-filter: blur(0px);
+}
 .ai-quick-dialog {
   position: fixed; z-index: 101; top: calc(var(--workspace-header-bottom, 64px) + 10px); right: 24px;
   display: flex; flex-direction: column; width: min(440px, calc(100vw - 32px)); max-height: calc(100dvh - var(--workspace-header-bottom, 64px) - 28px);
-  overflow: hidden; background: var(--surface-2); border: 1px solid var(--border-medium); border-radius: 8px; box-shadow: 0 16px 48px rgba(26, 25, 24, .16);
+  overflow: hidden; background: rgba(250, 249, 245, .95); border: 1px solid var(--border-medium); border-radius: 8px; box-shadow: 0 16px 48px rgba(26, 25, 24, .16);
+  -webkit-backdrop-filter: blur(var(--blur-glass-sm));
+  backdrop-filter: blur(var(--blur-glass-sm));
+  filter: none;
   transform-origin: top right;
   --dialog-direction: -1;
 }
+.ai-quick-dialog:is([data-starting-style], [data-ending-style]) { filter: blur(var(--blur-motion-sm)); }
 /* Review keeps a fixed frame so the action bar never moves while the content changes height. */
 .ai-quick-dialog.is-review { width: min(1040px, calc(100vw - 48px)); height: calc(100dvh - var(--workspace-header-bottom, 64px) - 28px); }
 .quick-panel-header { display: flex; flex-shrink: 0; align-items: center; gap: 6px; padding: 14px 12px 12px 20px; border-bottom: 1px solid var(--border-subtle); }
@@ -46,7 +58,10 @@ body:has(.ai-quick-dialog, .ai-quick-drawer) .mistakes-toast-container { visibil
 .quick-view[data-direction] { animation: quick-view-enter var(--motion-base) var(--motion-ease-enter); }
 .quick-view[data-direction="forward"] { --quick-enter-x: 14px; }
 .quick-view[data-direction="back"] { --quick-enter-x: -14px; }
-@keyframes quick-view-enter { from { opacity: .5; translate: var(--quick-enter-x, 0px) 0; } }
+@keyframes quick-view-enter {
+  from { opacity: .5; translate: var(--quick-enter-x, 0px) 0; filter: blur(var(--blur-motion-sm)); }
+  to { filter: none; }
+}
 
 .quick-scope { display: flex; gap: 4px; margin-top: 14px; padding: 4px; border-radius: 6px; background: var(--surface-1); }
 .quick-scope button, .ai-quick-panel .ai-review-tabs button { flex: 1; min-height: 36px; border: 0; border-radius: 4px; background: transparent; color: var(--text-secondary); font-size: 14px; transition: background-color var(--motion-fast) var(--motion-ease-standard), color var(--motion-fast) var(--motion-ease-standard), box-shadow var(--motion-fast) var(--motion-ease-standard), scale var(--motion-fast) var(--motion-ease-spring); }
@@ -125,5 +140,15 @@ body:has(.ai-quick-dialog, .ai-quick-drawer) .mistakes-toast-container { visibil
 .ai-quick-panel.is-typing .quick-title { font-size: 17px; }
 
 @media (prefers-reduced-motion: reduce) {
-  .quick-view[data-direction], .quick-sync.is-live .quick-live-dot { animation: none; }
+  .quick-view[data-direction], .quick-feedback, .quick-empty, .ai-review-dock > p {
+    animation: none;
+    filter: none !important;
+  }
+  .quick-sync.is-live .quick-live-dot { animation: none; }
+  .ai-quick-dialog { transition-property: none !important; filter: none !important; }
+  .quick-task-backdrop {
+    transition-property: none !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
 }

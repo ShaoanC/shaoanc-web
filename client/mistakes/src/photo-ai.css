@@ -1,5 +1,14 @@
-.photo-dialog-backdrop { position: fixed; inset: 0; background: var(--scrim-strong, rgba(20, 19, 18, .48)); z-index: 1200; }
-.photo-dialog { position: fixed; z-index: 1201; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(660px, calc(100vw - 32px)); max-height: calc(100dvh - 40px); overflow: auto; background: var(--surface-2); color: var(--text-primary); border: 1px solid var(--border-medium); border-radius: 8px; padding: 24px; box-shadow: 0 20px 80px rgba(20, 19, 18, .20); }
+.photo-dialog-backdrop {
+  position: fixed; inset: 0; background: var(--scrim-strong, rgba(20, 19, 18, .48)); z-index: 1200;
+  -webkit-backdrop-filter: blur(var(--blur-glass-backdrop));
+  backdrop-filter: blur(var(--blur-glass-backdrop));
+}
+.photo-dialog-backdrop:is([data-starting-style], [data-ending-style]) {
+  -webkit-backdrop-filter: blur(0px);
+  backdrop-filter: blur(0px);
+}
+.photo-dialog { position: fixed; z-index: 1201; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(660px, calc(100vw - 32px)); max-height: calc(100dvh - 40px); overflow: auto; background: var(--surface-2); color: var(--text-primary); border: 1px solid var(--border-medium); border-radius: 8px; padding: 24px; box-shadow: 0 20px 80px rgba(20, 19, 18, .20); filter: none; }
+.photo-dialog:is([data-starting-style], [data-ending-style]) { filter: blur(var(--blur-motion-sm)); }
 .photo-dialog-wide { width: min(960px, calc(100vw - 32px)); }
 .photo-dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .photo-dialog-heading h2 { font-size: 23px; }
@@ -17,12 +26,12 @@
 .ai-job details summary { color: var(--primary); cursor: pointer; font-size: 14px; padding: 5px 0; }
 .ai-job .markdown-content { font-size: 15px; padding: 12px 0; max-height: 320px; overflow: auto; }
 .ai-toast-copy { display: grid; gap: 6px; }
-.ai-toast-copy button { justify-self: start; color: var(--primary); border: 0; background: none; padding: 0; text-decoration: underline; }
+.ai-toast-copy button { justify-self: start; color: var(--vermilion-dark); border: 0; background: none; padding: 0; text-decoration: underline; }
 .ai-toast-actionable { cursor: pointer; }
 .ai-toast-link { display: grid; gap: 6px; color: inherit; text-decoration: none; }
-.ai-toast-link small { color: var(--primary); text-decoration: underline; text-underline-offset: 3px; }
-.ai-toast-link:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
-.activity-toast-details summary { cursor: pointer; color: var(--primary); }
+.ai-toast-link small { color: var(--vermilion-dark); text-decoration: underline; text-underline-offset: 3px; }
+.ai-toast-link:focus-visible { outline: 2px solid var(--vermilion-dark); outline-offset: 3px; }
+.activity-toast-details summary { cursor: pointer; color: var(--vermilion-dark); }
 .activity-toast-details > div { display: grid; gap: 12px; max-height: 180px; overflow-y: auto; margin-top: 10px; }
 .ai-empty { padding: 28px 0; color: var(--text-secondary); }
 .ai-settings { width: 100%; }
@@ -62,6 +71,11 @@
 .photo-history-pair img { width: 100%; max-height: 260px; object-fit: contain; background: var(--surface-1); }
 .photo-history-pair figcaption { font-size: 13px; color: var(--text-secondary); }
 .photo-history-lightbox.pswp { --pswp-root-z-index: 1300; }
+.photo-history-lightbox.pswp .pswp__bg {
+  background: rgba(20, 19, 18, .9) !important;
+  -webkit-backdrop-filter: blur(var(--blur-glass-md));
+  backdrop-filter: blur(var(--blur-glass-md));
+}
 .photo-history-lightbox .pswp__default-caption { overflow-wrap: anywhere; }
 .photo-library-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
 .photo-library-photo { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 10px; border: 1px solid var(--border-medium); border-radius: 4px; background: var(--surface-2); text-align: left; color: var(--text-primary); }
@@ -171,6 +185,16 @@
   .ai-region-ne, .ai-region-se { right: -10px; }
   .ai-review-text { min-height: 40dvh; }
   .ai-review-footer .button { width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .photo-dialog-backdrop {
+    transition-property: none !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+  .photo-dialog { transition-property: none !important; filter: none !important; }
+  .ai-review-grid .is-mobile-active { animation: none; filter: none !important; }
 }
 
 .nav-custom-item { display: flex; min-width: 0; }

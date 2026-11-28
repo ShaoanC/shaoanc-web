@@ -1,5 +1,14 @@
-.export-backdrop { position: fixed; inset: 0; z-index: 1000; background: rgba(26, 25, 24, .42); }
-.export-dialog { position: fixed; z-index: 1001; top: 50%; left: 50%; transform: translate(-50%, -50%); display: flex; flex-direction: column; width: min(560px, calc(100% - 32px)); max-height: calc(100dvh - 32px); min-height: 0; border: 1px solid var(--border-medium); border-radius: 4px; background: var(--surface-2); outline: none; }
+.export-backdrop {
+  position: fixed; inset: 0; z-index: 1000; background: rgba(26, 25, 24, .42);
+  -webkit-backdrop-filter: blur(var(--blur-glass-backdrop));
+  backdrop-filter: blur(var(--blur-glass-backdrop));
+}
+.export-backdrop:is([data-starting-style], [data-ending-style]) {
+  -webkit-backdrop-filter: blur(0px);
+  backdrop-filter: blur(0px);
+}
+.export-dialog { position: fixed; z-index: 1001; top: 50%; left: 50%; transform: translate(-50%, -50%); display: flex; flex-direction: column; width: min(560px, calc(100% - 32px)); max-height: calc(100dvh - 32px); min-height: 0; border: 1px solid var(--border-medium); border-radius: 4px; background: var(--surface-2); outline: none; filter: none; }
+.export-dialog:is([data-starting-style], [data-ending-style]) { filter: blur(var(--blur-motion-sm)); }
 /* The frame switches size immediately; fade the new controls without scaling the PDF canvas. */
 .export-dialog > :is(.export-settings-heading, .export-settings-body, .export-settings-footer) {
   animation: content-fade var(--motion-base) var(--motion-ease-enter);
@@ -7,7 +16,10 @@
 .export-dialog.is-preview > :is(.export-preview-toolbar, .export-preview-actions) {
   animation: export-preview-enter var(--motion-base) var(--motion-ease-enter);
 }
-@keyframes export-preview-enter { from { opacity: .55; } }
+@keyframes export-preview-enter {
+  from { opacity: .55; filter: blur(var(--blur-motion-sm)); }
+  to { filter: none; }
+}
 .export-settings-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 25px 28px 19px; border-bottom: 1px solid var(--border-subtle); flex-shrink: 0; }
 .export-settings-heading h2 { margin: 0 0 5px; font-family: var(--font-numbers), var(--font-ui); font-size: 25px; }
 .export-settings-heading p { color: var(--text-secondary); font-size: 13px; line-height: 1.7; }
@@ -74,11 +86,6 @@
 .export-mobile-drawer .export-settings-footer { border-radius: 0; }
 .export-mobile-settings .export-feedback:empty { margin-bottom: 0; }
 
-@media (min-width: 641px) {
-  /* Avoid filtering the entire page during dialog animation and interaction. */
-  .export-backdrop { backdrop-filter: none; }
-}
-
 @media (max-width: 640px) {
   .export-dialog { width: calc(100% - 20px); max-height: calc(100dvh - 20px); }
   .export-settings-heading { padding: 20px 17px 15px; }
@@ -107,5 +114,19 @@
   .export-zoom > span { display: none; }
   .export-zoom select { width: 133px; min-height: 40px; }
   .export-paper-scroll { padding: 12px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .export-backdrop {
+    transition-property: none !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+  .export-dialog { transition-property: none !important; filter: none !important; }
+  .export-dialog > :is(.export-settings-heading, .export-settings-body, .export-settings-footer),
+  .export-dialog.is-preview > :is(.export-preview-toolbar, .export-preview-actions) {
+    animation: none;
+    filter: none !important;
+  }
 }
 

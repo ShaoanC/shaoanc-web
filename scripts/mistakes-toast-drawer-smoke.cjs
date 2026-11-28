@@ -39,7 +39,7 @@ async function completeJobToast(page, record, type, review = false) {
     app.db.prepare("UPDATE ai_jobs SET status = 'succeeded', apply_status = ?, result_json = ?, finished_at = ? WHERE id = ?")
         .run(review ? 'pending' : 'applied', JSON.stringify(result), new Date().toISOString(), jobId);
     await refreshJobs(page);
-    const destination = `/mistakes/${record.id}${review ? `/edit?aiJob=${jobId}` : ''}`;
+    const destination = `/ai-tasks?job=${jobId}${review ? '&view=review' : ''}`;
     const anchor = page.locator(`.Toastify__toast a.ai-toast-link[href="#${destination}"]`);
     await anchor.waitFor({ state: 'visible' });
     return { anchor, jobId, result, destination };
@@ -109,9 +109,16 @@ async function mobileChecks(context, base) {
     const originalHash = new URL(page.url()).hash;
     const completed = await completeJobToast(page, record, 'analysis');
     await completed.anchor.click();
+    const quickPanel = page.getByRole('dialog', { name: 'AI 任务', exact: true });
+    await quickPanel.locator(`[data-job-id="${completed.jobId}"]`).waitFor();
+    assert.equal(new URL(page.url()).hash, originalHash, 'The mobile AI toast keeps the filtered background route');
+    await quickPanel.getByRole('button', { name: '关闭 AI 任务' }).click();
+    await quickPanel.waitFor({ state: 'hidden' });
+
+    await page.evaluate((id) => window.dispatchEvent(new CustomEvent('mistakes:open-toast-record', { detail: { path: `/mistakes/${id}` } })), record.id);
     const drawer = page.locator('.record-view-drawer');
     await drawer.locator('.detail-document').waitFor();
-    assert.equal(new URL(page.url()).hash, originalHash, 'Clicking the native toast anchor keeps the mobile background route');
+    assert.equal(new URL(page.url()).hash, originalHash, 'Opening the record drawer keeps the filtered background route');
     assert.equal(await drawer.locator('h1').count(), 0, 'The drawer heading replaces the duplicate page heading');
     assert.equal(await drawer.evaluate((element) => element.scrollWidth > element.clientWidth + 1), false);
     fs.mkdirSync(path.resolve(__dirname, '../docs/screenshots'), { recursive: true });
@@ -180,6 +187,13 @@ async function mobileChecks(context, base) {
     const reviewRecord = await api(context, base, 'POST', '/mistakes', { subjectId: 'math', question: '校对题目的题干', answer: '' });
     const reviewToast = await completeJobToast(page, reviewRecord, 'answer', true);
     await reviewToast.anchor.click();
+    await quickPanel.getByRole('button', { name: '填入校对结果', exact: true }).waitFor();
+    assert.equal(new URL(page.url()).hash, originalHash, 'The mobile AI review toast keeps the filtered background route');
+    await quickPanel.getByRole('button', { name: '关闭 AI 任务' }).click();
+    await quickPanel.waitFor({ state: 'hidden' });
+
+    const reviewPath = `/mistakes/${reviewRecord.id}/edit?aiJob=${reviewToast.jobId}`;
+    await page.evaluate((path) => window.dispatchEvent(new CustomEvent('mistakes:open-toast-record', { detail: { path } })), reviewPath);
     const review = page.getByRole('dialog', { name: '校对答案', exact: true });
     await review.getByRole('button', { name: '填入校对结果', exact: true }).waitFor();
     const applied = page.waitForResponse((response) => response.url().endsWith(`/ai/jobs/${reviewToast.jobId}/apply`));
@@ -262,11 +276,30 @@ async function main() {
     await page.getByRole('heading', { name: '我的错题', exact: true }).waitFor();
     const completed = await completeJobToast(page, record, 'analysis');
     await completed.anchor.click();
-    await page.locator('.detail-document').waitFor();
-    assert.equal(new URL(page.url()).hash, `#/mistakes/${record.id}`, 'Desktop toast keeps standard route navigation');
+    const quickDialog = page.locator('.ai-quick-dialog');
+    await quickDialog.locator(`[data-job-id="${completed.jobId}"]`).waitFor();
+    assert.equal(new URL(page.url()).hash, '#/mistakes', 'The desktop AI toast keeps the background route');
+    assert.equal(await page.locator('.record-view-drawer').count(), 0);
+    await quickDialog.getByRole('button', { name: '关闭 AI 任务' }).click();
+    await quickDialog.waitFor({ state: 'hidden' });
+
+    await page.goto(`${base}/mistakes/#/mistakes/${record.id}/edit`);
+    await page.locator('.question-editor:not(:disabled)').waitFor();
+    const png = await require('sharp')({ create: { width: 80, height: 80, channels: 3, background: '#ffffff' } }).png().toBuffer();
+    await page.locator('.editor-question-block input[type="file"][multiple]').setInputFiles({ name: 'toast-upload.png', mimeType: 'image/png', buffer: png });
+    const crop = page.getByRole('dialog', { name: '裁剪题目图片', exact: true });
+    await crop.getByRole('button', { name: '仅保存图片', exact: true }).click();
+    await crop.waitFor({ state: 'hidden' });
+    const photoToast = page.locator(`.Toastify__toast a.ai-toast-link[href="#/mistakes/${record.id}/edit?photo=question"]`);
+    await photoToast.waitFor({ state: 'visible' });
+    await page.evaluate(() => { window.location.hash = '#/mistakes'; });
+    await page.getByRole('heading', { name: '我的错题', exact: true }).waitFor();
+    await photoToast.click();
+    await page.locator('.question-editor:not(:disabled)').waitFor();
+    assert.equal(new URL(page.url()).hash, `#/mistakes/${record.id}/edit?photo=question`, 'The desktop photo toast keeps standard route navigation');
     assert.equal(await page.locator('.record-view-drawer').count(), 0);
     await desktop.close();
-    console.log('Toast drawer smoke passed: real mobile/desktop toast links, filter-preserving save/delete/restore/rating including late responses after close, first-click nested review, photo targets, same-editor and adopted /new node retention, nested image dialog and swipe close.');
+    console.log('Toast drawer smoke passed: mobile/desktop AI quick panels and photo toast navigation, filter-preserving save/delete/restore/rating including late responses after close, first-click nested review, photo targets, same-editor and adopted /new node retention, nested image dialog and swipe close.');
 }
 
 async function punctuationChecks(page, selector) {

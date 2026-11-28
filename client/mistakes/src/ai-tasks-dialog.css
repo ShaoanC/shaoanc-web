@@ -1,7 +1,5 @@
 .photo-dialog-backdrop.ai-tasks-dialog-backdrop {
   background: var(--scrim);
-  /* Keep the full-screen scrim cheap while tasks update behind it. */
-  backdrop-filter: none;
 }
 
 .photo-dialog.ai-tasks-dialog {
