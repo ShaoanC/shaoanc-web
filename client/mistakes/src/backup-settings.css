@@ -34,7 +34,8 @@
 .backup-size { display: inline-block; margin-left: 20px; font-variant-numeric: tabular-nums; }
 .backup-record-error { color: var(--error); font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
 .backup-record-state { display: inline-flex; align-items: center; gap: 7px; font-size: 14px; color: var(--text-tertiary); }
-.backup-record-state.is-completed, .backup-record-state.is-running { color: var(--primary); }
+.backup-record-state.is-running { color: var(--primary); }
+.backup-record-state.is-completed { color: var(--success); }
 .backup-record-state.is-failed, .backup-record-state.is-interrupted { color: var(--error); }
 .backup-record-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .backup-record-actions .button { min-height: 40px; padding: 8px 14px; font-size: 14px; }

@@ -66,7 +66,7 @@ async function run() {
     const response = await user(`/auth/data-export?userId=${otherId}`);
     assert.match(response.headers.get('cache-control'), /no-store/);
     assert.equal(response.headers.get('content-type'), 'application/zip');
-    assert.match(response.headers.get('content-disposition'), /shiti-my-data-\d{4}-\d{2}-\d{2}\.zip/);
+    assert.match(response.headers.get('content-disposition'), /errata-my-data-\d{4}-\d{2}-\d{2}\.zip/);
     const archive = path.join(directory, 'export.zip');
     fs.writeFileSync(archive, Buffer.from(await response.arrayBuffer()));
     const extracted = path.join(directory, 'extracted');
@@ -107,7 +107,7 @@ async function run() {
         await page.getByRole('button', { name: '下载我的数据' }).click();
         const downloaded = await download;
         assert.equal(await downloaded.failure(), null);
-        assert.match(downloaded.suggestedFilename(), /^shiti-my-data-\d{4}-\d{2}-\d{2}\.zip$/);
+        assert.match(downloaded.suggestedFilename(), /^errata-my-data-\d{4}-\d{2}-\d{2}\.zip$/);
         await page.screenshot({ path: path.join(root, 'data', `frozen-account-${width}.png`), fullPage: true });
         await page.getByRole('button', { name: '退出登录' }).click();
         await page.getByRole('button', { name: '登录', exact: true }).waitFor();

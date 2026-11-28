@@ -4,9 +4,11 @@ import { EditorContentSkeleton, EditorPageSkeleton, ReviewCandidatesSkeleton, Re
 import { getActiveApiRequestCount, getApiActivitySnapshot, subscribeToApiActivity } from './api';
 import { isLibraryPath } from './LibraryLocation';
 
-const MOTION_EASING = 'cubic-bezier(0.22, 0.61, 0.36, 1)';
+// Web Animations requires a resolved easing, matching --motion-ease-enter in styles.css.
 const ENTER_EASING = 'cubic-bezier(0.16, 1, 0.3, 1)';
-const CROSSFADE_DURATION = 260;
+const CROSSFADE_DURATION = 220;
+const REDUCED_FADE_DURATION = 40;
+const ROUTE_ENTER_DURATION = 280;
 
 const prefersReducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -38,7 +40,7 @@ export function useQuarterTurn() {
   const turn = useCallback((element: HTMLElement | null | undefined, direction: number, scale: number, resize?: QuarterTurnResize) => {
     settle();
     if (reduced || !element || typeof element.animate !== 'function') return Promise.resolve();
-    const timing: KeyframeAnimationOptions = { duration: QUARTER_TURN_DURATION, easing: MOTION_EASING, fill: 'forwards' };
+    const timing: KeyframeAnimationOptions = { duration: QUARTER_TURN_DURATION, easing: getComputedStyle(element).getPropertyValue('--motion-ease-standard').trim() || ENTER_EASING, fill: 'forwards' };
     animations.current = [element.animate([{ transform: 'none' }, { transform: `rotate(${direction * 90}deg) scale(${scale})` }], timing)];
     // Resizing the container alongside the spin avoids a height jump when the rotated image replaces it;
     // clipping it also keeps the diagonal mid-spin corners from flashing scrollbars.
@@ -73,6 +75,7 @@ export function routeDirection(fromPath: string, toPath: string): RouteDirection
 
 let routeTransitionId = 0;
 let routeEnterTimer = 0;
+let activeRouteTransition: ViewTransition | undefined;
 
 /**
  * Swaps the visible `.route-view` with a view transition: the old page leaves as a snapshot while the new one enters live.
@@ -80,31 +83,41 @@ let routeEnterTimer = 0;
  */
 export function runRouteTransition(direction: RouteDirection | null, update: () => void) {
   const root = document.documentElement;
+  const id = ++routeTransitionId;
+  const restartEntrance = root.hasAttribute('data-route-enter');
+  window.clearTimeout(routeEnterTimer);
+  activeRouteTransition?.skipTransition();
+  activeRouteTransition = undefined;
+  delete root.dataset.routePhase;
+  delete root.dataset.routeDirection;
+  delete root.dataset.routeEnter;
   // Dialogs stay above pages; a page snapshot would otherwise cover one that is closing.
   if (!direction || prefersReducedMotion() || document.visibilityState !== 'visible' || document.querySelector('[role="dialog"], [role="alertdialog"]')) {
     update();
     return;
   }
-  const id = ++routeTransitionId;
-  root.dataset.routeDirection = direction;
   if (typeof document.startViewTransition !== 'function') {
-    window.clearTimeout(routeEnterTimer);
+    flushSync(update);
+    // Commit the cleared style if two navigations reuse the visible route in quick succession.
+    if (restartEntrance) {
+      const view = document.querySelector('.route-view:not([hidden])');
+      if (view) getComputedStyle(view).getPropertyValue('animation-name');
+    }
     root.dataset.routeEnter = direction;
-    update();
-    routeEnterTimer = window.setTimeout(() => {
-      delete root.dataset.routeEnter;
-      if (id === routeTransitionId) delete root.dataset.routeDirection;
-    }, 400);
+    routeEnterTimer = window.setTimeout(() => { delete root.dataset.routeEnter; }, ROUTE_ENTER_DURATION + 40);
     return;
   }
+  root.dataset.routeDirection = direction;
   root.dataset.routePhase = 'old';
   const transition = document.startViewTransition(() => {
-    // A newer navigation keeps the old phase, so its snapshot is still taken as the leaving page.
-    if (id === routeTransitionId) root.dataset.routePhase = 'new';
+    if (id !== routeTransitionId) return;
+    root.dataset.routePhase = 'new';
     flushSync(update);
   });
+  activeRouteTransition = transition;
   const cleanup = () => {
     if (id !== routeTransitionId) return;
+    activeRouteTransition = undefined;
     delete root.dataset.routePhase;
     delete root.dataset.routeDirection;
   };
@@ -132,7 +145,7 @@ export function useEnterAnimation(ref: RefObject<HTMLElement | null>) {
     const now = performance.now();
     enterIndex = now - enterStamp < 50 ? enterIndex + 1 : 0;
     enterStamp = now;
-    const animation = element.animate([{ opacity: 0, transform: 'translateY(10px)' }, { opacity: 1, transform: 'none' }], { duration: 360, delay: Math.min(enterIndex, 8) * 30, easing: ENTER_EASING, fill: 'backwards' });
+    const animation = element.animate([{ opacity: .65, transform: 'translateY(5px)' }, { opacity: 1, transform: 'none' }], { duration: 220, delay: Math.min(enterIndex, 3) * 18, easing: ENTER_EASING, fill: 'backwards' });
     return () => animation.cancel();
   }, [ref]);
 }
@@ -239,8 +252,8 @@ export function GlobalLoadingProgress() {
     }
   }, [active, activity.cycle, reduced]);
 
-  return <div className={`loading-progress${view.visible ? ' is-visible' : ''}${view.completing ? ' is-completing' : ''}`} aria-hidden="true" style={{ opacity: view.visible ? 1 : 0, transition: `opacity ${reduced ? 40 : 180}ms ${MOTION_EASING}` }}>
-    <span ref={fill} className="loading-progress-fill" style={{ transform: `scaleX(${view.progress})`, transition: `transform ${reduced ? 60 : view.completing ? 320 : view.progress <= 0.3 ? 200 : 700}ms ${MOTION_EASING}` }} />
+  return <div className={`loading-progress${view.visible ? ' is-visible' : ''}${view.completing ? ' is-completing' : ''}`} aria-hidden="true">
+    <span ref={fill} className="loading-progress-fill" style={{ transform: `scaleX(${view.progress})`, transitionDuration: view.completing ? 'var(--motion-slow)' : view.progress <= 0.3 ? 'var(--motion-base)' : '700ms' }} />
   </div>;
 }
 
@@ -268,10 +281,9 @@ export function SlidingTabs({ tabs, value, onChange, ariaLabel, className = '' }
       if (disposed || !root) return;
       const selected = Array.from(root.querySelectorAll<HTMLButtonElement>('[role="tab"]')).find((tab) => tab.dataset.tabId === value);
       if (!selected) return;
-      const rect = selected.getBoundingClientRect();
-      const rootRect = root.getBoundingClientRect();
-      const next = { x: rect.left - rootRect.left + root.scrollLeft - root.clientLeft, width: rect.width };
-      setIndicator((previous) => Math.abs(previous.x - next.x) < 0.1 && Math.abs(previous.width - next.width) < 0.1 ? previous : next);
+      // Measure layout so the pressed tab's scale cannot shift the underline.
+      const next = { x: selected.offsetLeft, width: selected.offsetWidth };
+      setIndicator((previous) => previous.x === next.x && previous.width === next.width ? previous : next);
       if (!initialized.current && !frame) {
         frame = window.requestAnimationFrame(() => {
           initialized.current = true;
@@ -443,15 +455,36 @@ export function LoadingContent({ loading, kind = 'library', className = '', chil
   children: ReactNode;
 }) {
   const reduced = useReducedMotion();
+  const container = useRef<HTMLDivElement>(null);
+  const placeholder = useRef<HTMLDivElement>(null);
   const [showPlaceholder, setShowPlaceholder] = useState(loading);
+
+  useLayoutEffect(() => {
+    if (loading || reduced || !showPlaceholder) return;
+    const element = container.current;
+    const skeleton = placeholder.current;
+    if (!element || typeof element.animate !== 'function' || !skeleton) return;
+    // Real content takes up its own space right away. Only release extra skeleton height,
+    // without clipping the content or pinning a height after the transition.
+    const extraHeight = skeleton.scrollHeight - skeleton.clientHeight;
+    if (extraHeight <= 0) return;
+    const height = element.offsetHeight;
+    const animation = element.animate(
+      [{ minHeight: `${height + extraHeight}px` }, { minHeight: `${height}px` }],
+      { duration: CROSSFADE_DURATION, easing: ENTER_EASING },
+    );
+    return () => animation.cancel();
+  }, [loading, reduced, showPlaceholder]);
+
   useEffect(() => {
     if (loading) { setShowPlaceholder(true); return; }
-    const timer = window.setTimeout(() => setShowPlaceholder(false), reduced ? 40 : CROSSFADE_DURATION);
+    if (!showPlaceholder) return;
+    const timer = window.setTimeout(() => setShowPlaceholder(false), reduced ? REDUCED_FADE_DURATION : CROSSFADE_DURATION + 40);
     return () => window.clearTimeout(timer);
-  }, [loading, reduced]);
+  }, [loading, reduced, showPlaceholder]);
 
-  return <div className={`loading-content loading-kind-${kind} ${loading ? 'is-loading' : 'is-ready'} ${className}`.trim()} aria-busy={loading}>
+  return <div ref={container} className={`loading-content loading-kind-${kind} ${loading ? 'is-loading' : 'is-ready'} ${className}`.trim()} aria-busy={loading}>
     <div className="loading-content-body" inert={loading} aria-hidden={loading || undefined}>{children}</div>
-    {(showPlaceholder || loading) && <div className="loading-content-placeholder" aria-hidden={!loading || undefined}><span className="visually-hidden" role="status">正在加载…</span><Skeleton kind={kind} /></div>}
+    {(showPlaceholder || loading) && <div ref={placeholder} className="loading-content-placeholder" aria-hidden={!loading || undefined}><span className="visually-hidden" role="status">正在加载…</span><Skeleton kind={kind} /></div>}
   </div>;
 }

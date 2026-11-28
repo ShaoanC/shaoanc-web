@@ -1,6 +1,6 @@
 import { Dialog } from '@base-ui/react/dialog';
 import { ArrowRight, BookOpen, Check, LoaderCircle, Minus, SearchX, X } from 'lucide-react';
-import { useEffect, useRef, useState, type ComponentProps, type ComponentPropsWithoutRef, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type ComponentPropsWithoutRef, type ReactNode } from 'react';
 import type { KnowledgeStatus } from './types';
 import { STATUS_LABELS } from './types';
 
@@ -59,8 +59,10 @@ export function Modal({ open = true, title, children, onClose, initialFocus }: {
   const [mounted, setMounted] = useState(false);
   const popup = useRef<HTMLDivElement>(null);
   const retained = useRef({ title, children });
-  if (open) retained.current = { title, children };
-  const content = retained.current;
+  useLayoutEffect(() => {
+    if (open) retained.current = { title, children };
+  }, [open, title, children]);
+  const content = open ? { title, children } : retained.current;
 
   // Opening from the closed state lets conditionally rendered callers animate in as well.
   useEffect(() => setMounted(true), []);

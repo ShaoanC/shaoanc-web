@@ -5,6 +5,7 @@ import { Check, ImagePlus, Trash2, ZoomIn } from 'lucide-react';
 import { api } from './api';
 import { knowledgeLabel, useApp } from './context';
 import { AiDialog } from './AiDialog';
+import { BlurImage } from './BlurImage';
 import { useRecordView } from './RecordView';
 import { MarkdownContent } from './MarkdownContent';
 import { cropFigure, figureMarker, ImageRegions, validBox, type EditableFigure } from './ImageRegions';
@@ -48,6 +49,8 @@ export function AiReview({ job, input, busy, onApply, onDismiss, embedded = fals
   const [mobileView, setMobileView] = useState<'image' | 'result'>('result');
   const [preview, setPreview] = useState(true);
   const [full, setFull] = useState<string | null>(null);
+  // Keep the image mounted until the dialog finishes its exit transition.
+  const [lastFullUrl, setLastFullUrl] = useState<string | null>(null);
   const previews = useFigurePreviews(draft.figures, images, open);
   const [error, setError] = useState('');
   const [conflict, setConflict] = useState(false);
@@ -59,7 +62,7 @@ export function AiReview({ job, input, busy, onApply, onDismiss, embedded = fals
   const cursor = useRef<{ start: number; end: number; field: ImagePurpose } | null>(null);
   const [editingField, setEditingField] = useState<ImagePurpose>(job.type === 'answer' ? 'answer' : 'question');
   const locked = busy || uploading;
-  const source = images.find((image) => image.id === imageId);
+  const sourceUrl = images.find((image) => image.id === imageId)?.cropUrl;
   const markerFields = [{ field: job.type === 'answer' ? 'answer' : 'question', text: draft.text }, ...(pageEntry ? [{ field: 'answer', text: draft.answerText }] : [])];
   const referenced = markerFields.flatMap(({ text }) => markersOf(text));
   const figureField = (figure: EditableFigure): ImagePurpose => figure.field || (job.type === 'answer' ? 'answer' : 'question');
@@ -105,12 +108,22 @@ export function AiReview({ job, input, busy, onApply, onDismiss, embedded = fals
     setMobileView('result');
     setOpen(true);
   }
+  function showFull(url: string) {
+    setLastFullUrl(url);
+    setFull(url);
+  }
+  function scrollToSource() {
+    requestAnimationFrame(() => {
+      const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      sourcePanel.current?.scrollIntoView({ block: 'start', behavior: reducedMotion ? 'auto' : 'smooth' });
+    });
+  }
   function showIssue(imageId: number) {
     setImageId(imageId);
     setActiveId(draft.figures.find((figure) => figure.imageId === imageId)?.id || null);
     setRedrawId(null);
     setMobileView('image');
-    requestAnimationFrame(() => sourcePanel.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }));
+    scrollToSource();
   }
   function changeBox(id: string, box: FigureBox) {
     update({ figures: draftRef.current.figures.map((figure) => figure.id === id ? { ...figure, imageId, box, selected: true, clientId: crypto.randomUUID(), uploadedId: undefined, uploadedUrl: undefined } : figure) });
@@ -122,7 +135,7 @@ export function AiReview({ job, input, busy, onApply, onDismiss, embedded = fals
     if (!figure) update({ figures: [...draftRef.current.figures, { id, imageId: target, box: null, field: pageEntry && markersOf(draftRef.current.answerText).includes(id) ? 'answer' : job.type === 'answer' ? 'answer' : 'question', description: '原题配图', selected: false, clientId: crypto.randomUUID() }] });
     else if (figure.imageId !== target) update({ figures: draftRef.current.figures.map((item) => item.id === id ? { ...item, imageId: target, box: null, selected: false, clientId: crypto.randomUUID(), uploadedId: undefined, uploadedUrl: undefined } : item) });
     setImageId(target); setActiveId(id); setRedrawId(id); setMobileView('image');
-    requestAnimationFrame(() => sourcePanel.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }));
+    scrollToSource();
   }
   function insert(id: string) {
     const figure = draftRef.current.figures.find((item) => item.id === id);
@@ -219,11 +232,11 @@ export function AiReview({ job, input, busy, onApply, onDismiss, embedded = fals
       <div className="ai-review-grid">
         <section ref={sourcePanel} className={`ai-review-source${mobileView === 'image' ? ' is-mobile-active' : ''}`}>
           <h3>来源图片</h3><div className="ai-source-tabs">{images.map((image) => <button type="button" key={image.id} className={image.id === imageId ? 'is-active' : ''} onClick={() => { setImageId(image.id); setRedrawId(null); }}>图片 {job.imageIds.indexOf(image.id) + 1}</button>)}</div>
-          {source?.cropUrl ? <ImageRegions url={source.cropUrl} figures={draft.figures.map((figure, index) => ({ ...figure, number: index + 1 })).filter((figure) => figure.imageId === imageId)} activeId={activeId} onActive={setActiveId} onChange={changeBox} onAdd={add} disabled={locked} onZoom={() => setFull(source.cropUrl)} redrawId={redrawId} onRedrawDone={() => setRedrawId(null)} /> : <p className="ai-empty">没有可用的来源图片。备份恢复后可重新上传照片并识别；已保留的正文配图仍可查看。</p>}
+          {sourceUrl ? <ImageRegions url={sourceUrl} figures={draft.figures.map((figure, index) => ({ ...figure, number: index + 1 })).filter((figure) => figure.imageId === imageId)} activeId={activeId} onActive={setActiveId} onChange={changeBox} onAdd={add} disabled={locked} onZoom={() => showFull(sourceUrl)} redrawId={redrawId} onRedrawDone={() => setRedrawId(null)} /> : <p className="ai-empty">没有可用的来源图片。备份恢复后可重新上传照片并识别；已保留的正文配图仍可查看。</p>}
           <p className="ai-notice">配图框选基于本次识别的裁剪图。图形与作答重叠时，请检查截图内容；不会自动擦除彩色笔迹。</p>
           <div className="ai-figure-list">{draft.figures.map((figure, index) => <article key={figure.id} className={`ai-figure-item${activeId === figure.id ? ' is-active' : ''}`}>
             <div className="ai-figure-heading"><label><input type="checkbox" disabled={locked || !validBox(figure.box)} checked={figure.selected} onChange={(event) => { const selected = event.target.checked; update({ text: selected ? draftRef.current.text : draftRef.current.text.split(figureMarker(figure.id)).join(''), answerText: selected ? draftRef.current.answerText : draftRef.current.answerText.split(figureMarker(figure.id)).join(''), figures: draftRef.current.figures.map((item) => item.id === figure.id ? { ...item, selected } : item) }); }} />配图 {index + 1} <small>{job.imageIds.includes(figure.imageId) ? `来源图片 ${job.imageIds.indexOf(figure.imageId) + 1}` : '来源未确定'}</small></label><button type="button" className="icon-button" disabled={locked} aria-label={`删除配图 ${index + 1}`} onClick={() => remove(figure.id)}><Trash2 size={15} /></button></div>
-            {previews[figure.id] && <button type="button" className="ai-figure-preview" aria-label={`放大配图 ${index + 1}`} onClick={() => { setImageId(figure.imageId); setActiveId(figure.id); setFull(previews[figure.id]); }}><img src={previews[figure.id]} alt={figure.description || `配图 ${index + 1}`} /><ZoomIn size={15} /></button>}
+            {previews[figure.id] && <button type="button" className="ai-figure-preview" aria-label={`放大配图 ${index + 1}`} onClick={() => { setImageId(figure.imageId); setActiveId(figure.id); showFull(previews[figure.id]); }}><BlurImage bare src={previews[figure.id]} alt={figure.description || `配图 ${index + 1}`} /><ZoomIn size={15} /></button>}
             <label className="field"><span>配图 {index + 1} 来源图片</span><select disabled={locked || !images.length} value={images.some((image) => image.id === figure.imageId) ? figure.imageId : ''} onChange={(event) => redraw(figure.id, Number(event.target.value))}><option value="" disabled>请选择来源图片</option>{images.map((image) => <option key={image.id} value={image.id}>图片 {job.imageIds.indexOf(image.id) + 1}</option>)}</select></label>
             {pageEntry && <label className="field"><span>配图 {index + 1} 所属内容</span><select disabled={locked} value={figureField(figure)} onChange={(event) => { const field = event.target.value as ImagePurpose; const marker = figureMarker(figure.id); update({ text: draftRef.current.text.split(marker).join(''), answerText: draftRef.current.answerText.split(marker).join(''), figures: draftRef.current.figures.map((item) => item.id === figure.id ? { ...item, field, uploadedId: undefined, uploadedUrl: undefined, clientId: crypto.randomUUID() } : item) }); setEditingField(field); }}><option value="question">题干</option><option value="answer">正确答案</option></select></label>}
             {!validBox(figure.box) && <p className="form-error">定位无效，不会自动裁图。请重新框选或删除配图和标记。</p>}
@@ -256,6 +269,6 @@ export function AiReview({ job, input, busy, onApply, onDismiss, embedded = fals
         <div className="photo-actions ai-review-footer">{fill}{replace}{append}<button type="button" className="table-button" disabled={locked} onClick={() => embedded ? onDismiss() : setOpen(false)}>保留校对稿，稍后继续</button></div>
       </>}
     </ReviewFrame>
-    <AiDialog open={Boolean(full)} onClose={() => setFull(null)} title="查看配图" wide>{full && <div className="ai-zoom-image"><img src={full} alt="放大查看图片与标注" /></div>}</AiDialog>
+    <AiDialog open={Boolean(full)} onClose={() => setFull(null)} title="查看配图" wide>{lastFullUrl && <div className="ai-zoom-image"><BlurImage bare src={lastFullUrl} alt="放大查看图片与标注" /></div>}</AiDialog>
   </section>;
 }

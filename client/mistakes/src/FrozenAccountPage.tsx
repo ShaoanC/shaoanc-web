@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Download, LoaderCircle, LockKeyhole, LogOut } from 'lucide-react';
-import { LogoMark } from './Logo';
+import { BrandWordmark } from './Logo';
 import type { User } from './types';
 import './frozen-account.css';
 
@@ -21,7 +21,7 @@ export function FrozenAccountPage({ user, logout }: { user: User; logout: () => 
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `shiti-my-data-${new Date().toISOString().slice(0, 10)}.zip`;
+      link.download = `errata-my-data-${new Date().toISOString().slice(0, 10)}.zip`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -31,7 +31,7 @@ export function FrozenAccountPage({ user, logout }: { user: User; logout: () => 
   }
 
   return <main className="frozen-page">
-    <header className="frozen-header"><span className="brand"><LogoMark /><span>拾题</span></span><span className="frozen-username">{user.username}</span></header>
+    <header className="frozen-header"><span className="brand" role="img" aria-label="Errata"><BrandWordmark /></span><span className="frozen-username">{user.username}</span></header>
     <section className="frozen-content" aria-labelledby="frozen-title">
       <LockKeyhole size={32} strokeWidth={1.5} className="frozen-icon" />
       <h1 id="frozen-title">您的账号已被冻结</h1>

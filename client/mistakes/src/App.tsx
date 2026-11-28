@@ -4,7 +4,8 @@ import { ArrowRight, BookOpen, CheckCircle2, ClipboardList, DatabaseBackup, Grad
 import { api, json } from './api';
 import { AppContext, sortDirectory } from './context';
 import { GlobalLoadingProgress, LoadingContent, markReturnedRecord, routeDirection, runRouteTransition, SlidingNavigation, type SkeletonKind } from './motion';
-import { LogoMark } from './Logo';
+import { BrandWordmark } from './Logo';
+import { BlurImage } from './BlurImage';
 import { FrozenAccountPage } from './FrozenAccountPage';
 import { FriendlyCaptcha, type CaptchaState } from './FriendlyCaptcha';
 import { AiTasksProvider, AiTasksButton } from './AiTasks';
@@ -40,7 +41,8 @@ const navItems = [
 ];
 
 function AuthPage({ onLogin, onNotify }: { onLogin: (user: User) => void; onNotify: (msg: string) => void }) {
-  const [registering, setRegistering] = useState(false);
+  const [mode, setMode] = useState<'initial' | 'login' | 'register'>('initial');
+  const registering = mode === 'register';
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [inviteCode, setInviteCode] = useState('');
@@ -96,11 +98,11 @@ function AuthPage({ onLogin, onNotify }: { onLogin: (user: User) => void; onNoti
 
   return <div className="auth-page">
     <aside className="auth-story">
-      <a className="brand" href="/" aria-label="返回首页"><LogoMark /><span className="brand-text">拾题<span>把错题，学明白。</span></span></a>
+      <a className="brand" href="/" aria-label="返回首页"><BrandWordmark /></a>
       <div className="auth-story-body"><span className="small-pill"><ClipboardList size={16} /> 你的个人错题本</span><h1>做错的题，<br />值得再想一遍。</h1><p>记录卡住你的那一步，梳理知识点。<br />再练一次，让「不熟」慢慢变成「掌握」。</p><div className="auth-note"><div className="auth-note-top"><span><ClipboardList size={18} /> 我的学习笔记</span><span className="note-dots">•••</span></div><div className="note-rule long" /><div className="note-rule" /><div className="auth-note-bottom"><span><CheckCircle2 size={17} /> 记录 · 整理 · 复习</span><span className="note-check"><CheckCircle2 size={25} /></span></div></div></div>
       <div className="auth-story-footer">记录问题 · 理清思路 · 回顾练习</div>
     </aside>
-    <main className="auth-form-area"><div className="auth-form-wrap"><div className="auth-icon"><GraduationCap size={30} /></div><h2>{registering ? '开始积累，遇见进步' : '欢迎回来'}</h2><p className="auth-subtitle">{registering ? '使用邀请码创建账号，开启你的错题本。' : '登录后，继续整理你的学习收获。'}</p><form onSubmit={submit}>
+    <main className="auth-form-area"><div className="auth-form-wrap"><div className="auth-icon"><GraduationCap size={30} /></div><div className="auth-form-content" data-auth-mode={mode}><h2>{registering ? '开始积累，遇见进步' : '欢迎回来'}</h2><p className="auth-subtitle">{registering ? '使用邀请码创建账号，开启你的错题本。' : '登录后，继续整理你的学习收获。'}</p><form onSubmit={submit}>
       <label className="field"><span>用户名</span><input required autoComplete="username" minLength={3} maxLength={32} placeholder="输入用户名" value={username} onChange={(event) => setUsername(event.target.value)} /></label>
       <label className="field"><span>密码</span><input required type="password" autoComplete={registering ? 'new-password' : 'current-password'} minLength={registering ? 8 : undefined} maxLength={128} placeholder={registering ? '至少 8 位密码' : '输入密码'} value={password} onChange={(event) => setPassword(event.target.value)} /></label>
       {registering && <label className="field"><span>邀请码</span><input required placeholder="输入管理员提供的邀请码" value={inviteCode} onChange={(event) => setInviteCode(event.target.value)} /><small>邀请码由管理员生成。</small></label>}
@@ -113,7 +115,7 @@ function AuthPage({ onLogin, onNotify }: { onLogin: (user: User) => void; onNoti
       </div>}
       {error && <div className="form-error" role="alert">{error}</div>}
       <button className="button primary auth-submit" disabled={busy || !canSubmit}>{busy ? <LoaderCircle className="spin" size={18} /> : <>{registering ? '创建账号' : '登录'}<ArrowRight size={18} /></>}</button>
-    </form><div className="auth-switch">{registering ? '已有账号？' : '还没有账号？'}<button disabled={busy} onClick={() => { if (submitting.current) return; setRegistering(!registering); setError(''); resetCaptcha(); }}>{registering ? '立即登录' : '使用邀请码注册'}</button></div><div className="auth-secure"><ShieldCheck size={15} /> 你的错题与笔记，仅对你可见</div></div></main>
+    </form></div><div className="auth-switch">{registering ? '已有账号？' : '还没有账号？'}<button disabled={busy} onClick={() => { if (submitting.current) return; setMode(registering ? 'login' : 'register'); setError(''); resetCaptcha(); }}>{registering ? '立即登录' : '使用邀请码注册'}</button></div><div className="auth-secure"><ShieldCheck size={15} /> 你的错题与笔记，仅对你可见</div></div></main>
   </div>;
 }
 
@@ -298,9 +300,13 @@ export default function App() {
     {!onLibrary && <div key="page" className="route-view"><Suspense fallback={<LoadingContent loading kind={skeletonKind}>{null}</LoadingContent>}>{page}</Suspense></div>}
   </LibraryLocationContext.Provider>;
 
+  const avatar = user && <>
+    {user.avatar && <BlurImage bare decoding="async" className="blur-image-avatar" src={user.avatar} alt="" />}
+    <span className="avatar-initial" aria-hidden="true">{user.username.slice(0, 1).toUpperCase()}</span>
+  </>;
   const workspace = user && !user.active ? <FrozenAccountPage user={user} logout={logout} /> : user ? <AppContext.Provider value={{ user, updateUser: setUser, subjects, knowledgePoints, refreshDirectory, notify, logout }}><AiTasksProvider key={user.id}><PhotoUploadsProvider><div className="app-shell">
-    <aside className="sidebar"><a className="brand" href={`#${libraryReturnPath}`}><LogoMark /><span className="brand-text">拾题<span>把错题，学明白。</span></span></a><div className="sidebar-label">学习空间</div><SlidingNavigation value={activePath} ariaLabel="主导航" items={navItems.map(({ path: itemPath, label, icon: Icon }) => ({ id: itemPath, href: `#${itemPath === '/mistakes' ? libraryReturnPath : itemPath}`, label: <><Icon size={19} strokeWidth={1.8} /><span>{label}</span></> }))} /><div className="sidebar-bottom"><div className="sidebar-reminder"><span className="reminder-icon"><RotateCcw size={22} /></span><strong>温故而知新，可以为师矣</strong><a href="#/review">打开复习页</a></div><div className="account"><AiTasksButton className="mobile-task-trigger" /><a className="account-profile" href="#/settings"><span className="avatar">{user.avatar ? <img src={user.avatar} alt="" /> : user.username.slice(0, 1).toUpperCase()}</span><span className="account-name"><strong title={user.username}>{user.username}</strong><small>{user.role === 'admin' ? '管理员' : '我的账号'}</small></span></a><button className="icon-button" title="退出登录" aria-label="退出登录" onClick={logout}><LogOut size={17} /></button></div></div></aside>
-    <div className="main-shell"><header className="topbar"><span className="topbar-label"><BookOpen size={15} /> 个人学习空间</span><div className="topbar-right"><AiTasksButton className="desktop-task-trigger" /><a className="topbar-avatar" href="#/settings" aria-label="账号设置">{user.avatar ? <img src={user.avatar} alt="" /> : user.username.slice(0, 1).toUpperCase()}</a></div></header><main className="main-content">{backupReadOnly && <div className="backup-readonly-banner" role="status"><DatabaseBackup size={20} /><p><strong>正在备份，暂时只读</strong><span>已输入的内容会保留，请稍后重试保存。</span></p></div>}{directoryError && <div className="inline-alert" role="alert">基础目录加载失败：{directoryError}<button onClick={refreshDirectory}>重试</button></div>}<RecordWorkspace path={path} editorId={backgroundEditorId} skeletonKind={skeletonKind}>{page}</RecordWorkspace><footer className="page-footer"><span>拾题 · © {new Date().getFullYear()} ShaoanC</span></footer></main></div>
+    <aside className="sidebar"><a className="brand" href={`#${libraryReturnPath}`} aria-label="Errata"><BrandWordmark /></a><div className="sidebar-label">学习空间</div><SlidingNavigation value={activePath} ariaLabel="主导航" items={navItems.map(({ path: itemPath, label, icon: Icon }) => ({ id: itemPath, href: `#${itemPath === '/mistakes' ? libraryReturnPath : itemPath}`, label: <><Icon size={19} strokeWidth={1.8} /><span>{label}</span></> }))} /><div className="sidebar-bottom"><div className="sidebar-reminder"><span className="reminder-icon"><RotateCcw size={22} /></span><strong>温故而知新，可以为师矣</strong><a href="#/review">打开复习页</a></div><div className="account"><AiTasksButton className="mobile-task-trigger" /><a className="account-profile" href="#/settings"><span className="avatar">{avatar}</span><span className="account-name"><strong title={user.username}>{user.username}</strong><small>{user.role === 'admin' ? '管理员' : '我的账号'}</small></span></a><button className="icon-button" title="退出登录" aria-label="退出登录" onClick={logout}><LogOut size={17} /></button></div></div></aside>
+    <div className="main-shell"><header className="topbar"><span className="topbar-label"><BookOpen size={15} /> 个人学习空间</span><div className="topbar-right"><AiTasksButton className="desktop-task-trigger" /><a className="topbar-avatar" href="#/settings" aria-label="账号设置">{avatar}</a></div></header><main className="main-content">{backupReadOnly && <div className="backup-readonly-banner" role="status"><DatabaseBackup size={20} /><p><strong>正在备份，暂时只读</strong><span>已输入的内容会保留，请稍后重试。</span></p></div>}{directoryError && <div className="inline-alert" role="alert">基础目录加载失败：{directoryError}<button onClick={refreshDirectory}>重试</button></div>}<RecordWorkspace path={path} editorId={backgroundEditorId} skeletonKind={skeletonKind}>{page}</RecordWorkspace><footer className="page-footer"><span>Errata · © {new Date().getFullYear()} ShaoanC</span></footer></main></div>
   </div></PhotoUploadsProvider></AiTasksProvider></AppContext.Provider> : <AuthPage onLogin={(nextUser) => { setUser(nextUser); setPath(nextUser.active ? '/mistakes' : '/frozen'); window.location.hash = nextUser.active ? '/mistakes' : '/frozen'; }} onNotify={(msg) => { pendingWelcome.current = msg; }} />;
 
   return <><GlobalLoadingProgress /><LoadingContent loading={initializing} kind="shell" className="app-entrance">{!initializing && workspace}</LoadingContent></>;

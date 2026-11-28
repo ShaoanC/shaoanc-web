@@ -9,6 +9,7 @@ import { useApp } from './context';
 import { assignPageUploadBatch, uploadPageBatch, type PendingPage } from './page-upload';
 import { AiDialog } from './AiDialog';
 import { useAiTasks } from './AiTasks';
+import { BlurImage } from './BlurImage';
 import { validBox } from './ImageRegions';
 import type { FigureBox } from './ai-types';
 import './page-imports.css';
@@ -246,14 +247,16 @@ export function PageImportsPage() {
       <input ref={camera} type="file" capture="environment" accept="image/jpeg,image/png,image/webp" hidden disabled={disabled} onChange={(event) => { add(Array.from(event.target.files || [])); event.target.value = ''; }} />
       <div className="photo-actions"><button className="button secondary" disabled={disabled} onClick={() => album.current?.click()}><ImagePlus size={16} />选择页面</button><button className="button secondary" disabled={disabled} onClick={() => camera.current?.click()}>拍照</button><span className="page-import-help">保留整页和蓝色笔迹。按 1.、2. 这样的题号分题；同一题里的 1(1)、1(2) 仍算一道题。</span></div>
       {!configured && tasks.config && <p className="ai-notice">页面分题服务尚未启用，请由管理员在设置中配置专用 Gemini API。</p>}
-      {pending.length > 0 && <><ol className="page-pending-grid">{pending.map((entry, index) => <li key={entry.id} className="page-pending-card"><div className="page-pending-preview"><img src={entry.url} alt={`待上传页面 ${index + 1}`} /></div><div className="page-pending-caption"><strong>{index + 1}. {entry.file.name}</strong><div><button type="button" className="icon-button" aria-label={`第 ${index + 1} 页向前移动`} disabled={disabled || index === 0} onClick={() => move(index, -1)}><ArrowUp size={16} /></button><button type="button" className="icon-button" aria-label={`第 ${index + 1} 页向后移动`} disabled={disabled || index === pending.length - 1} onClick={() => move(index, 1)}><ArrowDown size={16} /></button><button type="button" className="icon-button" aria-label={`第 ${index + 1} 页左转 90 度`} disabled={disabled} onClick={(event) => void rotate(entry, -1, event.currentTarget)}><RotateCcw size={16} /></button><button type="button" className="icon-button" aria-label={`第 ${index + 1} 页右转 90 度`} disabled={disabled} onClick={(event) => void rotate(entry, 1, event.currentTarget)}><RotateCw size={16} /></button><button type="button" className="icon-button" aria-label={`移除第 ${index + 1} 页`} disabled={disabled} onClick={() => remove(entry.id)}><Trash2 size={16} /></button></div>{entry.error && <p className="form-error" role="alert">{entry.error}</p>}</div></li>)}</ol><div className="photo-actions"><button type="button" className="button primary" disabled={disabled || !configured} onClick={() => void upload()}>{uploading ? <LoaderCircle size={17} className="spin" /> : <Upload size={17} />}{uploadStage || `上传 ${pending.length} 页并分题`}</button><span className="page-import-help">上传完成后，即可离开此页，分题和识别会在后台继续。</span></div></>}
+      {pending.length > 0 && <><ol className="page-pending-grid">{pending.map((entry, index) => <li key={entry.id} className="page-pending-card">
+        <div className="page-pending-preview"><BlurImage bare allowScale={false} src={entry.url} alt={`待上传页面 ${index + 1}`} /></div>
+        <div className="page-pending-caption"><strong>{index + 1}. {entry.file.name}</strong><div><button type="button" className="icon-button" aria-label={`第 ${index + 1} 页向前移动`} disabled={disabled || index === 0} onClick={() => move(index, -1)}><ArrowUp size={16} /></button><button type="button" className="icon-button" aria-label={`第 ${index + 1} 页向后移动`} disabled={disabled || index === pending.length - 1} onClick={() => move(index, 1)}><ArrowDown size={16} /></button><button type="button" className="icon-button" aria-label={`第 ${index + 1} 页左转 90 度`} disabled={disabled} onClick={(event) => void rotate(entry, -1, event.currentTarget)}><RotateCcw size={16} /></button><button type="button" className="icon-button" aria-label={`第 ${index + 1} 页右转 90 度`} disabled={disabled} onClick={(event) => void rotate(entry, 1, event.currentTarget)}><RotateCw size={16} /></button><button type="button" className="icon-button" aria-label={`移除第 ${index + 1} 页`} disabled={disabled} onClick={() => remove(entry.id)}><Trash2 size={16} /></button></div>{entry.error && <p className="form-error" role="alert">{entry.error}</p>}</div></li>)}</ol><div className="photo-actions"><button type="button" className="button primary" disabled={disabled || !configured} onClick={() => void upload()}>{uploading ? <LoaderCircle size={17} className="spin" /> : <Upload size={17} />}{uploadStage || `上传 ${pending.length} 页并分题`}</button><span className="page-import-help">上传完成后，即可离开此页，分题和识别会在后台继续。</span></div></>}
     </section>
     {error && <p className="form-error" role="alert">{error} <button className="table-button" onClick={() => void refresh()}>重新加载</button></p>}
     {!loaded && <p className="page-import-loading"><LoaderCircle className="spin" size={18} />正在读取页面…</p>}
     {loaded && !pages.length && !error && <div className="page-import-empty"><CheckSquare size={34} /><h2>从一整页开始</h2><p>每道题会显示独立题框，点选需要整理的错题，即可批量建立草稿。</p></div>}
     {pages.length > 0 && <div className="page-import-workspace"><aside className="page-import-sidebar" aria-label="已上传页面">
       <div className="page-import-list">{pages.map((page) => <button key={page.id} type="button" className={`page-import-tab${current?.id === page.id ? ' is-active' : ''}`} onClick={() => { if (current?.id !== page.id) selectPage(page.id); }} aria-pressed={current?.id === page.id}>
-        <img src={pagePhotoUrl(page.id, 'thumb')} alt="" width={42} height={58} loading="lazy" decoding="async" fetchPriority="low" />
+        <BlurImage bare src={pagePhotoUrl(page.id, 'thumb')} alt="" width={42} height={58} loading="lazy" decoding="async" fetchPriority="low" />
         <span><strong>{page.originalName}</strong><small>{statusLabel[page.status]} · {page.itemCount} 道已录入</small><small>{formatDate(page.createdAt, true)}</small></span>{activeStatus(page.status) && <LoaderCircle size={16} className="spin" />}
       </button>)}</div>
       {hasMore && <div className="photo-load-more"><button type="button" className="button secondary" disabled={loadingMore} onClick={() => void refresh('more')}>{loadingMore ? '正在加载…' : '加载更多'}</button></div>}
@@ -262,7 +265,7 @@ export function PageImportsPage() {
         {currentDetail?.error && <p className="form-error" role="alert">{currentDetail.error}</p>}
         {currentDetail && (currentDetail.status === 'succeeded' || currentDetail.regions.length)
           ? <PageRegionEditor key={current.id} page={currentDetail} draft={drafts.current.get(current.id)} onDraft={(regions) => { if (regions) drafts.current.set(current.id, regions); else drafts.current.delete(current.id); }} canRecognize={Boolean(canRecognize)} onUpdate={mergePage} onRetryJob={retryJob} onRetryItem={retryItem} />
-          : <div className="page-import-waiting"><img src={pagePhotoUrl(current.id, 'preview')} alt={current.originalName} fetchPriority="high" decoding="async" />{activeStatus(current.status) && <p><LoaderCircle className="spin" size={18} />正在按阿拉伯数字题号分题，完成后即可点选。</p>}</div>}
+          : <div className="page-import-waiting"><BlurImage src={pagePhotoUrl(current.id, 'preview')} alt={current.originalName} fetchPriority="high" decoding="async" errorLabel="页面预览加载失败" />{activeStatus(current.status) && <p><LoaderCircle className="spin" size={18} />正在按阿拉伯数字题号分题，完成后即可点选。</p>}</div>}
       </section>}
     </div>}
   </div>;
@@ -318,7 +321,7 @@ function PageRegionEditor({ page, draft, onDraft, canRecognize, onUpdate, onRetr
     })}</div>
     {!canRecognize && <p className="ai-notice">通用识别服务尚未启用。可以先选择题目并保存题框，配置完成后再批量录入。</p>}
     <footer className="page-import-submit"><div><strong>{selected.length} 道待录入</strong><small>无图题直接填入草稿；有配图的题目需要校对。</small></div><div className="photo-actions"><button type="button" className="button secondary" disabled={busy || !dirty} onClick={() => void save(false)}>保存题框</button><button type="button" className="button primary" disabled={busy || !selected.length || !canRecognize} onClick={() => void save(true)}>{busy ? <LoaderCircle className="spin" size={16} /> : <Check size={16} />}批量录入所选题目</button></div></footer>
-    <AiDialog open={zoom} onClose={() => setZoom(false)} title="来源整页" wide><img className="page-import-zoom" src={page.imageUrl} alt={page.originalName} /></AiDialog>
+    <AiDialog open={zoom} onClose={() => setZoom(false)} title="来源整页" wide><BlurImage className="page-import-zoom" src={page.imageUrl} alt={page.originalName} errorLabel="来源整页加载失败" /></AiDialog>
   </>;
 }
 
@@ -361,7 +364,7 @@ function RegionCanvas({ url, regions, mode, activeId, linked, disabled, onActive
     if (stage.current?.hasPointerCapture(event.pointerId)) stage.current.releasePointerCapture(event.pointerId);
     setDrag(null); setDraft(null);
   }
-  return <><div className="page-region-scroll"><div ref={stage} className={`page-region-stage mode-${mode}`} onPointerDown={(event) => start(event)} onPointerMove={move} onPointerUp={finish} onPointerCancel={() => { setDrag(null); setDraft(null); }}><img src={url} alt="页面题目选框，点击编号框选择题目" draggable={false} fetchPriority="high" decoding="async" onError={() => setImageError(true)} onLoad={() => setImageError(false)} />
+  return <><div className="page-region-scroll"><div ref={stage} className={`page-region-stage mode-${mode}`} onPointerDown={(event) => start(event)} onPointerMove={move} onPointerUp={finish} onPointerCancel={() => { setDrag(null); setDraft(null); }}><BlurImage bare allowScale={false} src={url} alt="页面题目选框，点击编号框选择题目" draggable={false} fetchPriority="high" decoding="async" onError={() => setImageError(true)} onLoad={() => setImageError(false)} />
     {regions.map((region, index) => validBox(region.box) && <div key={region.id} role="button" tabIndex={disabled ? -1 : 0} aria-pressed={region.selected || linked.has(region.id)} aria-label={`第 ${index + 1} 题 ${region.label}${linked.has(region.id) ? '，已录入' : region.selected ? '，已选择' : '，未选择'}${mode === 'adjust' ? '，方向键移动，Shift 加方向键缩放' : ''}`} className={`page-region-box${region.selected ? ' is-selected' : ''}${activeId === region.id ? ' is-active' : ''}${linked.has(region.id) ? ' is-linked' : ''}`} style={{ left: `${region.box[0] * 100}%`, top: `${region.box[1] * 100}%`, width: `${region.box[2] * 100}%`, height: `${region.box[3] * 100}%`, pointerEvents: mode === 'draw' ? 'none' : undefined }} onPointerDown={(event) => start(event, region.id, 'move')} onClick={() => { if (!disabled && mode === 'select') onToggle(region.id); }} onFocus={() => onActive(region.id)} onKeyDown={(event) => {
       if (disabled || linked.has(region.id)) return;
       if (event.key === ' ' || event.key === 'Enter') { event.preventDefault(); onToggle(region.id); return; }

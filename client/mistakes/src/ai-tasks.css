@@ -27,7 +27,7 @@
 .task-selection-bar { padding: 10px 24px; border-top: 1px solid var(--border-subtle); background: var(--surface-1); font-size: 13px; }
 .task-selection-bar label { display: flex; align-items: center; gap: 10px; }
 .task-selection-bar .table-button, .task-row-actions .table-button { display: inline-flex; align-items: center; gap: 5px; }
-.task-row { padding: 22px 24px; border-bottom: 1px solid var(--border-subtle); border-left: 3px solid transparent; }
+.task-row { padding: 22px 24px; border-bottom: 1px solid var(--border-subtle); border-left: 3px solid transparent; transition: border-left-color var(--motion-base) var(--motion-ease-standard); }
 .task-row-active { border-left-color: var(--primary); }
 .task-row-review { border-left-color: var(--accent); }
 .task-row-failed { border-left-color: var(--error); }
@@ -38,10 +38,10 @@
 .task-status-active { color: var(--primary); background: var(--primary-soft); }
 .task-status-review { color: var(--warning); background: var(--warning-bg); }
 .task-status-failed { color: var(--error); background: var(--error-bg); }
-.task-status-done, .task-status-cancelled { color: var(--text-secondary); background: var(--surface-1); }
+.task-status-done { color: var(--success); background: var(--success-bg); }
+.task-status-cancelled { color: var(--text-secondary); background: var(--surface-1); }
 /* A state change remounts the pill; the entrance makes the change noticeable without moving the row. */
-.task-status { animation: task-status-enter 260ms var(--motion-ease); }
-@keyframes task-status-enter { from { opacity: .25; transform: scale(.92); } }
+.task-status:not(:has(.skeleton-shimmer)) { animation: content-fade var(--motion-base) var(--motion-ease-enter); }
 .task-excerpt { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; max-width: 80ch; font-size: 15px; line-height: 1.8; margin: 12px 0 8px; }
 .task-excerpt:hover { color: var(--primary); text-decoration: underline; text-underline-offset: 3px; }
 .task-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 16px; color: var(--text-secondary); font-size: 12px; }
@@ -90,7 +90,4 @@
   .task-pagination .button { min-height: 44px; }
   .task-history-note { padding: 0 12px 16px; }
   .task-manager .inline-alert, .task-service-notice, .task-action-errors, .task-target-notice { margin-left: 12px; margin-right: 12px; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .task-status { animation: none; }
 }

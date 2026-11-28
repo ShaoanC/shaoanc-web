@@ -18,6 +18,7 @@ const REVIEW_OPTIONS = [
   { result: 'mastered', icon: CheckCircle2 },
 ] as const;
 const RATING_FEEDBACK_DELAY = 300;
+const RATING_CONFIRM_DURATION = 280;
 
 interface ReviewSession {
   id: string;
@@ -122,7 +123,7 @@ export function ReviewPage() {
       setSession(ratingFeedback.session);
       setRating(null);
       window.scrollTo(0, 0);
-    }, 600);
+    }, RATING_CONFIRM_DURATION);
     return () => window.clearTimeout(timer);
   }, [ratingFeedback]);
 
@@ -185,7 +186,7 @@ export function ReviewPage() {
       <div className="review-session-header"><button className="back-link" disabled={saving} onClick={() => navigate('/mistakes')}><ArrowLeft size={16} /> 稍后继续</button><button className="button ghost" disabled={saving} onClick={() => void save('finish')}>结束本次</button></div>
       <div className="review-progress"><div><strong>正在复习</strong><span>第 <b>{step + 1}</b> / {total} 题</span></div><div className="progress-track"><span style={{ width: '100%', transform: 'scaleX(' + step / total + ')', transformOrigin: 'left' }} /></div></div>
       <div className="review-session-content">
-        <div className={`review-step${step > 0 ? ' is-entering' : ''}`} key={item.id}>
+        <div className="review-step is-entering" key={`${session.id}-${step}-${item.id}`}>
           <section className="panel review-question" ref={questionPanel} tabIndex={-1} aria-label={`第 ${step + 1} 题`}>
             <div className="review-question-label"><DataTypeBadge isTest={item.isTest} /><span className={`subject-tag subject-${item.subjectId}`}>{subjects.find((subject) => subject.id === item.subjectId)?.name || item.subjectId}</span><span className={knowledgePoints.some((point) => point.id === item.primaryKnowledgePointId) ? undefined : 'text-muted'}>{knowledgeLabel(knowledgePoints, item.primaryKnowledgePointId)}</span><StarRatingDisplay value={item.rating} /><span className="review-question-number">第 {step + 1} 题</span></div>
             <MarkdownContent className="prose review-question-content">{item.question}</MarkdownContent>
@@ -196,7 +197,7 @@ export function ReviewPage() {
                   <div><h3>正确答案</h3><MarkdownContent className="prose" emptyText="这道题还未填写答案，可稍后到详情页补充。">{item.answer}</MarkdownContent></div>
                   <div><h3>解题分析</h3><MarkdownContent className="prose" emptyText="暂未填写解题分析。">{item.analysis}</MarkdownContent></div>
                   {item.note && <div className="revealed-note"><h3>我的笔记</h3><MarkdownContent className="prose">{item.note}</MarkdownContent></div>}
-                  {revealed && <MistakeFollowups key={item.id} mistake={item} />}
+                  <span className="review-answer-followups">{revealed && <MistakeFollowups key={item.id} mistake={item} />}</span>
                 </div>
               </div>
             </div>

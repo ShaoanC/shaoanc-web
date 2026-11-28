@@ -1,8 +1,8 @@
 /* Shared by the static pages and the React application. */
 :root {
-  --scrollbar-thumb: #83988B;
-  --scrollbar-thumb-hover: #597A67;
-  --scrollbar-thumb-active: #176448;
+  --scrollbar-thumb: #BDB6AA;
+  --scrollbar-thumb-hover: #8C857B;
+  --scrollbar-thumb-active: #3D3A36;
   --scrollbar-size: 10px;
   --scrollbar-page-size: 12px;
   scrollbar-gutter: stable;

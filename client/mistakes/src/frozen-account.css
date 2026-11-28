@@ -3,7 +3,7 @@
 .frozen-header .brand { flex-shrink: 0; }
 .frozen-username { color: var(--text-secondary); overflow-wrap: anywhere; text-align: right; }
 .frozen-content, .frozen-footer { width: 100%; max-width: 620px; margin-inline: auto; }
-.frozen-content { margin-block: 56px 32px; }
+.frozen-content { margin-block: 56px 32px; animation: content-rise var(--motion-panel) var(--motion-ease-enter); }
 .frozen-icon { color: var(--text-secondary); margin-bottom: 24px; }
 .frozen-content h1 { font-size: clamp(26px, 5vw, 36px); line-height: 1.4; margin: 0 0 24px; }
 .frozen-content p { color: var(--text-secondary); line-height: 1.85; }

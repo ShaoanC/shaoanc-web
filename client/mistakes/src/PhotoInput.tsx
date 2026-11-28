@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNo
 import ReactCrop, { areCropsEqual, type PercentCrop } from 'react-image-crop';
 import { ArrowLeft, ArrowRight, Camera, Crop, ImagePlus, RotateCcw, RotateCw, Trash2 } from 'lucide-react';
 import { toast } from 'react-toastify';
+import { BlurImage } from './BlurImage';
 import { ResponsiveAiDialog } from './ResponsiveAiDialog';
 import { RecognitionPrompt } from './RecognitionPrompt';
 import { UploadedPhotoPicker } from './UploadedPhotoPicker';
@@ -222,12 +223,12 @@ export function PhotoInput({ purpose, recordId, ensureSaved, actions, aiAvailabl
     <ResponsiveAiDialog open={open} onOpenChange={(value) => { if (!busy) setOpen(value); }} title={`裁剪${label}图片`} description="调整图片范围和顺序，确认后上传，也可补充本次识别要求。" triggerRef={dialogTrigger} className="photo-crop-dialog">
       {() => <>
       <div className="photo-thumbnails">{entries.map((entry, index) => <div className={`photo-thumbnail${selected === index ? ' active' : ''}`} key={entry.key}>
-        <button type="button" disabled={busy} onClick={() => setSelected(index)} aria-label={`选择第 ${index + 1} 张图片`}><img src={entry.url} alt={`${label}图片 ${index + 1}`} /><small>{index + 1}. {entry.file.name}</small></button>
+        <button type="button" disabled={busy} onClick={() => setSelected(index)} aria-label={`选择第 ${index + 1} 张图片`}><BlurImage src={entry.url} alt={`${label}图片 ${index + 1}`} /><small>{index + 1}. {entry.file.name}</small></button>
         <div className="photo-thumbnail-controls"><button type="button" className="icon-button" aria-label="向前移动" disabled={busy || index === 0} onClick={() => move(index, -1)}><ArrowLeft size={14} /></button><button type="button" className="icon-button" aria-label="移出本次识别" disabled={busy} onClick={() => remove(index)}><Trash2 size={14} /></button><button type="button" className="icon-button" aria-label="向后移动" disabled={busy || index === entries.length - 1} onClick={() => move(index, 1)}><ArrowRight size={14} /></button></div>
       </div>)}</div>
       {current && <div className="photo-rotation-actions"><button type="button" className="button secondary" disabled={busy || !imageReady} onClick={() => void rotate(-1)}><RotateCcw size={16} />左转 90°</button><button type="button" className="button secondary" disabled={busy || !imageReady} onClick={() => void rotate(1)}><RotateCw size={16} />右转 90°</button></div>}
       {current ? <div className="photo-crop-stage"><PhotoCropFrame key={`${current.key}:${current.url}`} initialCrop={current.crop} onCommit={changeCrop} disabled={busy}>
-        <img key={current.url} ref={previewRef} src={current.url} onLoad={(event) => { if (photo.current === event.currentTarget) setLoadedUrl(event.currentTarget.src); }} onError={(event) => { if (photo.current === event.currentTarget) { setLoadedUrl(null); toast.error('图片无法读取，请移除后重新选择。'); } }} alt={`裁剪第 ${selected + 1} 张${label}图片`} />
+        <BlurImage bare allowScale={false} key={current.url} ref={previewRef} src={current.url} onLoad={(event) => { if (photo.current === event.currentTarget) setLoadedUrl(event.currentTarget.src); }} onError={(event) => { if (photo.current === event.currentTarget) { setLoadedUrl(null); toast.error('图片无法读取，请移除后重新选择。'); } }} alt={`裁剪第 ${selected + 1} 张${label}图片`} />
       </PhotoCropFrame></div> : <p className="ai-empty">添加图片开始裁剪。</p>}
       <div className="photo-crop-footer"><button type="button" className="button ghost" disabled={busy} onClick={() => album.current?.click()}><ImagePlus size={16} />追加图片</button><p>{stage || '旋转会重置选框。按显示方向备份整图与裁剪图，保留彩色笔迹。'}</p></div>
       <RecognitionPrompt purpose={purpose} value={recognitionPrompt} onChange={onRecognitionPromptChange} disabled={busy} />

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent } from 'react';
 import { Maximize2, Plus, MousePointer2 } from 'lucide-react';
+import { BlurImage } from './BlurImage';
 import type { AiFigure, FigureBox } from './ai-types';
 
 export interface EditableFigure extends AiFigure { selected: boolean; clientId: string; uploadedId?: number; uploadedUrl?: string; number?: number }
@@ -81,7 +82,7 @@ export function ImageRegions({ url, figures, activeId, onActive, onChange, onAdd
     <div className="photo-actions ai-image-toolbar"><button type="button" className={`button secondary${drawing || redrawId ? ' is-active' : ''}`} aria-pressed={drawing || Boolean(redrawId)} disabled={disabled} onClick={() => { setDrawing(!drawing); onRedrawDone(); }}><Plus size={16} />补画配图</button><button type="button" className="table-button" onClick={onZoom}><Maximize2 size={16} />放大来源图</button></div>
     <p className="ai-notice">{drawing || redrawId ? '在图片上拖动，框住完整图形与必要标注。' : <><MousePointer2 size={13} /> 拖动编号框移动范围，拖动四角缩放。</>}</p>
     <div className="ai-region-scroll"><div ref={stage} className={`ai-region-stage${drawing || redrawId ? ' is-drawing' : ''}`} onPointerDown={(event) => start(event)} onPointerMove={update} onPointerUp={finish} onPointerCancel={() => { setDrag(null); setDraft(null); }}>
-      <img src={url} alt="实际发送给 AI 的裁剪图片" draggable={false} onLoad={() => setImageError(false)} onError={() => setImageError(true)} />
+      <BlurImage bare allowScale={false} src={url} alt="实际发送给 AI 的裁剪图片" draggable={false} onLoad={() => setImageError(false)} onError={() => setImageError(true)} />
       {figures.map((figure, index) => validBox(figure.box) && <div key={figure.id} className={`ai-region-box${activeId === figure.id ? ' is-active' : ''}${figure.selected ? ' is-selected' : ''}`} role="button" tabIndex={disabled ? -1 : 0} aria-label={`配图 ${figure.number || index + 1}，方向键移动，Shift 加方向键缩放`} style={{ left: `${figure.box[0] * 100}%`, top: `${figure.box[1] * 100}%`, width: `${figure.box[2] * 100}%`, height: `${figure.box[3] * 100}%`, pointerEvents: drawing || redrawId ? 'none' : undefined }} onFocus={() => onActive(figure.id)} onPointerDown={(event) => start(event, figure.id, 'move')} onKeyDown={(event) => {
         if (disabled || !validBox(figure.box) || !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
         event.preventDefault(); const box: FigureBox = [...figure.box]; const delta = event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -.005 : .005;

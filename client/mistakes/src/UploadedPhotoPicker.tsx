@@ -3,6 +3,7 @@ import { Images } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { api, formatDate } from './api';
 import { AiDialog } from './AiDialog';
+import { BlurImage } from './BlurImage';
 import type { UploadedPhoto } from './ai-types';
 
 export function UploadedPhotoPicker({ disabled, onSelect }: { disabled?: boolean; onSelect: (image: UploadedPhoto) => Promise<void> }) {
@@ -41,7 +42,7 @@ export function UploadedPhotoPicker({ disabled, onSelect }: { disabled?: boolean
       {error && <p className="form-error" role="alert">{error} <button type="button" className="table-button" onClick={() => setRevision((value) => value + 1)}>重试</button></p>}
       {!loading && !error && !images.length && <p className="ai-empty">还没有上传过照片。先拍照或从相册选择图片。</p>}
       {images.length > 0 && <div className="photo-library-grid">{images.map((image) => <button type="button" key={image.key} className="photo-library-photo" disabled={Boolean(selecting)} onClick={() => void select(image)}>
-        <img src={`/api/mistakes/photo-library/${image.key}/thumb`} decoding="async" width={400} height={300} alt={image.originalName} loading="lazy" />
+        <BlurImage src={`/api/mistakes/photo-library/${image.key}/thumb`} decoding="async" width={400} height={300} alt={image.originalName} loading="lazy" />
         <strong className="photo-library-name">{image.originalName}</strong>
         <span className="photo-library-meta">{selecting === image.key ? '正在打开预览…' : image.purpose === 'question' ? '题干照片' : image.purpose === 'answer' ? '答案照片' : '整页照片'}</span>
         <span className="photo-library-meta">{formatDate(image.createdAt, true)}</span>

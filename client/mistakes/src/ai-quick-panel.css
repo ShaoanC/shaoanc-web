@@ -12,16 +12,14 @@
 body:has(.ai-quick-dialog, .ai-quick-drawer) .mistakes-toast-container { visibility: hidden; pointer-events: none; }
 
 /* ─── Quick task panel: a popover on wide screens, a bottom sheet on phones ─── */
-.quick-task-backdrop { position: fixed; inset: 0; z-index: 100; background: rgba(32, 57, 46, .16); transition: opacity 200ms var(--motion-ease); }
-.quick-task-backdrop:is([data-starting-style], [data-ending-style]) { opacity: 0; }
+.quick-task-backdrop { position: fixed; inset: 0; z-index: 100; background: var(--scrim-light); }
 .ai-quick-dialog {
   position: fixed; z-index: 101; top: calc(var(--workspace-header-bottom, 64px) + 10px); right: 24px;
   display: flex; flex-direction: column; width: min(440px, calc(100vw - 32px)); max-height: calc(100dvh - var(--workspace-header-bottom, 64px) - 28px);
-  overflow: hidden; background: var(--surface-2); border: 1px solid var(--border-medium); border-radius: 8px; box-shadow: 0 16px 48px rgba(32, 57, 46, .16);
-  transform-origin: top right; transition: opacity 180ms var(--motion-ease), transform 240ms var(--motion-ease);
+  overflow: hidden; background: var(--surface-2); border: 1px solid var(--border-medium); border-radius: 8px; box-shadow: 0 16px 48px rgba(26, 25, 24, .16);
+  transform-origin: top right;
+  --dialog-direction: -1;
 }
-.ai-quick-dialog:is([data-starting-style], [data-ending-style]) { opacity: 0; transform: translateY(-8px) scale(.97); }
-:is(.ai-quick-dialog, .quick-task-backdrop)[data-ending-style] { transition-duration: 150ms; pointer-events: none; }
 /* Review keeps a fixed frame so the action bar never moves while the content changes height. */
 .ai-quick-dialog.is-review { width: min(1040px, calc(100vw - 48px)); height: calc(100dvh - var(--workspace-header-bottom, 64px) - 28px); }
 .quick-panel-header { display: flex; flex-shrink: 0; align-items: center; gap: 6px; padding: 14px 12px 12px 20px; border-bottom: 1px solid var(--border-subtle); }
@@ -36,7 +34,7 @@ body:has(.ai-quick-dialog, .ai-quick-drawer) .mistakes-toast-container { visibil
 .quick-sync { display: flex; align-items: center; gap: 6px; margin-top: 2px; color: var(--text-secondary); font-size: 12px; line-height: 1.5; font-variant-numeric: tabular-nums; }
 .quick-live-dot { flex-shrink: 0; width: 6px; height: 6px; border-radius: 50%; background: var(--border-medium); }
 .quick-sync.is-live { color: var(--primary); }
-.quick-sync.is-live .quick-live-dot { background: var(--primary); animation: quick-live 1.6s ease-in-out infinite; }
+.quick-sync.is-live .quick-live-dot { background: var(--primary); animation: motion-breathe 1.8s var(--motion-ease-breathe) infinite; }
 .quick-sync.is-error { color: var(--error); }
 .quick-sync.is-error .quick-live-dot { background: var(--error); }
 .quick-detail-link { flex-shrink: 0; padding: 8px 6px; font-size: 14px; white-space: nowrap; }
@@ -45,22 +43,21 @@ body:has(.ai-quick-dialog, .ai-quick-drawer) .mistakes-toast-container { visibil
 .quick-all-link.text-link { justify-content: center; min-height: 36px; font-size: 15px; }
 
 /* List and review swap like pages: forward slides in from the right, back from the left. */
-.quick-view[data-direction="forward"] { animation: quick-view-forward 260ms var(--motion-ease); }
-.quick-view[data-direction="back"] { animation: quick-view-back 260ms var(--motion-ease); }
-@keyframes quick-view-forward { from { opacity: 0; transform: translateX(28px); } }
-@keyframes quick-view-back { from { opacity: 0; transform: translateX(-28px); } }
-@keyframes quick-live { 50% { opacity: .3; } }
-@keyframes quick-enter { from { opacity: 0; transform: translateY(4px); } }
+.quick-view[data-direction] { animation: quick-view-enter var(--motion-base) var(--motion-ease-enter); }
+.quick-view[data-direction="forward"] { --quick-enter-x: 14px; }
+.quick-view[data-direction="back"] { --quick-enter-x: -14px; }
+@keyframes quick-view-enter { from { opacity: .5; translate: var(--quick-enter-x, 0px) 0; } }
 
 .quick-scope { display: flex; gap: 4px; margin-top: 14px; padding: 4px; border-radius: 6px; background: var(--surface-1); }
-.quick-scope button, .ai-quick-panel .ai-review-tabs button { flex: 1; min-height: 36px; border: 0; border-radius: 4px; background: transparent; color: var(--text-secondary); font-size: 14px; transition: background 200ms var(--motion-ease), color 200ms var(--motion-ease), box-shadow 200ms var(--motion-ease); }
-.quick-scope button[aria-pressed="true"], .ai-quick-panel .ai-review-tabs button[aria-pressed="true"] { background: var(--surface-2); color: var(--primary-dark); font-weight: 600; box-shadow: 0 1px 3px rgba(32, 57, 46, .14); }
+.quick-scope button, .ai-quick-panel .ai-review-tabs button { flex: 1; min-height: 36px; border: 0; border-radius: 4px; background: transparent; color: var(--text-secondary); font-size: 14px; transition: background-color var(--motion-fast) var(--motion-ease-standard), color var(--motion-fast) var(--motion-ease-standard), box-shadow var(--motion-fast) var(--motion-ease-standard), scale var(--motion-fast) var(--motion-ease-spring); }
+.quick-scope button:active:not(:disabled), .ai-quick-panel .ai-review-tabs button:active:not(:disabled) { scale: var(--motion-press-scale); }
+.quick-scope button[aria-pressed="true"], .ai-quick-panel .ai-review-tabs button[aria-pressed="true"] { background: var(--surface-2); color: var(--primary-dark); font-weight: 600; box-shadow: 0 1px 3px rgba(26, 25, 24, .14); }
 .ai-quick-panel .quick-filters { position: sticky; top: 0; z-index: 3; gap: 18px; margin-top: 2px; border-bottom: 1px solid var(--border-subtle); background: var(--surface-2); }
 .ai-quick-panel .quick-filters .sliding-tab { gap: 6px; padding: 12px 2px; font-size: 14px; }
 .ai-quick-panel .quick-filters .sliding-tab > span { min-width: 20px; padding: 0 5px; font-size: 12px; font-variant-numeric: tabular-nums; }
 .ai-quick-panel .quick-alert, .ai-quick-panel .quick-service-notice { margin: 12px 0 0; }
 
-.ai-quick-panel .task-row { padding: 16px 0 16px 14px; animation: quick-enter 240ms var(--motion-ease); }
+.ai-quick-panel .task-row { padding: 16px 0 16px 14px; }
 .ai-quick-panel .task-row:last-child { border-bottom: 0; }
 .ai-quick-panel .task-row-heading { flex-wrap: nowrap; gap: 10px; }
 .ai-quick-panel .task-row-title { gap: 6px; min-width: 0; }
@@ -72,9 +69,9 @@ body:has(.ai-quick-dialog, .ai-quick-drawer) .mistakes-toast-container { visibil
 .ai-quick-panel .task-row-actions .button { min-height: 36px; padding: 6px 14px; font-size: 14px; }
 .ai-quick-panel .task-row-actions .table-button { min-height: 36px; font-size: 13px; }
 .ai-quick-panel .task-row-actions .text-link { font-size: 14px; }
-.quick-feedback { margin-top: 10px; color: var(--primary); font-size: 13px; animation: quick-enter 240ms var(--motion-ease); }
+.quick-feedback { margin-top: 10px; color: var(--primary); font-size: 13px; animation: content-fade var(--motion-fast) var(--motion-ease-enter); }
 .quick-feedback.is-error { color: var(--error); }
-.quick-empty { display: grid; justify-items: center; gap: 10px; padding: 44px 0 36px; color: var(--text-secondary); font-size: 14px; animation: quick-enter 240ms var(--motion-ease); }
+.quick-empty { display: grid; justify-items: center; gap: 10px; padding: 44px 0 36px; color: var(--text-secondary); font-size: 14px; animation: content-fade var(--motion-base) var(--motion-ease-enter); }
 .quick-empty svg { color: var(--primary); opacity: .65; }
 .quick-placeholder { display: grid; gap: 12px; padding: 16px 0; }
 .quick-placeholder > span { display: block; height: 104px; border-radius: 4px; background: var(--surface-1); }
@@ -87,7 +84,7 @@ body:has(.ai-quick-dialog, .ai-quick-drawer) .mistakes-toast-container { visibil
 .ai-quick-panel .ai-review-grid { max-height: none; }
 .quick-review-footer { width: 100%; }
 .ai-review-dock { display: grid; gap: 10px; }
-.ai-review-dock > p { margin: 0; font-size: 14px; line-height: 1.6; animation: quick-enter 240ms var(--motion-ease); }
+.ai-review-dock > p { margin: 0; font-size: 14px; line-height: 1.6; animation: content-fade var(--motion-fast) var(--motion-ease-enter); }
 .ai-review-dock > .ai-review-issues { padding: 8px 12px; }
 .ai-review-dock-actions { display: flex; align-items: center; gap: 10px; }
 .ai-review-dock-options { display: flex; gap: 8px; margin-right: auto; }
@@ -128,6 +125,5 @@ body:has(.ai-quick-dialog, .ai-quick-drawer) .mistakes-toast-container { visibil
 .ai-quick-panel.is-typing .quick-title { font-size: 17px; }
 
 @media (prefers-reduced-motion: reduce) {
-  .quick-view[data-direction], .ai-quick-panel .task-row, .quick-feedback, .quick-empty, .ai-review-dock > p { animation: none; }
-  .ai-quick-dialog:is([data-starting-style], [data-ending-style]) { transform: none; }
+  .quick-view[data-direction], .quick-sync.is-live .quick-live-dot { animation: none; }
 }

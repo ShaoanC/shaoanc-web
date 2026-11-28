@@ -1,10 +1,13 @@
-.export-backdrop { position: fixed; inset: 0; z-index: 1000; background: rgba(32, 57, 46, .42); transition: opacity 220ms var(--motion-ease); }
+.export-backdrop { position: fixed; inset: 0; z-index: 1000; background: rgba(26, 25, 24, .42); }
 .export-dialog { position: fixed; z-index: 1001; top: 50%; left: 50%; transform: translate(-50%, -50%); display: flex; flex-direction: column; width: min(560px, calc(100% - 32px)); max-height: calc(100dvh - 32px); min-height: 0; border: 1px solid var(--border-medium); border-radius: 4px; background: var(--surface-2); outline: none; }
-.export-dialog:not(.is-preview) { transition: opacity 220ms var(--motion-ease), translate 280ms var(--motion-ease-out), scale 280ms var(--motion-ease-out); }
-.export-dialog.is-preview { transition: opacity 220ms var(--motion-ease); }
-.export-backdrop:is([data-starting-style], [data-ending-style]), .export-dialog:is([data-starting-style], [data-ending-style]) { opacity: 0; }
-.export-dialog:not(.is-preview):is([data-starting-style], [data-ending-style]) { translate: 0 8px; scale: .98; }
-:is(.export-dialog, .export-backdrop)[data-ending-style] { transition-duration: 160ms; transition-timing-function: var(--motion-ease-exit); pointer-events: none; }
+/* The frame switches size immediately; fade the new controls without scaling the PDF canvas. */
+.export-dialog > :is(.export-settings-heading, .export-settings-body, .export-settings-footer) {
+  animation: content-fade var(--motion-base) var(--motion-ease-enter);
+}
+.export-dialog.is-preview > :is(.export-preview-toolbar, .export-preview-actions) {
+  animation: export-preview-enter var(--motion-base) var(--motion-ease-enter);
+}
+@keyframes export-preview-enter { from { opacity: .55; } }
 .export-settings-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 25px 28px 19px; border-bottom: 1px solid var(--border-subtle); flex-shrink: 0; }
 .export-settings-heading h2 { margin: 0 0 5px; font-family: var(--font-numbers), var(--font-ui); font-size: 25px; }
 .export-settings-heading p { color: var(--text-secondary); font-size: 13px; line-height: 1.7; }
@@ -12,7 +15,7 @@
 .export-settings-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
 .export-options { border: 0; margin: 0 0 20px; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; min-width: 0; }
 .export-options legend { font-size: 14px; font-weight: 600; margin-bottom: 9px; padding: 0; }
-.export-options label { display: flex; gap: 9px; align-items: flex-start; padding: 12px; border: 1px solid var(--border-medium); border-radius: 4px; cursor: pointer; font-size: 14px; transition: border-color 180ms var(--motion-ease), background-color 180ms var(--motion-ease); }
+.export-options label { display: flex; gap: 9px; align-items: flex-start; padding: 12px; border: 1px solid var(--border-medium); border-radius: 4px; cursor: pointer; font-size: 14px; transition: border-color var(--motion-fast) var(--motion-ease-standard), background-color var(--motion-fast) var(--motion-ease-standard); }
 .export-options label:hover:not(:has(input:disabled)) { border-color: var(--primary); }
 .export-options label:has(input:checked) { border-color: var(--primary); background: var(--primary-soft); }
 .export-options label:has(input:focus-visible) { outline: 2px solid var(--primary); outline-offset: 2px; }
@@ -25,7 +28,7 @@
 .export-field > span { font-size: 14px; font-weight: 500; }
 .export-field input, .export-field .custom-select-trigger { min-width: 0; width: 100%; min-height: 44px; padding: 8px 10px; font-size: 14px; font-weight: 400; }
 .export-title-field { grid-column: 1 / -1; }
-.export-notes-option { display: flex; align-items: flex-start; gap: 10px; margin-top: 19px; padding: 13px 12px; border: 1px solid var(--border-medium); border-radius: 4px; font-size: 14px; cursor: pointer; transition: border-color 180ms var(--motion-ease), background-color 180ms var(--motion-ease); }
+.export-notes-option { display: flex; align-items: flex-start; gap: 10px; margin-top: 19px; padding: 13px 12px; border: 1px solid var(--border-medium); border-radius: 4px; font-size: 14px; cursor: pointer; transition: border-color var(--motion-fast) var(--motion-ease-standard), background-color var(--motion-fast) var(--motion-ease-standard); }
 .export-notes-option:hover:not([aria-disabled='true']) { border-color: var(--primary); }
 .export-notes-option .checkbox-control { margin-top: 1px; }
 .export-notes-copy { display: flex; flex: 1; flex-direction: column; min-width: 0; gap: 5px; }
@@ -43,7 +46,7 @@
 .export-settings-footer > span { font-size: 13px; color: var(--text-secondary); white-space: nowrap; }
 .export-settings-footer > div { display: flex; gap: 9px; }
 .export-settings-footer .button { font-size: 14px; padding: 11px 14px; white-space: nowrap; }
-.export-dialog.is-preview { inset: 0; width: 100%; height: 100dvh; max-height: none; transform: none; padding: 0; border: 0; border-radius: 0; background: #e7ebe7; overflow: hidden; }
+.export-dialog.is-preview { inset: 0; width: 100%; height: 100dvh; max-height: none; transform: none; padding: 0; border: 0; border-radius: 0; background: var(--surface-1); overflow: hidden; }
 .export-preview-toolbar { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 13px 24px; background: var(--surface-2); border-bottom: 1px solid var(--border-medium); }
 .export-preview-heading { display: flex; min-width: 0; align-items: center; gap: 18px; }
 .export-preview-heading h2 { font-size: 18px; margin: 0; }
@@ -52,16 +55,16 @@
 .export-preview-actions { display: flex; flex-shrink: 0; justify-content: flex-end; align-items: center; gap: 12px; padding: 13px 24px; padding-bottom: max(13px, env(safe-area-inset-bottom)); border-top: 1px solid var(--border-medium); background: var(--surface-2); }
 .export-preview-actions > span { margin-right: auto; color: var(--text-tertiary); font-size: 12px; }
 .export-preview-actions .button { white-space: nowrap; }
-.export-pdf-controls { display: flex; flex-shrink: 0; justify-content: center; align-items: center; flex-wrap: wrap; gap: 12px 24px; padding: 8px 16px; background: #f2f4f1; border-bottom: 1px solid var(--border-medium); }
+.export-pdf-controls { display: flex; flex-shrink: 0; justify-content: center; align-items: center; flex-wrap: wrap; gap: 12px 24px; padding: 8px 16px; background: var(--surface-2); border-bottom: 1px solid var(--border-medium); }
 .export-pdf-pager { display: flex; align-items: center; gap: 8px; }
 .export-pdf-pager > span { min-width: 100px; text-align: center; font-size: 13px; font-variant-numeric: tabular-nums; }
 .export-zoom { display: flex; align-items: center; gap: 7px; font-size: 12px; }
-.export-zoom select { width: 145px; min-height: 38px; padding: 6px 9px; border: 1px solid var(--border-medium); border-radius: 4px; background: white; color: var(--text-primary); font-size: 13px; }
+.export-zoom select { width: 145px; min-height: 38px; padding: 6px 9px; border: 1px solid var(--border-medium); border-radius: 4px; background: var(--surface-2); color: var(--text-primary); font-size: 13px; }
 .export-paper-scroll { flex: 1; overflow: auto; min-height: 0; min-width: 0; padding: 20px 24px; overscroll-behavior: contain; }
 .export-paper-scroll:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
 .export-pdf-pages { display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .export-pdf-page { flex-shrink: 0; }
-.export-pdf-sheet { --scale-round-x: 1px; --scale-round-y: 1px; position: relative; overflow: hidden; background: white; box-shadow: 0 1px 7px #20392e1a; }
+.export-pdf-sheet { --scale-round-x: 1px; --scale-round-y: 1px; position: relative; overflow: hidden; background: white; box-shadow: 0 1px 7px rgba(26, 25, 24, .12); }
 .export-pdf-sheet canvas { display: block; }
 .export-pdf-text-layer { position: absolute; inset: 0; overflow: clip; opacity: 1; }
 .export-page-placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 10px; color: var(--text-tertiary); font-size: 13px; }
@@ -74,7 +77,6 @@
 @media (min-width: 641px) {
   /* Avoid filtering the entire page during dialog animation and interaction. */
   .export-backdrop { backdrop-filter: none; }
-  .export-dialog:not(.is-preview) { will-change: translate, opacity; }
 }
 
 @media (max-width: 640px) {
@@ -107,7 +109,3 @@
   .export-paper-scroll { padding: 12px; }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .export-backdrop, .export-dialog { transition-duration: 1ms !important; }
-  .export-options label, .export-notes-option { transition: none; }
-}

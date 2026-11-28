@@ -39,6 +39,9 @@ const SWIPE_THRESHOLD = 48;
 const RATING_CIRCLE_WIDTH = 64;
 const RATING_SWIPE_THRESHOLD = 96;
 const RATING_STRETCH_WIDTH = 32;
+// Keep the phase changes aligned with the panel and swipe durations in styles.css.
+const RATING_PANEL_DURATION = 220;
+const RATING_RETRACT_DURATION = 360;
 type RatingPhase = 'idle' | 'dragging' | 'opening' | 'open' | 'closing' | 'retracting';
 
 function rubberBand(distance: number, width = DELETE_WIDTH) {
@@ -76,7 +79,7 @@ export function MistakeRow({ mistake, grid, opened, armed, disabled, deleting, r
     if (motionFrame.current !== undefined) window.cancelAnimationFrame(motionFrame.current);
   }
 
-  function motionDuration(duration = 220) {
+  function motionDuration(duration = RATING_PANEL_DURATION) {
     return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 40 : duration;
   }
 
@@ -85,7 +88,7 @@ export function MistakeRow({ mistake, grid, opened, armed, disabled, deleting, r
     awaitingRatingOpen.current = false;
     changeRatingPhase('retracting');
     setDragOffset(null);
-    motionTimer.current = window.setTimeout(() => changeRatingPhase('idle'), motionDuration(360));
+    motionTimer.current = window.setTimeout(() => changeRatingPhase('idle'), motionDuration(RATING_RETRACT_DURATION));
   }
 
   useEffect(() => () => clearRatingMotion(), []);

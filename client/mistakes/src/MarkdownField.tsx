@@ -19,23 +19,24 @@ interface MarkdownFieldProps {
 
 export function MarkdownField({ ref, name, label, value, onChange, rows, placeholder, textareaClassName }: MarkdownFieldProps) {
   const id = useId();
-  const [preview, setPreview] = useState(false);
+  const [mode, setMode] = useState<'initial' | 'edit' | 'preview'>('initial');
+  const preview = mode === 'preview';
   const input = useRef<HTMLTextAreaElement>(null);
 
   useImperativeHandle(ref, () => ({
-    showPreview() { setPreview(true); },
+    showPreview() { setMode('preview'); },
     focus() {
-      setPreview(false);
+      setMode((current) => current === 'preview' ? 'edit' : current);
       requestAnimationFrame(() => input.current?.focus({ preventScroll: true }));
     },
   }), []);
 
-  return <div className="field markdown-field">
+  return <div className="field markdown-field" data-mode={mode}>
     <div className="markdown-field-heading">
       <label htmlFor={id}>{label}</label>
       <div className="markdown-field-modes" role="group" aria-label={`${name}显示模式`}>
-        <button type="button" aria-label={`${name}：编辑`} aria-pressed={!preview} onClick={() => setPreview(false)}>编辑</button>
-        <button type="button" aria-label={`${name}：预览`} aria-pressed={preview} onClick={() => setPreview(true)}>预览</button>
+        <button type="button" aria-label={`${name}：编辑`} aria-pressed={!preview} onClick={() => { if (preview) setMode('edit'); }}>编辑</button>
+        <button type="button" aria-label={`${name}：预览`} aria-pressed={preview} onClick={() => setMode('preview')}>预览</button>
       </div>
     </div>
     {preview ? <div className={`markdown-field-preview${textareaClassName ? ` ${textareaClassName}` : ''}`} role="region" aria-label={`${name}预览`}>

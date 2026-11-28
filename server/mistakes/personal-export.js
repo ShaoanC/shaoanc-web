@@ -78,7 +78,7 @@ async function downloadPersonalData(req, res) {
         }
         await fs.promises.writeFile(path.join(content, 'data.json'), JSON.stringify(data, null, 2));
         await fs.promises.writeFile(path.join(content, 'README.txt'),
-            '拾题 · 我的数据\n\n解压后，mistakes 文件夹中是可阅读的错题、答案、解析和笔记（Markdown 格式）。\n' +
+            'Errata · 我的数据\n\n解压后，mistakes 文件夹中是可阅读的错题、答案、解析和笔记（Markdown 格式）。\n' +
             'images 文件夹包含现存的本人配图和上传来源图。data.json 包含账号资料、草稿、回收站、知识点、复习记录、错题追问及 AI / 分题记录。\n' +
             '图片记录中的文件名对应 images 文件夹。此包用于个人留存，不是全站恢复包。未保存的浏览器草稿不在其中。\n' +
             (data.missingFiles.length ? `\n以下图片文件已不存在，未能收录：\n${data.missingFiles.join('\n')}\n` : ''));
@@ -103,7 +103,7 @@ async function downloadPersonalData(req, res) {
         res.set('Cache-Control', 'no-store');
         res.type('application/zip');
         await new Promise((resolve, reject) => {
-            res.download(archive, `shiti-my-data-${new Date().toISOString().slice(0, 10)}.zip`, (error) => error ? reject(error) : resolve());
+            res.download(archive, `errata-my-data-${new Date().toISOString().slice(0, 10)}.zip`, (error) => error ? reject(error) : resolve());
         });
     } finally {
         exporting.delete(req.user.id);
