@@ -95,11 +95,17 @@
   --blur-glass-sm: 10px;
   --blur-glass-md: 14px;
   --blur-glass-backdrop: 8px;
-  --blur-motion-sm: 4px;
-  --blur-motion-md: 6px;
 
   color: var(--text-primary);
   background: var(--surface-0);
+}
+
+@media (min-width: 961px) {
+  :root {
+    --motion-filter-sm: blur(4px);
+    --motion-filter-md: blur(6px);
+    --motion-filter-route-out: blur(3px);
+  }
 }
 
 /* ─── Reset & base ─────────────────────────────────────────── */
@@ -811,10 +817,14 @@ input.checkbox-input {
 .review-progress > div > strong { color: var(--text-primary); font-weight: 600; }
 .review-progress > div > span b { color: var(--primary); }
 .review-session-content { overflow-x: clip; margin: -4px; padding: 4px; }
-.review-step.is-entering { animation: review-step-enter var(--motion-reveal) var(--motion-ease-standard); }
-@keyframes review-step-enter {
-  from { opacity: .48; translate: 0 6px; filter: blur(var(--blur-motion-md)); }
-  to { filter: none; }
+.review-step.is-entering { animation: review-step-enter var(--motion-panel) var(--motion-ease-enter); }
+@keyframes review-step-enter { from { opacity: .48; translate: 14px 0; } }
+@media (min-width: 961px) {
+  .review-step.is-entering { animation: review-step-enter var(--motion-reveal) var(--motion-ease-standard); }
+  @keyframes review-step-enter {
+    from { opacity: .48; translate: 0 6px; filter: var(--motion-filter-md); }
+    to { filter: none; }
+  }
 }
 .progress-track { height: 4px; background: var(--border-subtle); overflow: hidden; }
 .progress-track > span { display: block; height: 100%; background: var(--primary); transition: transform var(--motion-panel) var(--motion-ease-enter); }
@@ -985,12 +995,6 @@ input.checkbox-input {
 .modal-backdrop {
   position: fixed; inset: 0; z-index: 100;
   background: var(--scrim);
-  -webkit-backdrop-filter: blur(var(--blur-glass-backdrop));
-  backdrop-filter: blur(var(--blur-glass-backdrop));
-}
-.modal-backdrop:is([data-starting-style], [data-ending-style]) {
-  -webkit-backdrop-filter: blur(0px);
-  backdrop-filter: blur(0px);
 }
 .modal-viewport {
   position: fixed; inset: 0; z-index: 101;
@@ -1008,12 +1012,25 @@ input.checkbox-input {
   overscroll-behavior-y: contain;
 }
 :is(.modal, .modal-dialog) { filter: none; }
-:is(.modal, .modal-dialog):is([data-starting-style], [data-ending-style]) { filter: blur(var(--blur-motion-sm)); }
+:is(.modal, .modal-dialog):is([data-starting-style], [data-ending-style]) { filter: var(--motion-filter-sm, none); }
 /* Base UI keeps both layers mounted through the exit. Individual transforms preserve fixed centering. */
 :where(.modal-backdrop, .photo-dialog-backdrop, .quick-task-backdrop, .export-backdrop, .followup-confirm-backdrop) {
-  transition: opacity var(--motion-base) var(--motion-ease-standard),
-    -webkit-backdrop-filter var(--motion-base) var(--motion-ease-standard),
-    backdrop-filter var(--motion-base) var(--motion-ease-standard);
+  transition: opacity var(--motion-base) var(--motion-ease-standard);
+}
+@media (min-width: 961px) {
+  :is(.modal-backdrop, .photo-dialog-backdrop, .quick-task-backdrop, .export-backdrop, .followup-confirm-backdrop) {
+    -webkit-backdrop-filter: blur(var(--blur-glass-backdrop));
+    backdrop-filter: blur(var(--blur-glass-backdrop));
+  }
+  :is(.modal-backdrop, .photo-dialog-backdrop, .quick-task-backdrop, .export-backdrop, .followup-confirm-backdrop):is([data-starting-style], [data-ending-style]) {
+    -webkit-backdrop-filter: blur(0px);
+    backdrop-filter: blur(0px);
+  }
+  :where(.modal-backdrop, .photo-dialog-backdrop, .quick-task-backdrop, .export-backdrop, .followup-confirm-backdrop) {
+    transition: opacity var(--motion-base) var(--motion-ease-standard),
+      -webkit-backdrop-filter var(--motion-base) var(--motion-ease-standard),
+      backdrop-filter var(--motion-base) var(--motion-ease-standard);
+  }
 }
 :where(.export-dialog.is-preview) {
   transition: opacity var(--motion-base) var(--motion-ease-standard),
@@ -1158,7 +1175,7 @@ input.checkbox-input {
 .auth-form-content[data-auth-mode='register'] { animation: content-rise var(--motion-base) var(--motion-ease-enter); }
 .auth-form-content[data-auth-mode='login'] { animation: auth-return var(--motion-base) var(--motion-ease-enter); }
 @keyframes auth-return {
-  from { opacity: .58; translate: 0 -4px; filter: blur(var(--blur-motion-sm)); }
+  from { opacity: .58; translate: 0 -4px; filter: var(--motion-filter-sm, none); }
   to { filter: none; }
 }
 .auth-icon {
@@ -1362,24 +1379,30 @@ button svg, a svg { flex-shrink: 0; }
 .answer-toggle > svg { transition: transform var(--motion-base) var(--motion-ease-enter); }
 .answer-reveal {
   display: grid; grid-template-rows: 0fr; opacity: 0;
-  transition: grid-template-rows var(--motion-reveal) var(--motion-ease-standard),
-    opacity var(--motion-reveal) var(--motion-ease-standard);
+  transition: grid-template-rows var(--motion-base) var(--motion-ease-standard), opacity var(--motion-fast) var(--motion-ease-exit);
 }
 .answer-reveal.open {
   grid-template-rows: 1fr; opacity: 1;
+  transition: grid-template-rows var(--motion-panel) var(--motion-ease-enter), opacity var(--motion-base) var(--motion-ease-standard);
 }
-.answer-reveal .revealed-content {
-  opacity: 0;
-  transform: translateY(8px);
-  filter: blur(var(--blur-motion-md));
-  transition: opacity var(--motion-reveal) var(--motion-ease-standard),
-    transform var(--motion-reveal) var(--motion-ease-standard),
-    filter var(--motion-reveal) var(--motion-ease-standard);
-}
-.answer-reveal.open .revealed-content {
-  opacity: 1;
-  transform: translateY(0);
-  filter: none;
+@media (min-width: 961px) {
+  .answer-reveal, .answer-reveal.open {
+    transition: grid-template-rows var(--motion-reveal) var(--motion-ease-standard),
+      opacity var(--motion-reveal) var(--motion-ease-standard);
+  }
+  .answer-reveal .revealed-content {
+    opacity: 0;
+    transform: translateY(8px);
+    filter: var(--motion-filter-md);
+    transition: opacity var(--motion-reveal) var(--motion-ease-standard),
+      transform var(--motion-reveal) var(--motion-ease-standard),
+      filter var(--motion-reveal) var(--motion-ease-standard);
+  }
+  .answer-reveal.open .revealed-content {
+    opacity: 1;
+    transform: translateY(0);
+    filter: none;
+  }
 }
 .revealed-content .revealed-note { padding: 18px 14px; background: var(--warning-bg); border-radius: 0; }
 .review-answer-followups { display: flex; align-items: flex-start; min-height: 34px; }
@@ -1408,7 +1431,7 @@ button svg, a svg { flex-shrink: 0; }
 .loading-content.is-loading > .loading-content-body { opacity: 0; pointer-events: none; transition-property: none; }
 /* Keep the shell and editor docks viewport-fixed; the reading document has its own reveal. */
 .loading-content.is-loading:not(.app-entrance, .loading-kind-editor, .loading-kind-detail) > .loading-content-body {
-  filter: blur(var(--blur-motion-sm));
+  filter: var(--motion-filter-sm, none);
 }
 .loading-content-placeholder { opacity: 1; pointer-events: none; transition: opacity var(--motion-base) var(--motion-ease-standard); }
 .loading-content.is-ready > .loading-content-placeholder { position: absolute; inset: 0; opacity: 0; overflow: hidden; }
@@ -1505,10 +1528,10 @@ html[data-route-direction='forward']::view-transition-new(route-in) { --route-in
 html[data-route-direction='back']::view-transition-new(route-in) { --route-in-x: -24px; --route-in-y: 0px; }
 @keyframes route-out {
   from { filter: none; }
-  to { opacity: 0; translate: var(--route-out-x, 0px) 0; filter: blur(3px); }
+  to { opacity: 0; translate: var(--route-out-x, 0px) 0; filter: var(--motion-filter-route-out, none); }
 }
 @keyframes route-in {
-  from { opacity: .25; translate: var(--route-in-x, 0px) var(--route-in-y, 6px); filter: blur(var(--blur-motion-sm)); }
+  from { opacity: .25; translate: var(--route-in-x, 0px) var(--route-in-y, 6px); filter: var(--motion-filter-sm, none); }
   to { filter: none; }
 }
 
@@ -1521,29 +1544,32 @@ html[data-route-enter] .route-view:not([hidden]) {
 html[data-route-enter='forward'] .route-view { --route-enter-x: 20px; }
 html[data-route-enter='back'] .route-view { --route-enter-x: -20px; }
 html[data-route-enter='swap'] .route-view { --route-enter-y: 6px; }
-/* A filter on the live route would make its fixed controls use the route as their containing block. */
-html[data-route-enter] .route-view:has(.save-dock, .detail-edit-button) { --route-enter-filter: none; }
-@media (max-width: 960px) {
-  html[data-route-enter] .route-view:has(.review-preparation, .library-archive-dock) { --route-enter-filter: none; }
-}
 @keyframes route-enter {
-  from { opacity: .48; left: var(--route-enter-x, 0px); top: var(--route-enter-y, 0px); filter: var(--route-enter-filter, blur(var(--blur-motion-sm))); }
-  to { opacity: 1; left: 0; top: 0; filter: none; }
+  from { opacity: .48; left: var(--route-enter-x, 0px); top: var(--route-enter-y, 0px); }
+  to { opacity: 1; left: 0; top: 0; }
+}
+@media (min-width: 961px) {
+  /* A filter on the live route would make its fixed controls use the route as their containing block. */
+  html[data-route-enter] .route-view:has(.save-dock, .detail-edit-button) { --route-enter-filter: none; }
+  @keyframes route-enter {
+    from { opacity: .48; left: var(--route-enter-x, 0px); top: var(--route-enter-y, 0px); filter: var(--route-enter-filter, var(--motion-filter-sm)); }
+    to { opacity: 1; left: 0; top: 0; filter: none; }
+  }
 }
 
 /* ─── Content reveals ─────────────────────────────────────────── */
 @keyframes content-rise {
-  from { opacity: .55; translate: 0 5px; filter: blur(var(--blur-motion-sm)); }
+  from { opacity: .55; translate: 0 5px; filter: var(--motion-filter-sm, none); }
   to { filter: none; }
 }
 @keyframes content-fade {
-  from { opacity: .60; filter: blur(var(--blur-motion-sm)); }
+  from { opacity: .60; filter: var(--motion-filter-sm, none); }
   to { filter: none; }
 }
 @keyframes motion-confirm { from { opacity: .6; scale: .87; } }
 @keyframes dock-rise { from { transform: translateY(100%); } }
 @keyframes celebrate-pop {
-  from { opacity: .65; scale: .88; rotate: -4deg; filter: blur(var(--blur-motion-sm)); }
+  from { opacity: .65; scale: .88; rotate: -4deg; filter: var(--motion-filter-sm, none); }
   to { filter: none; }
 }
 @keyframes row-returned {
@@ -1883,10 +1909,12 @@ html[data-route-enter] .route-view:has(.save-dock, .detail-edit-button) { --rout
 .markdown-figure-image[role="button"]:focus-visible { outline: 2px solid var(--primary); outline-offset: 4px; }
 .markdown-image-lightbox { position: fixed; inset: 0; z-index: 1500; border: 0; outline: 0; }
 .markdown-image-lightbox .pswp { --pswp-root-z-index: 0; }
-.markdown-image-lightbox .pswp__bg {
-  background: rgba(20, 19, 18, .9) !important;
-  -webkit-backdrop-filter: blur(var(--blur-glass-md));
-  backdrop-filter: blur(var(--blur-glass-md));
+.markdown-image-lightbox .pswp__bg { background: rgba(20, 19, 18, .9) !important; }
+@media (min-width: 961px) {
+  .markdown-image-lightbox .pswp__bg {
+    -webkit-backdrop-filter: blur(var(--blur-glass-md));
+    backdrop-filter: blur(var(--blur-glass-md));
+  }
 }
 .markdown-image-lightbox .pswp__button--zoom { margin-right: 60px; }
 .markdown-image-close {
@@ -2026,9 +2054,9 @@ html[data-route-enter] .route-view:has(.save-dock, .detail-edit-button) { --rout
 }
 .custom-select-popup.opens-above { --select-closed-clip: inset(100% 0 0 0); --select-closed-offset: 6px; }
 .custom-select-popup.is-open { clip-path: inset(0 0 0 0); opacity: 1; translate: 0 0; pointer-events: auto; }
-.custom-select-popup:is(:not(.is-open), [data-starting-style], [data-ending-style]) { filter: blur(var(--blur-motion-sm)); }
+.custom-select-popup:is(:not(.is-open), [data-starting-style], [data-ending-style]) { filter: var(--motion-filter-sm, none); }
 @starting-style {
-  .custom-select-popup.is-open { clip-path: var(--select-closed-clip); opacity: 0; translate: 0 var(--select-closed-offset); filter: blur(var(--blur-motion-sm)); }
+  .custom-select-popup.is-open { clip-path: var(--select-closed-clip); opacity: 0; translate: 0 var(--select-closed-offset); filter: var(--motion-filter-sm, none); }
 }
 @media (prefers-reduced-motion: reduce) {
   .custom-select-popup { transition-property: none !important; filter: none !important; }

@@ -98,7 +98,7 @@
 }
 .followup-side:is([data-starting-style], [data-ending-style]) {
   opacity: 0;
-  filter: blur(var(--blur-motion-sm));
+  filter: var(--motion-filter-sm, none);
 }
 .followup-side[data-starting-style] { transform: translateX(24px); }
 .followup-side[data-ending-style] { transform: translateX(12px); transition-duration: var(--motion-drawer-exit); transition-timing-function: var(--motion-ease-exit); pointer-events: none; }
@@ -490,12 +490,6 @@
   z-index: 1400;
   inset: 0;
   background: rgb(26 25 24 / .32);
-  -webkit-backdrop-filter: blur(var(--blur-glass-backdrop));
-  backdrop-filter: blur(var(--blur-glass-backdrop));
-}
-.followup-confirm-backdrop:is([data-starting-style], [data-ending-style]) {
-  -webkit-backdrop-filter: blur(0px);
-  backdrop-filter: blur(0px);
 }
 .followup-confirm {
   position: fixed;

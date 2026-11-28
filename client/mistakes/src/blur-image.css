@@ -1,13 +1,13 @@
 .blur-image.is-loading {
   opacity: 0;
-  filter: blur(14px);
 }
 .blur-image.is-loading.blur-image-scale { transform: scale(1.03); }
 .blur-image.is-revealing {
-  animation: blur-image-reveal 420ms var(--motion-ease-enter, cubic-bezier(0.16, 1, 0.3, 1)) backwards;
+  --image-reveal-animation: blur-image-fade;
+  animation: var(--image-reveal-animation) 420ms var(--motion-ease-enter, cubic-bezier(0.16, 1, 0.3, 1)) backwards;
 }
 .blur-image.is-revealing.blur-image-scale {
-  animation-name: blur-image-reveal, blur-image-scale-in;
+  animation-name: var(--image-reveal-animation), blur-image-scale-in;
 }
 .blur-image.is-settled, .blur-image.is-error {
   opacity: 1;
@@ -16,9 +16,13 @@
 }
 .blur-image.is-settled.blur-image-scale, .blur-image.is-error.blur-image-scale { transform: none; }
 
-@keyframes blur-image-reveal {
-  from { opacity: 0; filter: blur(14px); }
-  to { opacity: 1; filter: blur(0px); }
+@media (min-width: 961px) {
+  .blur-image.is-loading { filter: blur(14px); }
+  .blur-image.is-revealing { --image-reveal-animation: blur-image-reveal; }
+  @keyframes blur-image-reveal {
+    from { opacity: 0; filter: blur(14px); }
+    to { opacity: 1; filter: blur(0px); }
+  }
 }
 @keyframes blur-image-scale-in {
   from { transform: scale(1.03); }

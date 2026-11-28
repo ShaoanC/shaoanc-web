@@ -1,14 +1,8 @@
 .export-backdrop {
   position: fixed; inset: 0; z-index: 1000; background: rgba(26, 25, 24, .42);
-  -webkit-backdrop-filter: blur(var(--blur-glass-backdrop));
-  backdrop-filter: blur(var(--blur-glass-backdrop));
-}
-.export-backdrop:is([data-starting-style], [data-ending-style]) {
-  -webkit-backdrop-filter: blur(0px);
-  backdrop-filter: blur(0px);
 }
 .export-dialog { position: fixed; z-index: 1001; top: 50%; left: 50%; transform: translate(-50%, -50%); display: flex; flex-direction: column; width: min(560px, calc(100% - 32px)); max-height: calc(100dvh - 32px); min-height: 0; border: 1px solid var(--border-medium); border-radius: 4px; background: var(--surface-2); outline: none; filter: none; }
-.export-dialog:is([data-starting-style], [data-ending-style]) { filter: blur(var(--blur-motion-sm)); }
+.export-dialog:is([data-starting-style], [data-ending-style]) { filter: var(--motion-filter-sm, none); }
 /* The frame switches size immediately; fade the new controls without scaling the PDF canvas. */
 .export-dialog > :is(.export-settings-heading, .export-settings-body, .export-settings-footer) {
   animation: content-fade var(--motion-base) var(--motion-ease-enter);
@@ -17,7 +11,7 @@
   animation: export-preview-enter var(--motion-base) var(--motion-ease-enter);
 }
 @keyframes export-preview-enter {
-  from { opacity: .55; filter: blur(var(--blur-motion-sm)); }
+  from { opacity: .55; filter: var(--motion-filter-sm, none); }
   to { filter: none; }
 }
 .export-settings-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 25px 28px 19px; border-bottom: 1px solid var(--border-subtle); flex-shrink: 0; }

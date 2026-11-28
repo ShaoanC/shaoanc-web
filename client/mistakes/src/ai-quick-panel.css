@@ -14,12 +14,6 @@ body:has(.ai-quick-dialog, .ai-quick-drawer) .mistakes-toast-container { visibil
 /* ─── Quick task panel: a popover on wide screens, a bottom sheet on phones ─── */
 .quick-task-backdrop {
   position: fixed; inset: 0; z-index: 100; background: var(--scrim-light);
-  -webkit-backdrop-filter: blur(var(--blur-glass-backdrop));
-  backdrop-filter: blur(var(--blur-glass-backdrop));
-}
-.quick-task-backdrop:is([data-starting-style], [data-ending-style]) {
-  -webkit-backdrop-filter: blur(0px);
-  backdrop-filter: blur(0px);
 }
 .ai-quick-dialog {
   position: fixed; z-index: 101; top: calc(var(--workspace-header-bottom, 64px) + 10px); right: 24px;
@@ -31,7 +25,7 @@ body:has(.ai-quick-dialog, .ai-quick-drawer) .mistakes-toast-container { visibil
   transform-origin: top right;
   --dialog-direction: -1;
 }
-.ai-quick-dialog:is([data-starting-style], [data-ending-style]) { filter: blur(var(--blur-motion-sm)); }
+.ai-quick-dialog:is([data-starting-style], [data-ending-style]) { filter: var(--motion-filter-sm, none); }
 /* Review keeps a fixed frame so the action bar never moves while the content changes height. */
 .ai-quick-dialog.is-review { width: min(1040px, calc(100vw - 48px)); height: calc(100dvh - var(--workspace-header-bottom, 64px) - 28px); }
 .quick-panel-header { display: flex; flex-shrink: 0; align-items: center; gap: 6px; padding: 14px 12px 12px 20px; border-bottom: 1px solid var(--border-subtle); }
@@ -59,7 +53,7 @@ body:has(.ai-quick-dialog, .ai-quick-drawer) .mistakes-toast-container { visibil
 .quick-view[data-direction="forward"] { --quick-enter-x: 14px; }
 .quick-view[data-direction="back"] { --quick-enter-x: -14px; }
 @keyframes quick-view-enter {
-  from { opacity: .5; translate: var(--quick-enter-x, 0px) 0; filter: blur(var(--blur-motion-sm)); }
+  from { opacity: .5; translate: var(--quick-enter-x, 0px) 0; filter: var(--motion-filter-sm, none); }
   to { filter: none; }
 }
 
